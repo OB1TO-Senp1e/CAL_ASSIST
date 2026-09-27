@@ -1,0 +1,1 @@
+SELECT email, "passwordHash" FROM "User";

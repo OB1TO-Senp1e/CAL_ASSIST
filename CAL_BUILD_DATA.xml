@@ -1,0 +1,415 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CAL_BUILD_DATA>
+  <metadata>
+    <project>CalAssist - Personal Time Operating System</project>
+    <generated>2026-09-26T18:57:16Z</generated>
+    <version>0.1.0</version>
+    <status>Backend: Production-Ready | Frontend: Shell Only</status>
+  </metadata>
+
+  <summary>
+    <totalFeatures>47</totalFeatures>
+    <completed>28</completed>
+    <inProgress>5</inProgress>
+    <notStarted>14</notStarted>
+    <overallCompletion>60%</overallCompletion>
+    <backendCompletion>95%</backendCompletion>
+    <frontendCompletion>25%</frontendCompletion>
+  </summary>
+
+  <backendEngines>
+    <engine name="Auth & User Management" status="COMPLETE" completion="100%">
+      <details>JWT auth, bcrypt, register/login/logout, session management, rate limiting</details>
+      <endpoints>POST /auth/login, POST /auth/register, POST /auth/logout, GET /api/users/me</endpoints>
+    </engine>
+    <engine name="Goals Engine" status="COMPLETE" completion="100%">
+      <details>Hierarchical goals, progress tracking, stats, milestones, CRUD</details>
+      <endpoints>GET/POST /api/goals, GET /api/goals/:id/progress, GET /api/goals/:id/hierarchy</endpoints>
+    </engine>
+    <engine name="Projects Engine" status="COMPLETE" completion="100%">
+      <details>Projects linked to goals, progress, hierarchy, deadlines</details>
+      <endpoints>GET/POST /api/projects, GET /api/projects/:id/progress, GET /api/projects/:id/hierarchy</endpoints>
+    </engine>
+    <engine name="Tasks Engine" status="COMPLETE" completion="100%">
+      <details>Full CRUD, dependencies (blocked/blocking), dependents, can-start check, dependency chains</details>
+      <endpoints>GET/POST /api/tasks, GET /api/tasks/:id/dependencies, GET /api/tasks/:id/dependents, GET /api/tasks/:id/can-start, GET /api/tasks/:id/dependency-chain</endpoints>
+    </engine>
+    <engine name="Events & TimeBlocks" status="COMPLETE" completion="100%">
+      <details>Calendar events with recurrence, time blocks for scheduling, move/resize, bulk ops</details>
+      <endpoints>GET/POST /api/events, GET/POST /api/time-blocks, PATCH /api/events/:id/move, PATCH /api/events/:id/resize</endpoints>
+    </engine>
+    <engine name="Calendar Engine (Domain)" status="COMPLETE" completion="100%">
+      <details>RecurrenceEngine, TimeZoneEngine, ConflictDetector, AvailabilityCalculator, ViewGenerator (Day/Week/Month/Agenda)</details>
+      <endpoints>18 REST endpoints under /api/calendar/events, /api/calendar/connections, /api/calendar/sync</endpoints>
+    </engine>
+    <engine name="Calendar Integrations" status="COMPLETE" completion="90%">
+      <details>Google, Outlook, Apple adapters with BaseCalendarAdapter (retry, rate limit, webhooks, sync tokens). Google Maps travel time provider.</details>
+      <endpoints>/api/calendar/auth-url/:provider, /api/calendar/callback/:provider, /api/calendar/sync/:provider</endpoints>
+      <notes>Missing: Deleted event handling in sync, conflict resolution UI</notes>
+    </engine>
+    <engine name="Time Compiler" status="COMPLETE" completion="100%">
+      <details>Deterministic scheduling: topological sort, greedy allocation, buffers, alternatives, multi-criteria scoring</details>
+      <endpoints>POST /api/time-compiler/compile, POST /api/time-compiler/compile-and-apply, GET /api/time-compiler/proposals</endpoints>
+    </engine>
+    <engine name="Reality Engine" status="COMPLETE" completion="95%">
+      <details>7 deviation types, impact analysis, recommendations with pros/cons/feasibility, drift detection</details>
+      <endpoints>POST /api/reality/check, GET /api/reality/drift, GET /api/reality/task/:taskId/analysis, GET /api/reality/project/:projectId/health</endpoints>
+    </engine>
+    <engine name="Replanning Engine" status="COMPLETE" completion="95%">
+      <details>A/B/C options, autonomy policies, protected time ranges, audit log, execute with confirmation</details>
+      <endpoints>POST /api/replanning/options, POST /api/replanning/execute, GET /api/replanning/suggestions, POST /api/replanning/apply/:planId</endpoints>
+    </engine>
+    <engine name="AI Assistant Orchestrator" status="COMPLETE" completion="90%">
+      <details>13 typed tools, intent→context→tool→validation→execution, 5 confirmation levels (NONE→CRITICAL)</details>
+      <endpoints>POST /api/ai/intent/parse, POST /api/ai/planning/from-intent, POST /api/ai/planning/decompose/:goalId</endpoints>
+      <tools>create_event, update_event, delete_event, move_event, find_availability, create_task, update_task, create_goal, create_project, create_schedule_proposal, detect_conflicts, explain_schedule, plan_day</tools>
+    </engine>
+    <engine name="Memory Engine" status="COMPLETE" completion="95%">
+      <details>5 memory types, 5 sources, conflict detection (4 types), CRUD, search, bulk actions, export/import, stats</details>
+      <endpoints>GET/POST /api/memory, GET /api/memory/stats, GET /api/memory/conflicts, PUT /api/memory/conflicts/:id/resolve, GET /api/memory/search, GET/PUT/DELETE /api/memory/:id, POST /api/memory/bulk, GET /api/memory/export, POST /api/memory/import</endpoints>
+    </engine>
+    <engine name="Context Engine" status="COMPLETE" completion="95%">
+      <details>User context aggregation: preferences, working hours, timezone, active goals, upcoming events, pending tasks</details>
+      <endpoints>GET /api/context/user, POST /api/context/preferences, POST /api/context/audit</endpoints>
+    </engine>
+    <engine name="Commitment Engine" status="COMPLETE" completion="90%">
+      <details>8 risk factors, NL extraction from meetings, confidence tracking, reminders, risk assessment</details>
+      <endpoints>GET/POST /api/commitments, GET /api/commitments/stats, GET /api/commitments/risks, POST /api/commitments/assess-risks, POST /api/commitments/extract, POST /api/commitments/send-reminders</endpoints>
+    </engine>
+    <engine name="Proactive Assistant" status="COMPLETE" completion="85%">
+      <details>10 intervention types, ranking/filtering, user preferences, delivery channels, acknowledgment/snooze/dismiss</details>
+      <endpoints>POST /api/proactive/check, GET /api/proactive/interventions, POST /api/proactive/interventions/:id/acknowledge|dismiss|snooze</endpoints>
+      <notes>Default config too aggressive (120 notifications/day). Needs digest mode.</notes>
+    </engine>
+    <engine name="Meeting Intelligence" status="COMPLETE" completion="95%">
+      <details>Pre-meeting: checklist, context, commitments, tasks, agenda. Post-meeting: action items, commitments, deadlines, follow-ups with confidence scoring</details>
+      <endpoints>POST /api/meetings/prepare, POST /api/meetings/process, GET /api/meetings/:id/preparation, GET /api/meetings/:id/post-meeting, GET /api/meetings/:id/action-items|commitments|deadlines|follow-ups</endpoints>
+    </engine>
+    <engine name="Daily Experience" status="COMPLETE" completion="95%">
+      <details>Morning briefing (priorities, schedule, risks, prep, focus blocks), During-day (current, next, reminders, changes, replanning), Evening wrapup (completion, unfinished, commitments, tomorrow preview, reflection)</details>
+      <endpoints>GET /api/daily/morning, GET /api/daily/current, GET /api/daily/evening, GET /api/daily/briefing</endpoints>
+    </engine>
+    <engine name="Simulation Engine" status="COMPLETE" completion="90%">
+      <details>What-if scenarios: move event, take time off, launch earlier/later, add/remove work hours. Schedule diff, deadline effects, constraint violations, workload changes, dependency effects, tradeoffs, conflicts, metrics</details>
+      <endpoints>POST /api/simulation/run, POST /api/simulation/compare, POST /api/simulation/quick, POST /api/simulation/apply, GET /api/simulation/history, GET /api/simulation/:id</endpoints>
+    </engine>
+    <engine name="Rules Engine" status="COMPLETE" completion="90%">
+      <details>7 rule types, 5 conflict types, enforcement on every scheduling action, natural language parsing</details>
+      <endpoints>GET/POST /api/rules, GET /api/rules/conflicts, PUT /api/rules/conflicts/:id/resolve, GET/POST/PUT/DELETE /api/rules/:id, POST /api/rules/enforce, POST /api/rules/parse, POST /api/rules/from-natural-language</endpoints>
+    </engine>
+    <engine name="Permission System" status="COMPLETE" completion="95%">
+      <details>5 autonomy levels, 21 granular actions, 5 templates, audit + undo (24h), action-level gating</details>
+      <endpoints>POST /api/permissions/check, GET/POST/DELETE /api/permissions/permissions, GET/POST /api/permissions/autonomy-policies, POST /api/permissions/apply-template, POST /api/permissions/undo, GET /api/permissions/audit, GET /api/permissions/templates</endpoints>
+    </engine>
+    <engine name="Notification Service" status="COMPLETE" completion="90%">
+      <details>Multi-channel (in-app, email, push, webhook, SMS), templates, preferences, reminder scheduling, conflict alerts</details>
+      <endpoints>GET /api/notifications, GET /api/notifications/unread-count, PATCH /api/notifications/:id/read, POST /api/notifications/read-all, PATCH /api/notifications/:id/dismiss, POST /api/notifications/send, POST /api/notifications/reminder, POST /api/notifications/conflict-alert, GET/POST /api/notifications/preferences</endpoints>
+    </engine>
+    <engine name="AI Providers" status="COMPLETE" completion="95%">
+      <details>3 providers: OpenAI, Ollama, Nemotron-NIM (NVIDIA). Fallback chain, structured output, embeddings</details>
+      <providers>OpenAI (primary), Ollama (local fallback), Nemotron-NIM (free tier, live tested)</providers>
+    </engine>
+    <engine name="Infrastructure" status="COMPLETE" completion="95%">
+      <details>Throttler, Redis cache, BullMQ jobs, Prometheus metrics, Winston logging, Docker, CI/CD, health checks</details>
+    </engine>
+  </backendEngines>
+
+  <frontendPages>
+    <page name="LoginPage" status="COMPLETE" completion="100%">
+      <description>Email/password login, register link, error handling, loading states, redirects to dashboard on success</description>
+      <components>LoginForm, RequireAuth wrapper</components>
+      <backendIntegration>POST /auth/login, POST /auth/register</backendIntegration>
+    </page>
+    <page name="DashboardLayout" status="COMPLETE" completion="100%">
+      <description>Sidebar navigation, user menu, logout, responsive mobile drawer, active route highlighting</description>
+      <components>Sidebar, Header, MobileDrawer, NavLink</components>
+    </page>
+    <page name="TodayPage" status="IN_PROGRESS" completion="40%">
+      <description>Morning briefing, current activity, evening wrapup sections. UI structure exists (10KB). Needs data binding to 3 backend endpoints.</description>
+      <components>BriefingCard, ScheduleTimeline, CurrentActivity, FocusBlocks, RisksPanel, PrepRequirements, EveningSummary</components>
+      <backendIntegration>GET /api/daily/morning, GET /api/daily/current, GET /api/daily/evening</backendIntegration>
+      <missing>useEffect data fetching, loading/error states, real-time updates, focus mode toggle</missing>
+    </page>
+    <page name="CalendarPage" status="NOT_STARTED" completion="10%">
+      <description>Empty grid shell. Calendar engine has 18 endpoints including Day/Week/Month/Agenda views, timezone conversion, availability</description>
+      <components>CalendarGrid, DayView, WeekView, MonthView, AgendaView, EventModal, TimezoneSelector</components>
+      <backendIntegration>GET /api/calendar/events, GET /api/calendar/events/day/:date, GET /api/calendar/events/week/:weekStart, GET /api/calendar/events/month/:year/:month, GET /api/calendar/events/agenda, GET /api/calendar/events/availability, GET /api/calendar/events/timezone/convert</backendIntegration>
+      <missing>All views, event CRUD modals, drag-drop move/resize, external calendar connections</missing>
+    </page>
+    <page name="TasksPage" status="NOT_STARTED" completion="10%">
+      <description>Empty list shell. Full task CRUD + dependencies backend ready.</description>
+      <components>TaskList, TaskCard, TaskForm, DependencyGraph, KanbanBoard, FilterBar</components>
+      <backendIntegration>GET/POST /api/tasks, GET /api/tasks/:id/dependencies, GET /api/tasks/:id/dependents, GET /api/tasks/:id/can-start, GET /api/tasks/:id/dependency-chain</backendIntegration>
+      <missing>List with filters, create/edit modal, dependency visualization, kanban drag-drop</missing>
+    </page>
+    <page name="GoalsPage" status="NOT_STARTED" completion="0%">
+      <description>Not created. Backend: hierarchical goals, progress, stats, milestones.</description>
+      <backendIntegration>GET/POST /api/goals, GET /api/goals/:id/progress, GET /api/goals/:id/hierarchy, GET /api/goals/stats</backendIntegration>
+      <missing>Tree view, progress rings, milestone timeline, create/edit forms</missing>
+    </page>
+    <page name="ProjectsPage" status="NOT_STARTED" completion="0%">
+      <description>Not created. Backend: projects linked to goals, progress, hierarchy, deadlines.</description>
+      <backendIntegration>GET/POST /api/projects, GET /api/projects/:id/progress, GET /api/projects/:id/hierarchy</backendIntegration>
+      <missing>Project cards, progress tracking, deadline alerts, goal linkage UI</missing>
+    </page>
+    <page name="CommitmentsPage" status="NOT_STARTED" completion="0%">
+      <description>Not created. Backend: commitment CRUD, risk assessment, extraction, reminders.</description>
+      <backendIntegration>GET/POST /api/commitments, GET /api/commitments/stats, GET /api/commitments/risks, POST /api/commitments/extract, POST /api/commitments/send-reminders</backendIntegration>
+      <missing>Commitment list with risk badges, extraction results review, reminder settings</missing>
+    </page>
+    <page name="AssistantPage" status="NOT_STARTED" completion="0%">
+      <description>Not created. Backend: 13 typed tools, intent parsing, planning, confirmation flows.</description>
+      <backendIntegration>POST /api/ai/intent/parse, POST /api/ai/planning/from-intent, POST /api/ai/planning/decompose/:goalId</backendIntegration>
+      <missing>Chat interface, tool confirmation modals, planning results visualization, history</missing>
+    </page>
+    <page name="PlanningPage" status="NOT_STARTED" completion="0%">
+      <description>Not created. Backend: planning engine, schedule proposals, time compiler.</description>
+      <backendIntegration>POST /api/time-compiler/compile, GET /api/time-compiler/proposals, POST /api/simulation/run, POST /api/replanning/options</backendIntegration>
+      <missing>Schedule proposal comparison, simulation UI, replanning A/B/C options</missing>
+    </page>
+    <page name="InsightsPage" status="NOT_STARTED" completion="0%">
+      <description>Not created. Backend: metrics, reality engine drift, memory stats, commitment risks.</description>
+      <backendIntegration>GET /api/reality/drift, GET /api/memory/stats, GET /api/commitments/risks, GET /api/metrics</backendIntegration>
+      <missing>Charts (utilization, focus time, completion rates), drift visualization, memory insights</missing>
+    </page>
+    <page name="SettingsPage" status="NOT_STARTED" completion="0%">
+      <description>Not created. Backend: preferences, notification prefs, autonomy policies, calendar connections, AI provider config.</description>
+      <backendIntegration>GET/POST /api/context/preferences, GET/POST /api/notifications/preferences, GET/POST /api/permissions/autonomy-policies, GET /api/calendar/connections, GET /api/permissions/templates</backendIntegration>
+      <missing>Working hours editor, notification channels, autonomy level selector, calendar OAuth, theme toggle</missing>
+    </page>
+    <page name="ArchitecturePage" status="COMPLETE" completion="100%">
+      <description>Static viewer for Archify-generated architecture diagram (calassist-architecture.html)</description>
+      <components>Iframe viewer</components>
+    </page>
+  </frontendPages>
+
+  <uiComponents>
+    <component name="Button" status="COMPLETE" completion="100%">Variants: default, destructive, outline, secondary, ghost, link. Sizes: default, sm, lg, icon</component>
+    <component name="Card" status="COMPLETE" completion="100%">Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter</component>
+    <component name="Dialog" status="COMPLETE" completion="100%">Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter</component>
+    <component name="DropdownMenu" status="COMPLETE" completion="100%">DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuCheckboxItem, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuLabel, DropdownMenuShortcut</component>
+    <component name="Input" status="COMPLETE" completion="100%">Basic input with label integration</component>
+    <component name="Label" status="COMPLETE" completion="100%">Form label component</component>
+    <component name="Calendar" status="MISSING" completion="0%">Date picker, range picker - needed for event/task forms</component>
+    <component name="Select" status="MISSING" completion="0%">Dropdown select - needed for priority, status, project/goal selection</component>
+    <component name="Tabs" status="MISSING" completion="0%">Tab navigation - needed for Today sub-sections, Settings</component>
+    <component name="Progress" status="MISSING" completion="0%">Progress bars - needed for goal/project/task completion</component>
+    <component name="Badge" status="MISSING" completion="0%">Status badges - needed for task/event/commitment status</component>
+    <component name="Tooltip" status="MISSING" completion="0%">Hover tooltips - needed for truncated text, info icons</component>
+    <component name="Avatar" status="MISSING" completion="0%">User avatar - needed for header, meeting attendees</component>
+    <component name="Skeleton" status="MISSING" completion="0%">Loading skeletons - needed for all data-fetching pages</component>
+    <component name="Table" status="MISSING" completion="0%">Data tables - needed for tasks, events, commitments lists</component>
+    <component name="Form" status="MISSING" completion="0%">React Hook Form + Zod resolver - needed for all create/edit forms</component>
+  </uiComponents>
+
+  <criticalGaps>
+    <gap priority="1" category="Frontend" title="TodayPage Data Binding">
+      <description>Connect 3 backend endpoints (/api/daily/morning, /current, /evening) to TodayPage UI</description>
+      <effort>3 days</effort>
+      <blocking>Nothing - independent</blocking>
+      <impact>HIGH - Primary user-facing screen</impact>
+    </gap>
+    <gap priority="2" category="Frontend" title="Calendar Views">
+      <description>Implement Day/Week/Month/Agenda views using calendar engine endpoints</description>
+      <effort>5 days</effort>
+      <blocking>None</blocking>
+      <impact>HIGH - Core calendar functionality</impact>
+    </gap>
+    <gap priority="3" category="Frontend" title="Tasks List + Dependency Graph">
+      <description>Task list with filters, create/edit modal, dependency visualization</description>
+      <effort>5 days</effort>
+      <blocking>None</blocking>
+      <impact>HIGH - Core task management</impact>
+    </gap>
+    <gap priority="4" category="Backend" title="Calendar Sync Conflict Resolution">
+      <description>ETag overwrite loses local changes. No deleted event handling. Need conflict resolution UI</description>
+      <effort>3 days</effort>
+      <blocking>Frontend CalendarPage</blocking>
+      <impact>HIGH - Data integrity, user trust</impact>
+    </gap>
+    <gap priority="5" category="Backend" title="Notification Digest Mode">
+      <description>Proactive assistant defaults to 120 notifications/day. Need daily digest, grouping, user-controlled frequency</description>
+      <effort>2 days</effort>
+      <blocking>None</blocking>
+      <impact>HIGH - UX, retention</impact>
+    </gap>
+    <gap priority="6" category="Backend" title="LLM Intent Router Replacement">
+      <description>80% of intents are deterministic patterns. Replace LLM calls with matcher for speed/cost/reliability</description>
+      <effort>2 days</effort>
+      <blocking>None</blocking>
+      <impact>MEDIUM - Latency, cost, hallucination reduction</impact>
+    </gap>
+    <gap priority="7" category="Frontend" title="Onboarding Flow">
+      <description>Connect calendar → set working hours → first briefing. Zero onboarding exists.</description>
+      <effort>3 days</effort>
+      <blocking>SettingsPage, CalendarPage</blocking>
+      <impact>HIGH - Activation, first-time UX</impact>
+    </gap>
+    <gap priority="8" category="Frontend" title="Goals/Projects/Commitments Pages">
+      <description>Create 3 core entity pages with CRUD, hierarchy, progress visualization</description>
+      <effort>5 days</effort>
+      <blocking>UI components (Tree, Progress, Form)</blocking>
+      <impact>HIGH - Core domain objects</impact>
+    </gap>
+    <gap priority="9" category="Frontend" title="Assistant Chat Interface">
+      <description>Chat UI with tool confirmation modals, planning results, history</description>
+      <effort>4 days</effort>
+      <blocking>UI components (Form, Dialog, Skeleton)</blocking>
+      <impact>MEDIUM - Differentiation feature</impact>
+    </gap>
+    <gap priority="10" category="Backend" title="Audit Log Viewer + Undo UI">
+      <description>Permission system has audit + undo (24h) but no UI to review/undo autonomous actions</description>
+      <effort>2 days</effort>
+      <blocking>SettingsPage</blocking>
+      <impact>MEDIUM - Trust through explainability</impact>
+    </gap>
+    <gap priority="11" category="Backend" title="N+1 Query Fix in Context Building">
+      <description>AssistantOrchestrator.buildContext() does 7 sequential queries. Batch with Promise.all</description>
+      <effort>1 day</effort>
+      <blocking>None</blocking>
+      <impact>MEDIUM - Latency > 2s</impact>
+    </gap>
+    <gap priority="12" category="Frontend" title="Mobile Responsive Today Screen">
+      <description>Calendar apps live on mobile. Current stack supports but no mobile layout for Today</description>
+      <effort>2 days</effort>
+      <blocking>TodayPage</blocking>
+      <impact>HIGH - Mobile usage</impact>
+    </gap>
+    <gap priority="13" category="Security" title="JWT Refresh Token Rotation">
+      <details>No refresh token rotation, no revocation list. 7d access token only.</details>
+      <effort>2 days</effort>
+      <impact>HIGH - Session hijacking risk</impact>
+    </gap>
+    <gap priority="14" category="Security" title="2FA (TOTP)">
+      <details>Critical for calendar access. No 2FA implemented.</details>
+      <effort>3 days</effort>
+      <impact>HIGH - Account security</impact>
+    </gap>
+    <gap priority="15" category="Backend" title="Idempotency Keys on Mutations">
+      <details>Tools execute directly, no deduplication. Duplicate events/tasks possible.</details>
+      <effort>2 days</effort>
+      <impact>MEDIUM - Data integrity</impact>
+    </gap>
+    <gap priority="16" category="Compliance" title="GDPR Export/Delete">
+      <details>No /api/user/export or /api/user/delete endpoints</details>
+      <effort>2 days</effort>
+      <impact>MEDIUM - Legal compliance</impact>
+    </gap>
+    <gap priority="17" category="Frontend" title="PWA Support">
+      <details>No manifest, service worker, offline caching for Today screen</details>
+      <effort>2 days</effort>
+      <impact>MEDIUM - Mobile installability</impact>
+    </gap>
+  </criticalGaps>
+
+  <improvementSuggestions>
+    <suggestion category="User Value" priority="1" title="Finish Today Screen - The Only Thing Users See">
+      <description>TodayPage is the primary interface. Connect the 3 backend endpoints, add real-time updates, focus mode toggle. This single page delivers 80% of the product value.</description>
+      <rationale>All backend intelligence (briefing, reality check, proactive interventions, schedule) surfaces here. Without it, the product is invisible.</rationale>
+      <effort>3 days</effort>
+      <roi>VERY HIGH</roi>
+    </suggestion>
+    <suggestion category="User Value" priority="2" title="Calendar Sync Conflict Resolution UI">
+      <description>Show diff when Google/Outlook sync conflicts with local changes. Let user choose: keep local, keep remote, merge.</description>
+      <rationale>Users will not trust a calendar that silently overwrites or duplicates events. This is table stakes for any calendar app.</rationale>
+      <effort>3 days</effort>
+      <roi>HIGH</roi>
+    </suggestion>
+    <suggestion category="Technical Risk" priority="1" title="Replace LLM Intent Router with Deterministic Matcher">
+      <description>80% of "AI" calls are fixed patterns ("create event", "move meeting"). Use keyword/pattern matching instead of LLM.</description>
+      <rationale>Deterministic = faster (50ms vs 2s), cheaper ($0 vs API costs), no hallucination, testable. Reserve LLM only for truly ambiguous inputs.</rationale>
+      <effort>2 days</effort>
+      <roi>HIGH</roi>
+    </suggestion>
+    <suggestion category="Technical Risk" priority="2" title="Fix Calendar Sync Data Loss Bugs">
+      <description>ETag mismatch = overwrite local (line 198-214). Deleted events not handled (line 243-246: "simplified"). Implement proper delta sync with conflict UI.</description>
+      <rationale>Silent data corruption destroys trust irrecoverably. Must fix before any real users.</rationale>
+      <effort>3 days</effort>
+      <roi>CRITICAL</roi>
+    </suggestion>
+    <suggestion category="Differentiation" priority="1" title="Chief of Staff Experience - Proactive, Not Reactive">
+      <description>Cut features that add decisions (rule writing, simulation comparison, memory management). Keep only: Morning "Here are your 3 priorities, here's when to do them", During day "Meeting in 10min — prep doc attached", Evening "You completed 2/3 priorities. Tomorrow's first block: 9-11 Deep Work".</description>
+      <rationale>Differentiation is "The only calendar that tells you what to do, not just where to be." Every proactive insight must reduce a decision, not add one.</rationale>
+      <effort>Ongoing</effort>
+      <roi>HIGH</roi>
+    </suggestion>
+    <suggestion category="Differentiation" priority="2" title="Onboarding: Calendar Connect → Working Hours → First Briefing in < 3 Minutes">
+      <description>Guided flow: OAuth → timezone detection → working hours slider → generates first morning briefing immediately.</description>
+      <rationale>Users drop at "connect calendar." Time-to-value must be under 3 minutes. Show the magic immediately.</rationale>
+      <effort>3 days</effort>
+      <roi>HIGH</roi>
+    </suggestion>
+    <suggestion category="Implementation Effort" priority="1" title="Build Missing shadcn-ui Components First">
+      <description>Calendar, Select, Tabs, Progress, Badge, Tooltip, Avatar, Skeleton, Table, Form (React Hook Form + Zod). These unblock ALL remaining pages.</description>
+      <rationale>Currently building pages without components leads to inconsistent, buggy UI. Invest 2 days in component library, save 10+ days on page implementation.</rationale>
+      <effort>2 days</effort>
+      <roi>HIGH</roi>
+    </suggestion>
+    <suggestion category="Implementation Effort" priority="2" title="Create Page Template + Data Fetching Pattern">
+      <description>Standardize: useQuery hook, loading/error/empty states, optimistic updates, Zod validation. Apply to TodayPage first, then replicate.</description>
+      <rationale>Eliminates repeated bugs, ensures consistency, makes new pages take hours not days.</rationale>
+      <effort>1 day</effort>
+      <roi>HIGH</roi>
+    </suggestion>
+    <suggestion category="Implementation Effort" priority="3" title="Defer Simulation Engine UI">
+      <description>Phase 19 (Simulation Engine) is complex with no UI. Replanning engine already provides A/B/C options. Use that instead.</description>
+      <rationale>Simulation is a "nice to have" power-user feature. Replanning covers 90% of what-if needs with simpler UX.</rationale>
+      <effort>0 (defer)</effort>
+      <roi>LOW</roi>
+    </suggestion>
+    <suggestion category="Implementation Effort" priority="4" title="Cut Natural Language Rules Engine UI">
+      <description>Users don't write rules in English; they click toggles. Replace with toggle-based constraints UI in Settings.</description>
+      <rationale>Phase 12 NL rules engine is a gimmick. Toggle UI is faster to build, easier to use, less error-prone.</rationale>
+      <effort>0 (defer)</effort>
+      <roi>LOW</roi>
+    </suggestion>
+    <suggestion category="Implementation Effort" priority="5" title="Simplify Memory Engine - Drop AI Inferences">
+      <description>Keep only explicit user memories (EXPLICIT_PREFERENCE, EXPLICIT_FACT, USER_RULE). Drop LEARNED_PATTERN, TEMPORARY_CONTEXT - they cause confusion.</description>
+      <rationale>AI-inferred memories with confidence scores = user confusion. Manual entry only is clearer and safer.</rationale>
+      <effort>0 (config change)</effort>
+      <roi>MEDIUM</roi>
+    </suggestion>
+  </improvementSuggestions>
+
+  <buildLoopStatus>
+    <currentStep>Frontend TodayPage data binding (Step 7 of directive order)</currentStep>
+    <completedSteps>
+      <step>1. Context + Memory — Real preferences, working hours, timezone ✅</step>
+      <step>2. Goal → Commitment → Planning as connected slice ✅</step>
+      <step>3. Scheduling + Time Compiler — Fed by real Goal/Commitment data ✅</step>
+      <step>4. Reality Engine — Diff against real proposals ✅</step>
+      <step>5. Replanning — On real deviations ✅</step>
+      <step>6. Assistant Orchestrator — Conversational layer over the five ✅</step>
+      <step>7. AI Provider (Nemotron-NIM) — Live API tested ✅</step>
+    </completedSteps>
+    <nextSteps>
+      <step>8. Build TodayPage UI against real backend data (IN PROGRESS)</step>
+      <step>9. CalendarPage, TasksPage against real data</step>
+      <step>10. Goals/Projects/Commitments/Assistant/Insights/Settings pages</step>
+      <step>11. Only then: shadcn-vue UI pass (Phase 20) — already using shadcn-react</step>
+      <step>12. QA, Security, Production (Phase 21+)</step>
+    </nextSteps>
+  </buildLoopStatus>
+
+  <technicalDebt>
+    <item severity="HIGH" file="src/auth/jwt.strategy.ts">JWT fallback secret in production: process.env.JWT_SECRET || 'fallback-secret'</item>
+    <item severity="HIGH" file="src/integrations/calendar-adapters/calendar-sync.service.ts">Calendar sync deletes local data on ETag mismatch (lines 198-214). No deleted event handling (lines 243-246).</item>
+    <item severity="HIGH" file="src/ai/proactive/proactive.types.ts">Default checkIntervalMinutes: 60 with 5 interventions/check = 120 notifications/day spam.</item>
+    <item severity="MEDIUM" file="src/ai/assistant/assistant-orchestrator.ts">N+1 queries in buildContext(): 7 sequential Prisma queries per message.</item>
+    <item severity="MEDIUM" file="src/meetings/meeting-intelligence.service.ts">AI can hallucinate commitments/deadlines (confidence < 0.7 still returned).</item>
+    <item severity="MEDIUM" file="src/scheduling/simulation-engine/simulation-engine.service.ts">Simulation engine has no UI, no persistence, no apply logic - stubbed.</item>
+    <item severity="LOW" file="src/ai/rules-engine/rules-engine.service.ts">Complex natural language parsing that users won't use.</item>
+    <item severity="LOW" file="src/core/memory-engine/memory-engine.service.ts">LEARNED_PATTERN memories with confidence scores confuse users.</item>
+  </technicalDebt>
+
+  <dependencies>
+    <dependency>React 18 + TypeScript + Vite</dependency>
+    <dependency>Tailwind CSS + shadcn/ui (Radix primitives)</dependency>
+    <dependency>TanStack Query (React Query) - for data fetching</dependency>
+    <dependency>React Hook Form + Zod - for forms</dependency>
+    <dependency>Axios - API client with interceptors</dependency>
+    <dependency>date-fns - date manipulation</dependency>
+    <dependency>Zustand - state management (minimal)</dependency>
+    <dependency>Lucide React - icons</dependency>
+  </dependencies>
+</CAL_BUILD_DATA>

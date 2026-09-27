@@ -1,0 +1,114 @@
+{
+  "dashboard": {
+    "title": "CalAssist API Overview",
+    "uid": "calassist-api-overview",
+    "tags": ["calassist", "api"],
+    "timezone": "browser",
+    "schemaVersion": 38,
+    "version": 1,
+    "refresh": "10s",
+    "panels": [
+      {
+        "title": "HTTP Requests Rate",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(calassist_http_requests_total[5m])",
+            "legendFormat": "{{method}} {{route}} {{status_code}}"
+          }
+        ]
+      },
+      {
+        "title": "HTTP Request Duration (p95)",
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(calassist_http_request_duration_seconds_bucket[5m]))",
+            "legendFormat": "p95"
+          },
+          {
+            "expr": "histogram_quantile(0.99, rate(calassist_http_request_duration_seconds_bucket[5m]))",
+            "legendFormat": "p99"
+          }
+        ]
+      },
+      {
+        "title": "Active Users",
+        "type": "stat",
+        "gridPos": {"x": 0, "y": 8, "w": 6, "h": 4},
+        "targets": [
+          {
+            "expr": "calassist_active_users",
+            "legendFormat": "Active Users"
+          }
+        ]
+      },
+      {
+        "title": "Scheduled Tasks",
+        "type": "stat",
+        "gridPos": {"x": 6, "y": 8, "w": 6, "h": 4},
+        "targets": [
+          {
+            "expr": "calassist_scheduled_tasks",
+            "legendFormat": "Scheduled Tasks"
+          }
+        ]
+      },
+      {
+        "title": "AI Requests Rate",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 12, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(calassist_ai_requests_total[5m])",
+            "legendFormat": "{{provider}} {{operation}} {{status}}"
+          }
+        ]
+      },
+      {
+        "title": "AI Request Duration (p95)",
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 12, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(calassist_ai_request_duration_seconds_bucket[5m]))",
+            "legendFormat": "p95"
+          }
+        ]
+      },
+      {
+        "title": "Node.js Memory Usage",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 20, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "process_resident_memory_bytes",
+            "legendFormat": "RSS"
+          },
+          {
+            "expr": "process_heap_used_bytes",
+            "legendFormat": "Heap Used"
+          },
+          {
+            "expr": "process_heap_size_bytes",
+            "legendFormat": "Heap Size"
+          }
+        ]
+      },
+      {
+        "title": "Event Loop Lag",
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 20, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "nodejs_eventloop_lag_seconds",
+            "legendFormat": "Event Loop Lag"
+          }
+        ]
+      }
+    ]
+  },
+  "overwrite": true
+}

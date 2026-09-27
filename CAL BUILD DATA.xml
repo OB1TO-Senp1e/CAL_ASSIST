@@ -1,0 +1,239 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<calAssistBuildData reportDate="2026-09-27" project="CAL_ASSIST">
+  <reportTitle>CAL BUILD DATA</reportTitle>
+  <purpose>
+    Evidence-based roadmap of remaining product work, estimated completion, release blockers,
+    and improvement recommendations. Percentages are planning estimates from a repository
+    review and are not automated test coverage or a guarantee of feature completeness.
+  </purpose>
+
+  <executiveSummary>
+    <estimatedOverallImplementation percent="53" confidence="medium">
+      Weighted estimate across backend foundations, planning engines, data persistence,
+      frontend, integrations, testing, security and operations. The weighting and estimates
+      are documented in the workstreams section.
+    </estimatedOverallImplementation>
+    <estimatedProductionReadiness percent="35" confidence="low">
+      Development API and frontend routes have been observed running, but the complete
+      production release path, user workflows, provider credentials, recovery procedures,
+      and production security controls have not been verified end to end.
+    </estimatedProductionReadiness>
+    <currentState>
+      CAL_ASSIST has a substantial NestJS and Prisma backend, planning and scheduling engines,
+      a React frontend shell, health checks, and deployment scaffolding. The API type-check
+      passed and the readiness endpoint reported a connected database in the latest check.
+      The main remaining gap is turning backend capabilities into durable, tested,
+      user-facing product workflows and a repeatable production release.
+    </currentState>
+    <keyReleaseBlockers>
+      <blocker>Several frontend routes are explicit Coming soon pages; the calendar is a visual shell and key task actions are not wired.</blocker>
+      <blocker>Commitment risk and proactive intervention state are not persisted; commitment reminders and intervention mutations return 501.</blocker>
+      <blocker>Compatibility representations for permissions and autonomy policies should be replaced with explicit schema models and migrations.</blocker>
+      <blocker>CI deploy jobs contain placeholders, so a production deployment is not automated or proven.</blocker>
+      <blocker>Automated tests exist, but the checked-in test footprint is small relative to the product surface and there is no observed frontend test suite.</blocker>
+    </keyReleaseBlockers>
+  </executiveSummary>
+
+  <verificationSnapshot asOf="2026-09-27">
+    <check status="pass">Backend TypeScript check completed successfully after the compatibility changes.</check>
+    <check status="pass">API readiness endpoint returned ok and reported the database connected.</check>
+    <check status="pass">Frontend login route returned HTTP 200.</check>
+    <check status="partial">A production build passed before the final module-provider adjustment; the later watch process compiled with zero errors. Re-run the production build without a competing watch process.</check>
+    <check status="not-run">Full unit, integration, browser, accessibility, security, and deployment acceptance suites.</check>
+    <check status="not-run">No database migration or schema push was run; none is implied by this report.</check>
+    <check status="known-limit">External provider functionality depends on correctly configured credentials and real account-level verification.</check>
+  </verificationSnapshot>
+
+  <workstreams scoringMethod="Estimated current functional completion; weights sum to 100. Overall estimate is the weighted sum.">
+    <workstream id="backend-foundation" name="Backend foundation and domain APIs" weight="20" completion="82">
+      <evidence>API starts, health checks and database connectivity work; core NestJS modules and domain APIs are present. Build success does not prove every endpoint's behavior.</evidence>
+    </workstream>
+    <workstream id="planning-engines" name="Planning, scheduling, reality and replanning" weight="15" completion="72">
+      <evidence>Time Compiler and multiple engine modules are documented and implemented. End-to-end product flows and broad regression coverage remain to be demonstrated.</evidence>
+    </workstream>
+    <workstream id="data-model" name="Schema and durable feature persistence" weight="15" completion="50">
+      <evidence>Core Prisma entities exist, but schema gaps force reduced commitment behavior and compatibility storage for policy features.</evidence>
+    </workstream>
+    <workstream id="frontend" name="Frontend product workflows" weight="20" completion="30">
+      <evidence>React shell, login, Today, Calendar, and Tasks routes exist. Goals, Projects, Commitments, Assistant, Insights, and Settings are currently Coming soon; some visible actions are not connected to mutations.</evidence>
+    </workstream>
+    <workstream id="integrations" name="Calendar, AI and notification integrations" weight="10" completion="45">
+      <evidence>Provider adapters and interfaces are present, but credential setup, real OAuth/sync tests, delivery verification, and at least one Apple adapter placeholder remain.</evidence>
+    </workstream>
+    <workstream id="testing" name="Automated quality and regression coverage" weight="10" completion="35">
+      <evidence>Two backend unit spec files and one API end-to-end test file were found; there is no observed frontend test suite. Coverage and CI results need fresh verification.</evidence>
+    </workstream>
+    <workstream id="security-privacy" name="Security, privacy and account safety" weight="5" completion="55">
+      <evidence>JWT authentication, permissions, validation and throttling are present in the codebase; production configuration, tenant isolation, secret handling, retention, and threat-model controls need explicit verification.</evidence>
+    </workstream>
+    <workstream id="operations" name="Production deployment and operations" weight="5" completion="30">
+      <evidence>Docker, Compose, monitoring configuration and CI scaffolding exist, but staging and production workflow steps are placeholders and no operational recovery acceptance was performed.</evidence>
+    </workstream>
+  </workstreams>
+
+  <remainingBuildWork>
+    <item id="p0-schema" priority="P0" title="Complete the Prisma data model and safe migrations" areaCompletion="50">
+      <why>Current compatibility code cannot durably represent all promised feature behavior. The checked-in Commitment schema does not store the full person, related-entity, confidence, reminder-policy, or risk data needed by the richer product design. Interventions are computed but not persisted.</why>
+      <tasks>
+        <task>Add explicit schema entities/fields for commitment metadata, risk assessments, reminder state, and proactive intervention lifecycle.</task>
+        <task>Give permissions, autonomy policies, rules, and rule-conflict resolutions first-class typed storage rather than overloading unrelated JSON/string fields.</task>
+        <task>Design a reviewed migration, backup/restore plan, and compatibility rollout; do not use schema push on production data.</task>
+        <task>Backfill or clearly handle existing rows, add indexes/uniqueness constraints, and test rollback or forward-recovery procedures.</task>
+      </tasks>
+      <acceptance>Migration deploys against a clean database and a copy of existing data; records survive restart; API contract and generated Prisma types agree; rollback/recovery is documented.</acceptance>
+      <estimate>1-2 engineering weeks, dependent on product decisions for retention and data semantics.</estimate>
+    </item>
+
+    <item id="p0-core-ui" priority="P0" title="Finish the primary signed-in user workflows" areaCompletion="30">
+      <why>The product shell routes users to several Coming soon views. Calendar currently renders an empty-state shell, and task creation/completion affordances are not fully connected to backend operations.</why>
+      <tasks>
+        <task>Implement Today as an accurate agenda with live data, real recommendations, useful empty/loading/error states, and no hard-coded recommendation content.</task>
+        <task>Connect Calendar to event APIs with month/week/day views, create/edit/delete, recurrence handling, conflict feedback, and timezone clarity.</task>
+        <task>Connect Tasks create, update, complete, delete, filters, due dates, and project/goal linking.</task>
+        <task>Replace Goals, Projects, Commitments, Assistant, Insights, and Settings Coming soon screens with MVP workflows or deliberately hide routes until complete.</task>
+        <task>Make mutations optimistic only when rollback/error handling is correct; show actionable errors instead of console-only logging.</task>
+      </tasks>
+      <acceptance>A new user can sign in, create a task and event, plan a day, make a change, refresh, and see the persisted result without developer tools.</acceptance>
+      <estimate>3-6 engineering weeks for an integrated MVP, depending on final design and scope.</estimate>
+    </item>
+
+    <item id="p0-commitments" priority="P0" title="Complete commitment risk, interventions and reminders" areaCompletion="40">
+      <why>Risk is computed on demand; reminder sending returns 501; intervention acknowledgement, dismissal and snoozing return 501. This is an explicit product limitation in the current build.</why>
+      <tasks>
+        <task>Persist and recalculate commitment risk with a clear freshness policy and explainable factors.</task>
+        <task>Persist proactive intervention states and implement acknowledge, dismiss, and snooze with ownership checks and audit history.</task>
+        <task>Deliver reminders through configured channels with idempotency, retry limits, quiet hours, preferences, unsubscribe controls, and delivery status.</task>
+        <task>Expose these workflows in the Commitments UI and show honest unavailable/error states when channels are not configured.</task>
+      </tasks>
+      <acceptance>API and UI tests verify create/update/risk/intervention/reminder lifecycle, no duplicate notifications on retry, and no cross-user data access.</acceptance>
+      <estimate>2-4 engineering weeks plus provider account setup.</estimate>
+    </item>
+
+    <item id="p0-contracts" priority="P0" title="Validate and stabilize API request and response contracts" areaCompletion="60">
+      <why>There are Zod input schemas in the codebase, while Nest's global ValidationPipe uses class-validator DTO metadata. Confirm every controller actually receives effective validation and response shapes match client assumptions.</why>
+      <tasks>
+        <task>Audit every controller for DTO/class-validator or explicit Zod parsing; reject malformed input with consistent 400 responses.</task>
+        <task>Normalize query-string booleans, numbers, dates, pagination, enums, and nested payloads.</task>
+        <task>Generate or maintain an OpenAPI contract and use shared typed API models in the client.</task>
+        <task>Verify error responses are stable, safe to display, and do not leak internals.</task>
+      </tasks>
+      <acceptance>Contract tests cover valid, invalid, boundary, and unauthorized requests for each shipped endpoint; client types compile against the documented contract.</acceptance>
+      <estimate>1-2 engineering weeks.</estimate>
+    </item>
+
+    <item id="p0-quality" priority="P0" title="Expand automated tests around user journeys and data safety" areaCompletion="35">
+      <tasks>
+        <task>Add backend unit tests for auth, permissions, commitments, reminders, interventions, scheduling, integrations, and error cases.</task>
+        <task>Add API integration tests with a disposable database and Redis where required.</task>
+        <task>Add frontend component and end-to-end browser tests for login, task/event CRUD, scheduling, errors, and persistence after refresh.</task>
+        <task>Define coverage thresholds for critical services and make CI fail on regression.</task>
+        <task>Run tests against migrations and a clean install; add seed data that is safe and deterministic.</task>
+      </tasks>
+      <acceptance>CI runs build, type-check, lint, migration checks, API tests and browser smoke tests reliably from a clean checkout.</acceptance>
+      <estimate>2-4 engineering weeks, parallelizable with UI work.</estimate>
+    </item>
+
+    <item id="p1-integrations" priority="P1" title="Verify integrations with real providers and failure cases" areaCompletion="45">
+      <tasks>
+        <task>Complete or remove the Apple Calendar placeholder; verify Google and Outlook OAuth callback, token refresh, disconnect, incremental sync, and conflict resolution.</task>
+        <task>Test inbound and outbound calendar sync for duplicate events, deleted events, timezones, daylight-saving changes, recurrence, and provider rate limits.</task>
+        <task>Verify AI provider selection, structured output validation, timeout/retry behavior, rate limits, usage controls, and fallback behavior using non-sensitive test data.</task>
+        <task>Exercise email, SMS, push, and in-app notification setup in sandbox accounts; document which channels are supported in the MVP.</task>
+        <task>Surface missing credentials and provider outages in Settings and health/diagnostic views.</task>
+      </tasks>
+      <acceptance>Each advertised provider passes a documented connection, sync/delivery, refresh, revoke, and failure-recovery checklist.</acceptance>
+      <estimate>2-4 engineering weeks plus provider approval/configuration time.</estimate>
+    </item>
+
+    <item id="p1-security" priority="P1" title="Harden production security and privacy" areaCompletion="55">
+      <tasks>
+        <task>Perform a threat model and verify authorization/ownership checks on every user-scoped API and background job.</task>
+        <task>Require strong production secrets from a secret manager; remove unsafe fallback credentials and prevent secrets from appearing in logs or client bundles.</task>
+        <task>Review CORS, cookie/token storage, JWT expiry/rotation/revocation, password reset, session management, brute-force protection, and account recovery.</task>
+        <task>Add data export/deletion, retention rules, AI-provider data handling disclosures, and consent controls for calendar/email integrations.</task>
+        <task>Run dependency scanning, static analysis, security tests, and an external penetration review before broad launch.</task>
+      </tasks>
+      <acceptance>Production configuration fails closed for missing secrets; authorization tests prove tenant isolation; privacy policy, deletion/export behavior, and incident response are reviewed.</acceptance>
+      <estimate>2-4 engineering weeks, plus independent review.</estimate>
+    </item>
+
+    <item id="p1-release" priority="P1" title="Make staging and production release repeatable" areaCompletion="30">
+      <why>Docker and Compose scaffolding exist, but CI staging and production steps are placeholders. Local development success is not deployment readiness.</why>
+      <tasks>
+        <task>Choose and document the target hosting platform, environments, domains, TLS, networking, and managed PostgreSQL/Redis options.</task>
+        <task>Replace CI placeholder deploy steps with authenticated staging deployment, smoke tests, approval gates, and production promotion.</task>
+        <task>Run migrations as a controlled release step; define health checks, graceful shutdown, rollback, and version compatibility.</task>
+        <task>Configure database backups, restore drills, retention, Redis persistence expectations, and disaster recovery objectives.</task>
+        <task>Set up alerts for uptime, API errors, queue lag, failed calendar sync, AI-provider failures, and notification delivery.</task>
+        <task>Document environment variables without putting secrets in source control; rotate any credentials that may have been exposed.</task>
+      </tasks>
+      <acceptance>A tagged release can be deployed to staging and promoted to production using the runbook; health checks, restore test, alert delivery, and rollback are demonstrated.</acceptance>
+      <estimate>2-3 engineering weeks plus infrastructure and operations setup.</estimate>
+    </item>
+
+    <item id="p2-product-polish" priority="P2" title="Improve usability, accessibility and performance" areaCompletion="30">
+      <tasks>
+        <task>Complete responsive layouts and keyboard navigation; verify contrast, focus indicators, screen-reader names, and reduced-motion preferences.</task>
+        <task>Use consistent design tokens, loading skeletons, empty states, confirmations for destructive actions, and undo where safe.</task>
+        <task>Optimize large calendar and task lists with pagination/virtualization and avoid refetching or recalculating expensive plans unnecessarily.</task>
+        <task>Add localization and clear timezone/locale controls; verify dates around daylight-saving transitions.</task>
+        <task>Run usability sessions with representative users and prioritize issues by observed impact.</task>
+      </tasks>
+      <acceptance>Accessibility checks have no critical blockers, core views work at mobile and desktop sizes, and a usability test confirms users can complete the key flows.</acceptance>
+      <estimate>Ongoing; reserve 1-3 engineering weeks for the initial launch-quality pass.</estimate>
+    </item>
+
+    <item id="p2-docs" priority="P2" title="Align docs and support material with actual behavior" areaCompletion="50">
+      <tasks>
+        <task>Update README and API docs to separate implemented, partially implemented, and planned features.</task>
+        <task>Document local setup, environment configuration, migrations, OAuth callback URLs, provider setup, troubleshooting, backup/restore, and deployment.</task>
+        <task>Publish a user guide for permissions, AI suggestions, calendar sync, data export/deletion, and notification controls.</task>
+      </tasks>
+      <acceptance>A new developer can set up a clean environment and a new user can understand supported features without relying on undocumented assumptions.</acceptance>
+    </item>
+  </remainingBuildWork>
+
+  <recommendedMilestones>
+    <milestone order="1" name="Reliable MVP foundation" target="Before inviting external users">
+      Complete schema design and migration, API contract validation, primary task/calendar UI, commitment limitation decisions, and journey-level tests.
+    </milestone>
+    <milestone order="2" name="Private beta" target="After MVP foundation">
+      Verify OAuth and AI providers, notification delivery, data export/deletion, privacy controls, staging deployment, monitoring, and recovery drills.
+    </milestone>
+    <milestone order="3" name="Public launch" target="After private beta feedback">
+      Close security review findings, demonstrate production rollback and restore, meet accessibility and performance budgets, and finalize support/runbook ownership.
+    </milestone>
+  </recommendedMilestones>
+
+  <improvementSuggestions>
+    <suggestion rank="1" theme="Make the product useful before adding more engines">
+      Ship the Today, Calendar, Tasks, and Assistant loop end to end. Prioritize a dependable daily planning workflow over adding additional backend modules.
+    </suggestion>
+    <suggestion rank="2" theme="Explain AI and keep the user in control">
+      Show why each recommendation was made, distinguish facts from inference, require confirmation for consequential changes, and provide undo and audit history.
+    </suggestion>
+    <suggestion rank="3" theme="Unify the data model and remove compatibility shortcuts">
+      Treat Prisma schema, API validation, OpenAPI, and frontend types as one versioned contract. Add migrations only after review and test against existing data.
+    </suggestion>
+    <suggestion rank="4" theme="Make error states actionable">
+      Replace console-only failures and generic empty states with clear recovery guidance for offline API, expired OAuth, missing AI credentials, and failed reminders.
+    </suggestion>
+    <suggestion rank="5" theme="Protect privacy by design">
+      Minimize stored calendar and AI-provider data, provide data export/deletion and consent controls, document retention, and keep secrets outside source code.
+    </suggestion>
+    <suggestion rank="6" theme="Measure outcomes rather than feature counts">
+      Track schedule acceptance, completed planned tasks, avoided conflicts, reminder delivery, sync freshness, and user-reported trust. Use opt-in, privacy-preserving analytics.
+    </suggestion>
+    <suggestion rank="7" theme="Keep reliability visible">
+      Add dashboards and alerts for API health, database latency, queue backlog, provider failures, sync lag, and notification delivery; rehearse restore and rollback.
+    </suggestion>
+  </improvementSuggestions>
+
+  <assumptionsAndLimitations>
+    <assumption>Percentages are engineering estimates from source files, project documentation, and the latest runtime/type-check evidence available at report creation.</assumption>
+    <assumption>Feature descriptions in PROGRESS.md may describe intended or implemented backend capability; they are not proof of production behavior unless supported by tests and runtime evidence.</assumption>
+    <assumption>Effort ranges assume one experienced full-stack engineer with normal review and access to required provider accounts; parallel work or scope changes will alter estimates.</assumption>
+    <limitation>This is a build roadmap, not a security audit, full code audit, legal review, or deployment certification.</limitation>
+    <limitation>Do not run a database migration, schema push, or credential rotation solely from this XML; review the target environment and obtain the appropriate approval first.</limitation>
+  </assumptionsAndLimitations>
+</calAssistBuildData>

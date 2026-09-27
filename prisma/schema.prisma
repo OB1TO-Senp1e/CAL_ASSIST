@@ -1,0 +1,1350 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id                       String                    @id @default(cuid())
+  email                    String                    @unique
+  name                     String?
+  passwordHash             String
+  timezone                 String                    @default("UTC")
+  locale                   String                    @default("en-US")
+  deletedAt                DateTime?
+  createdAt                DateTime                  @default(now())
+  updatedAt                DateTime                  @updatedAt
+  aiSuggestions            AiSuggestion[]
+  assistantActions         AssistantAction[]
+  assistantRecommendations AssistantRecommendation[]
+  auditLogs                AuditLog[]
+  autonomyRules            AutonomyRule[]
+  availabilities           AvailabilityRule[]
+  calendars                Calendar[]
+  calendarConnections      CalendarConnection[]
+  commitments              Commitment[]
+  constraints              Constraint[]
+  conversations            Conversation[]
+  deadlines                Deadline[]
+  events                   Event[]
+  focusBlocks              FocusBlock[]
+  goals                    Goal[]
+  integrations             Integration[]
+  intents                  Intent[]
+  memories                 Memory[]
+  memoryRelations          MemoryRelation[]
+  memoryConflicts          MemoryConflict[]
+  milestones               Milestone[]
+  notifications            Notification[]
+  permissions              Permission[]
+  plans                    Plan[]
+  planVersions             PlanVersion[]
+  preferences              Preference[]
+  profile                  Profile?
+  projects                 Project[]
+  reminders                Reminder[]
+  routines                 Routine[]
+  schedules                Schedule[]
+  scheduleBlocks           ScheduleBlock[]
+  scheduleChanges          ScheduleChange[]
+  sessions                 Session[]
+  tasks                    Task[]
+  timeBlocks               TimeBlock[]
+  travelBuffers            TravelBuffer[]
+
+  @@index([email])
+  @@index([deletedAt])
+}
+
+model Profile {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  avatarUrl    String?
+  bio          String?
+  organization String?
+  jobTitle     String?
+  phone        String?
+  dateCreated  DateTime @default(now())
+  lastUpdated  DateTime @updatedAt
+  user         User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  lastUsed  DateTime @default(now())
+  ipAddress String?
+  userAgent String?
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Preference {
+  id          String             @id @default(cuid())
+  userId      String
+  category    PreferenceCategory
+  key         String
+  valueJson   String
+  description String?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  deletedAt   DateTime?
+  user        User               @relation(fields: [userId], references: [id])
+
+  @@unique([userId, category, key])
+  @@index([userId])
+}
+
+model Goal {
+  id          String      @id @default(cuid())
+  userId      String
+  title       String
+  description String?
+  status      GoalStatus  @default(PENDING)
+  priority    Int         @default(0)
+  startDate   DateTime?
+  targetDate  DateTime?
+  completedAt DateTime?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  deletedAt   DateTime?
+  deadlines   Deadline[]
+  user        User        @relation(fields: [userId], references: [id])
+  milestones  Milestone[]
+  plans       Plan[]
+  projects    Project[]
+  tasks       Task[]
+
+  @@index([userId])
+  @@index([userId, status])
+  @@index([targetDate])
+}
+
+model Project {
+  id          String        @id @default(cuid())
+  userId      String
+  goalId      String?
+  title       String
+  description String?
+  status      ProjectStatus @default(PENDING)
+  priority    Int           @default(0)
+  startDate   DateTime?
+  dueDate     DateTime?
+  completedAt DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  deletedAt   DateTime?
+  deadlines   Deadline[]
+  milestones  Milestone[]
+  goal        Goal?         @relation(fields: [goalId], references: [id])
+  user        User          @relation(fields: [userId], references: [id])
+  tasks       Task[]
+
+  @@index([userId])
+  @@index([goalId])
+  @@index([dueDate])
+}
+
+model Milestone {
+  id          String          @id @default(cuid())
+  userId      String
+  goalId      String?
+  projectId   String?
+  title       String
+  description String?
+  status      MilestoneStatus @default(PENDING)
+  priority    Int             @default(0)
+  dueDate     DateTime
+  completedAt DateTime?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  deletedAt   DateTime?
+  goal        Goal?           @relation(fields: [goalId], references: [id])
+  project     Project?        @relation(fields: [projectId], references: [id])
+  user        User            @relation(fields: [userId], references: [id])
+  tasks       Task[]
+
+  @@index([userId])
+  @@index([goalId])
+  @@index([projectId])
+  @@index([dueDate])
+}
+
+model Task {
+  id                   String           @id @default(cuid())
+  userId               String
+  projectId            String?
+  goalId               String?
+  milestoneId          String?
+  intentId             String?
+  title                String
+  description          String?
+  status               TaskStatus       @default(PENDING)
+  priority             Int              @default(0)
+  estimatedDurationMin Int?
+  actualDurationMin    Int?
+  dueDate              DateTime?
+  startDate            DateTime?
+  completedAt          DateTime?
+  source               TaskSource       @default(USER)
+  flexibility          TaskFlexibility  @default(MEDIUM)
+  energyRequirement    EnergyLevel      @default(MEDIUM)
+  context              String?
+  preferredTime        DateTime?
+  location             String?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+  deletedAt            DateTime?
+  parentTaskId         String?
+  focusBlocks          FocusBlock[]
+  reminders            Reminder[]
+  goal                 Goal?            @relation(fields: [goalId], references: [id])
+  intent               Intent?          @relation(fields: [intentId], references: [id])
+  milestone            Milestone?       @relation(fields: [milestoneId], references: [id])
+  parentTask           Task?            @relation("TaskParent", fields: [parentTaskId], references: [id])
+  subtasks             Task[]           @relation("TaskParent")
+  project              Project?         @relation(fields: [projectId], references: [id])
+  user                 User             @relation(fields: [userId], references: [id])
+  dependencies         TaskDependency[] @relation("TaskPrerequisites")
+  dependentOf          TaskDependency[] @relation("TaskDependents")
+  timeBlocks           TimeBlock[]
+
+  @@index([userId])
+  @@index([projectId])
+  @@index([goalId])
+  @@index([milestoneId])
+  @@index([intentId])
+  @@index([status])
+  @@index([dueDate])
+  @@index([parentTaskId])
+  @@index([flexibility])
+  @@index([energyRequirement])
+}
+
+model TaskDependency {
+  id          String         @id @default(cuid())
+  taskId      String
+  dependsOnId String
+  type        DependencyType @default(FINISH_TO_START)
+  createdAt   DateTime       @default(now())
+  dependsOn   Task           @relation("TaskPrerequisites", fields: [dependsOnId], references: [id])
+  task        Task           @relation("TaskDependents", fields: [taskId], references: [id])
+
+  @@unique([taskId, dependsOnId])
+  @@index([taskId])
+  @@index([dependsOnId])
+}
+
+model Calendar {
+  id           String              @id @default(cuid())
+  userId       String
+  connectionId String?
+  name         String
+  description  String?
+  color        String?             @default("#3b82f6")
+  timezone     String              @default("UTC")
+  isVisible    Boolean             @default(true)
+  isPrimary    Boolean             @default(false)
+  provider     CalendarProvider    @default(LOCAL)
+  externalId   String?
+  syncToken    String?
+  lastSynced   DateTime?
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  connection   CalendarConnection? @relation(fields: [connectionId], references: [id])
+  user         User                @relation(fields: [userId], references: [id])
+  events       Event[]
+
+  @@unique([userId, connectionId, externalId])
+  @@index([userId])
+  @@index([connectionId])
+  @@index([provider])
+  @@index([externalId])
+}
+
+model CalendarConnection {
+  id             String           @id @default(cuid())
+  userId         String
+  provider       CalendarProvider
+  externalUserId String?
+  accessToken    String?
+  refreshToken   String?
+  tokenExpiresAt DateTime?
+  scopes         String[]
+  isActive       Boolean          @default(true)
+  lastSync       DateTime?
+  syncToken      String?
+  syncError      String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  calendars      Calendar[]
+  user           User             @relation(fields: [userId], references: [id])
+
+  @@unique([userId, provider])
+  @@index([userId])
+  @@index([provider])
+}
+
+model Event {
+  id                 String             @id @default(cuid())
+  userId             String
+  calendarId         String?
+  title              String
+  description        String?
+  location           String?
+  startDate          DateTime
+  endDate            DateTime
+  allDay             Boolean            @default(false)
+  timezone           String             @default("UTC")
+  recurrenceRule     String?
+  exceptionDates     DateTime[]
+  originalEndDate    DateTime?
+  status             EventStatus        @default(CONFIRMED)
+  visibility         EventVisibility    @default(PRIVATE)
+  source             EventSource        @default(USER)
+  calendarExternalId String?
+  externalETag       String?
+  createdBy          String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  deletedAt          DateTime?
+  calendar           Calendar?          @relation(fields: [calendarId], references: [id])
+  user               User               @relation(fields: [userId], references: [id])
+  eventParticipants  EventParticipant[]
+  reminders          Reminder[]
+  timeBlocks         TimeBlock[]
+
+  @@index([userId])
+  @@index([calendarId])
+  @@index([startDate, endDate])
+  @@index([recurrenceRule])
+  @@index([calendarExternalId])
+}
+
+model EventParticipant {
+  id             String            @id @default(cuid())
+  eventId        String
+  email          String
+  displayName    String?
+  status         ParticipantStatus @default(NEEDS_ACTION)
+  isOrganizer    Boolean           @default(false)
+  responseStatus String?
+  createdAt      DateTime          @default(now())
+  event          Event             @relation(fields: [eventId], references: [id])
+
+  @@unique([eventId, email])
+  @@index([eventId])
+  @@index([email])
+}
+
+model Reminder {
+  id           String              @id @default(cuid())
+  userId       String
+  eventId      String?
+  taskId       String?
+  commitmentId String?
+  timeType     ReminderType
+  timeValue    Int
+  method       NotificationChannel @default(APP)
+  message      String?
+  isActive     Boolean             @default(true)
+  completedAt  DateTime?
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  commitment   Commitment?         @relation(fields: [commitmentId], references: [id])
+  event        Event?              @relation(fields: [eventId], references: [id])
+  task         Task?               @relation(fields: [taskId], references: [id])
+  user         User                @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([eventId])
+  @@index([taskId])
+  @@index([commitmentId])
+}
+
+model Commitment {
+  id                String           @id @default(cuid())
+  userId            String
+  title             String
+  description       String?
+  deadline          DateTime
+  timezone          String           @default("UTC")
+  status            CommitmentStatus @default(PENDING)
+  priority          Int              @default(0)
+  source            CommitmentSource @default(USER)
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  deletedAt         DateTime?
+  user              User             @relation(fields: [userId], references: [id])
+  reminders         Reminder[]
+  timeBlocks        TimeBlock[]      @relation("TimeBlockCommitment")
+  relatedTimeBlocks TimeBlock[]      @relation("TimeBlockRelatedCommitment")
+
+  @@index([userId])
+  @@index([deadline])
+  @@index([status])
+}
+
+model Routine {
+  id          String      @id @default(cuid())
+  userId      String
+  title       String
+  description String?
+  dayOfWeek   Int
+  startTime   String
+  endTime     String
+  timezone    String      @default("UTC")
+  isActive    Boolean     @default(true)
+  priority    Int         @default(0)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  user        User        @relation(fields: [userId], references: [id])
+  timeBlocks  TimeBlock[]
+
+  @@index([userId])
+  @@index([dayOfWeek])
+  @@index([isActive])
+}
+
+model TimeBlock {
+  id                  String          @id @default(cuid())
+  userId              String
+  eventId             String?
+  taskId              String?
+  focusBlockId        String?
+  travelBufferId      String?
+  routineId           String?
+  scheduleId          String?
+  title               String
+  description         String?
+  startDate           DateTime
+  endDate             DateTime
+  timezone            String          @default("UTC")
+  blockType           TimeBlockType
+  status              TimeBlockStatus @default(SCHEDULED)
+  focusLevel          Int?            @default(1)
+  source              TimeBlockSource @default(USER)
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+  commitmentId        String?
+  relatedCommitmentId String?
+  commitment          Commitment?     @relation("TimeBlockCommitment", fields: [commitmentId], references: [id])
+  event               Event?          @relation(fields: [eventId], references: [id])
+  focusBlock          FocusBlock?     @relation(fields: [focusBlockId], references: [id])
+  relatedCommitment   Commitment?     @relation("TimeBlockRelatedCommitment", fields: [relatedCommitmentId], references: [id])
+  routine             Routine?        @relation(fields: [routineId], references: [id])
+  schedule            Schedule?       @relation(fields: [scheduleId], references: [id])
+  task                Task?           @relation(fields: [taskId], references: [id])
+  travelBuffer        TravelBuffer?   @relation(fields: [travelBufferId], references: [id])
+  user                User            @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([startDate, endDate])
+  @@index([eventId])
+  @@index([taskId])
+  @@index([blockType])
+  @@index([scheduleId])
+}
+
+model FocusBlock {
+  id              String      @id @default(cuid())
+  userId          String
+  title           String
+  description     String?
+  startDate       DateTime
+  endDate         DateTime
+  timezone        String      @default("UTC")
+  focusLevel      Int         @default(3)
+  taskId          String?
+  scheduledTaskId String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  task            Task?       @relation(fields: [taskId], references: [id])
+  user            User        @relation(fields: [userId], references: [id])
+  timeBlocks      TimeBlock[]
+
+  @@index([userId])
+  @@index([startDate, endDate])
+  @@index([taskId])
+}
+
+model TravelBuffer {
+  id           String      @id @default(cuid())
+  userId       String
+  title        String
+  description  String?
+  startDate    DateTime
+  endDate      DateTime
+  timezone     String      @default("UTC")
+  fromLocation String?
+  toLocation   String?
+  travelMode   TravelMode  @default(DRIVING)
+  durationMin  Int
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  timeBlocks   TimeBlock[]
+  user         User        @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([startDate, endDate])
+}
+
+model AvailabilityRule {
+  id          String             @id @default(cuid())
+  userId      String
+  title       String?
+  dayOfWeek   Int?
+  startDate   DateTime?
+  endDate     DateTime?
+  startTime   String
+  endTime     String
+  timezone    String             @default("UTC")
+  recurrence  RecurrencePattern? @default(WEEKLY)
+  isAvailable Boolean            @default(true)
+  priority    Int                @default(0)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  deletedAt   DateTime?
+  user        User               @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([dayOfWeek])
+  @@index([startDate, endDate])
+}
+
+model Constraint {
+  id              String             @id @default(cuid())
+  userId          String
+  title           String
+  description     String?
+  type            ConstraintType
+  severity        ConstraintSeverity @default(MEDIUM)
+  startDate       DateTime?
+  endDate         DateTime?
+  timeWindowStart String?
+  timeWindowEnd   String?
+  daysOfWeek      Int[]
+  isActive        Boolean            @default(true)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  deletedAt       DateTime?
+  user            User               @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([type])
+  @@index([isActive])
+}
+
+model Deadline {
+  id          String         @id @default(cuid())
+  userId      String
+  title       String
+  description String?
+  dueDate     DateTime
+  timezone    String         @default("UTC")
+  goalId      String?
+  projectId   String?
+  status      DeadlineStatus @default(PENDING)
+  priority    Int            @default(0)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  goal        Goal?          @relation(fields: [goalId], references: [id])
+  project     Project?       @relation(fields: [projectId], references: [id])
+  user        User           @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([goalId])
+  @@index([projectId])
+  @@index([dueDate])
+  @@index([status])
+}
+
+model Memory {
+  id              String            @id @default(cuid())
+  userId          String
+  content         String
+  description     String?
+  category        MemoryCategory
+  scope           MemoryScope       @default(GLOBAL)
+  importance      Float             @default(0.5)
+  confidence      Float?
+  embedding       Float[]           @default([])
+  source          MemorySource      @default(USER_INPUT)
+  status          MemoryStatus      @default(ACTIVE)
+  isUserEditable  Boolean           @default(true)
+  isConfirmed     Boolean           @default(false)
+  confirmedAt     DateTime?
+  confirmedBy     String?
+  tags            String[]          @default([])
+  metadata        Json?
+  accessCount     Int               @default(0)
+  lastAccessed    DateTime          @default(now())
+  expiresAt       DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  user            User              @relation(fields: [userId], references: [id])
+  sourceRelations MemoryRelation[]  @relation("SourceMemory")
+  targetRelations MemoryRelation[]  @relation("TargetMemory")
+  conflicts1      MemoryConflict[]  @relation("MemoryConflict1")
+  conflicts2      MemoryConflict[]  @relation("MemoryConflict2")
+
+  @@index([userId])
+  @@index([category])
+  @@index([source])
+  @@index([importance])
+  @@index([expiresAt])
+  @@index([status])
+  @@index([scope])
+  @@index([isConfirmed])
+}
+
+model MemoryConflict {
+  id            String        @id @default(cuid())
+  userId        String
+  memoryId1     String
+  memoryId2     String
+  type          String
+  description   String
+  severity      String
+  detectedAt    DateTime      @default(now())
+  resolvedAt    DateTime?
+  resolution    String?
+  memory1       Memory        @relation("MemoryConflict1", fields: [memoryId1], references: [id], onDelete: Cascade)
+  memory2       Memory        @relation("MemoryConflict2", fields: [memoryId2], references: [id], onDelete: Cascade)
+  user          User          @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([memoryId1])
+  @@index([memoryId2])
+  @@index([resolvedAt])
+}
+
+model MemoryRelation {
+  id              String   @id @default(cuid())
+  userId          String
+  memoryId        String
+  relatedMemoryId String
+  relationType    String
+  strength        Float    @default(0.5)
+  createdAt       DateTime @default(now())
+  memory          Memory   @relation("SourceMemory", fields: [memoryId], references: [id])
+  relatedMemory   Memory   @relation("TargetMemory", fields: [relatedMemoryId], references: [id])
+  user            User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([memoryId])
+  @@index([relatedMemoryId])
+}
+
+model Conversation {
+  id              String                    @id @default(cuid())
+  userId          String
+  title           String?
+  context         Json?
+  model           String?
+  provider        String?
+  isActive        Boolean                   @default(true)
+  createdAt       DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
+  lastMessageAt   DateTime                  @default(now())
+  actions         AssistantAction[]
+  recommendations AssistantRecommendation[]
+  user            User                      @relation(fields: [userId], references: [id])
+  messages        ConversationMessage[]
+
+  @@index([userId])
+  @@index([isActive])
+  @@index([lastMessageAt])
+}
+
+model ConversationMessage {
+  id             String       @id @default(cuid())
+  conversationId String
+  userId         String
+  role           MessageRole
+  content        String
+  reasoning      String?
+  tokensUsed     Int?
+  modelOutput    Json?
+  createdAt      DateTime     @default(now())
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+
+  @@index([conversationId])
+  @@index([role])
+}
+
+model AssistantAction {
+  id             String        @id @default(cuid())
+  userId         String
+  conversationId String?
+  actionType     String
+  entityType     String?
+  entityId       String?
+  parameters     Json?
+  outcome        Json?
+  confidence     Float?
+  reasoning      String?
+  wasApplied     Boolean       @default(false)
+  appliedAt      DateTime?
+  createdAt      DateTime      @default(now())
+  conversation   Conversation? @relation(fields: [conversationId], references: [id])
+  user           User          @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([conversationId])
+  @@index([entityType, entityId])
+}
+
+model AssistantRecommendation {
+  id             String               @id @default(cuid())
+  userId         String
+  conversationId String?
+  type           RecommendationType
+  title          String
+  description    String
+  reasoning      String
+  confidence     Float
+  priority       Int                  @default(0)
+  entityType     String?
+  entityId       String?
+  context        Json?
+  expiresAt      DateTime?
+  status         RecommendationStatus @default(PENDING)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  conversation   Conversation?        @relation(fields: [conversationId], references: [id])
+  user           User                 @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([conversationId])
+  @@index([status])
+  @@index([expiresAt])
+  @@index([type])
+}
+
+model AiSuggestion {
+  id             String             @id @default(cuid())
+  userId         String
+  entityType     String
+  entityId       String?
+  intentId       String?
+  title          String
+  description    String
+  reasoning      String
+  confidence     Float
+  suggestionJson String
+  status         AiSuggestionStatus @default(PENDING)
+  appliedAt      DateTime?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  user           User               @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([status])
+}
+
+model Intent {
+  id           String       @id @default(cuid())
+  userId       String
+  originalText String
+  parsedJson   String
+  confidence   Float?
+  status       IntentStatus @default(PENDING)
+  errorMessage String?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  user         User         @relation(fields: [userId], references: [id])
+  tasks        Task[]
+
+  @@index([userId])
+  @@index([status])
+}
+
+model Plan {
+  id          String        @id @default(cuid())
+  userId      String
+  title       String
+  description String?
+  goalId      String?
+  status      PlanStatus    @default(DRAFT)
+  priority    Int           @default(0)
+  startDate   DateTime?
+  endDate     DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  deletedAt   DateTime?
+  goal        Goal?         @relation(fields: [goalId], references: [id])
+  user        User          @relation(fields: [userId], references: [id])
+  versions    PlanVersion[]
+  schedules   Schedule[]
+
+  @@index([userId])
+  @@index([goalId])
+  @@index([status])
+}
+
+model PlanVersion {
+  id          String   @id @default(cuid())
+  userId      String
+  planId      String
+  version     Int
+  title       String
+  description String?
+  tasks       Json
+  constraints Json?
+  preferences Json?
+  reasoning   String?
+  createdAt   DateTime @default(now())
+  createdBy   String?
+  plan        Plan     @relation(fields: [planId], references: [id])
+  user        User     @relation(fields: [userId], references: [id])
+
+  @@unique([planId, version])
+  @@index([userId])
+  @@index([planId])
+}
+
+model Schedule {
+  id          String           @id @default(cuid())
+  userId      String
+  planId      String?
+  startDate   DateTime
+  endDate     DateTime
+  timezone    String           @default("UTC")
+  status      ScheduleStatus   @default(ACTIVE)
+  version     Int              @default(1)
+  isGenerated Boolean          @default(false)
+  generatedAt DateTime?
+  generatedBy String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  plan        Plan?            @relation(fields: [planId], references: [id])
+  user        User             @relation(fields: [userId], references: [id])
+  blocks      ScheduleBlock[]
+  changes     ScheduleChange[]
+  timeBlocks  TimeBlock[]
+
+  @@index([userId])
+  @@index([planId])
+  @@index([startDate, endDate])
+}
+
+model ScheduleBlock {
+  id         String    @id @default(cuid())
+  userId     String
+  scheduleId String?
+  position   Int
+  sequence   Json?
+  createdAt  DateTime  @default(now())
+  schedule   Schedule? @relation(fields: [scheduleId], references: [id])
+  user       User      @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([scheduleId])
+}
+
+model ScheduleChange {
+  id         String             @id @default(cuid())
+  userId     String
+  scheduleId String?
+  changeType ScheduleChangeType
+  entityType String?
+  entityId   String?
+  oldData    Json?
+  newData    Json?
+  reason     String?
+  confidence Float?
+  wasApplied Boolean            @default(false)
+  appliedAt  DateTime?
+  createdAt  DateTime           @default(now())
+  schedule   Schedule?          @relation(fields: [scheduleId], references: [id])
+  user       User               @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([scheduleId])
+  @@index([entityType, entityId])
+}
+
+model Notification {
+  id          String               @id @default(cuid())
+  userId      String
+  type        NotificationType
+  title       String
+  message     String
+  priority    NotificationPriority @default(NORMAL)
+  channel     NotificationChannel  @default(APP)
+  entityType  String?
+  entityId    String?
+  actionUrl   String?
+  isRead      Boolean              @default(false)
+  isDismissed Boolean              @default(false)
+  scheduledAt DateTime?
+  sentAt      DateTime?
+  readAt      DateTime?
+  createdAt   DateTime             @default(now())
+  expiresAt   DateTime?
+  user        User                 @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+  @@index([entityType, entityId])
+  @@index([expiresAt])
+}
+
+model Integration {
+  id                  String          @id @default(cuid())
+  userId              String
+  type                IntegrationType
+  name                String
+  config              Json
+  isActive            Boolean         @default(true)
+  lastSync            DateTime?
+  lastError           String?
+  syncIntervalSeconds Int?            @default(300)
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+  user                User            @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([type])
+  @@index([isActive])
+}
+
+model Permission {
+  id        String          @id @default(cuid())
+  userId    String
+  scope     String
+  level     PermissionLevel
+  grantedBy String
+  grantedAt DateTime        @default(now())
+  expiresAt DateTime?
+  isActive  Boolean         @default(true)
+  user      User            @relation(fields: [userId], references: [id])
+
+  @@index([userId, scope])
+  @@index([level])
+  @@index([expiresAt])
+}
+
+model AutonomyRule {
+  id           String              @id @default(cuid())
+  userId       String
+  name         String
+  description  String?
+  scope        String?
+  triggerType  AutonomyTriggerType
+  actionType   AutonomyActionType
+  entityType   String?
+  conditions   Json
+  actionConfig Json
+  isActive     Boolean             @default(true)
+  priority     Int                 @default(0)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  createdBy    String?
+  user         User                @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([triggerType])
+  @@index([entityType])
+  @@index([isActive])
+}
+
+model AuditLog {
+  id              String   @id @default(cuid())
+  userId          String
+  action          String
+  entityType      String
+  entityId        String?
+  details         String
+  oldData         Json?
+  newData         Json?
+  ipAddress       String?
+  userAgent       String?
+  userAgentParsed Json?
+  correlationId   String?
+  durationMs      Int?
+  success         Boolean  @default(true)
+  errorMessage    String?
+  createdAt       DateTime @default(now())
+  user            User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([action])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@index([correlationId])
+  @@index([success])
+}
+
+enum PreferenceCategory {
+  WORKING_HOURS
+  FOCUS_PREFERENCES
+  MEETING_CONSTRAINTS
+  NOTIFICATION_SETTINGS
+  PRIVACY_SETTINGS
+  AI_PERSONALITY
+  THEME_SETTINGS
+}
+
+enum GoalStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  ON_HOLD
+}
+
+enum ProjectStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  BLOCKED
+  ON_HOLD
+}
+
+enum MilestoneStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  BLOCKED
+}
+
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  BLOCKED
+  ON_HOLD
+}
+
+enum TaskSource {
+  USER
+  AI_GENERATED
+  IMPORTED
+}
+
+enum TaskFlexibility {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum EnergyLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum DependencyType {
+  FINISH_TO_START
+  START_TO_START
+  FINISH_TO_FINISH
+  START_TO_FINISH
+}
+
+enum CalendarProvider {
+  LOCAL
+  GOOGLE
+  OUTLOOK
+  ICAL
+  EXCHANGE
+  CUSTOM
+}
+
+enum EventStatus {
+  CONFIRMED
+  TENTATIVE
+  CANCELLED
+  NEEDS_ACTION
+}
+
+enum EventVisibility {
+  PUBLIC
+  PRIVATE
+  CONFIDENTIAL
+}
+
+enum EventSource {
+  USER
+  AI_GENERATED
+  SYNCED
+}
+
+enum ParticipantStatus {
+  NEEDS_ACTION
+  ACCEPTED
+  DECLINED
+  TENTATIVE
+  DELEGATED
+}
+
+enum ReminderType {
+  MINUTES_BEFORE
+  HOURS_BEFORE
+  DAYS_BEFORE
+  AT_TIME
+  ON_DATE
+}
+
+enum CommitmentStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  OVERDUE
+  CANCELLED
+  MISSED
+}
+
+enum CommitmentSource {
+  USER
+  AI_GENERATED
+  EMAIL_INTEGRATION
+}
+
+enum TimeBlockType {
+  FOCUS
+  MEETING
+  TRAVEL
+  BREAK
+  PERSONAL
+  BUFFER
+  DEADLINE
+  ROUTINE
+}
+
+enum TimeBlockStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  MISSED
+}
+
+enum TimeBlockSource {
+  USER
+  AI_GENERATED
+  SYNCED
+  RECURRING_TEMPLATE
+}
+
+enum TravelMode {
+  DRIVING
+  WALKING
+  TRANSIT
+  FLYING
+  BIKING
+}
+
+enum RecurrencePattern {
+  DAILY
+  WEEKLY
+  MONTHLY
+  YEARLY
+  CUSTOM
+}
+
+enum ConstraintType {
+  NO_MEETINGS
+  FOCUS_REQUIRED
+  AVOID_TIME
+  PREFERRED_TIME
+  MAX_MEETING_HOURS
+  MIN_BREAK_TIME
+  ENERGY_CONSERVATION
+}
+
+enum ConstraintSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  HARD_STOP
+}
+
+enum DeadlineStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  OVERDUE
+  MISSED
+}
+
+enum MemoryCategory {
+  EXPLICIT_PREFERENCE
+  EXPLICIT_FACT
+  USER_RULE
+  LEARNED_PATTERN
+  TEMPORARY_CONTEXT
+}
+
+enum MemorySource {
+  USER_INPUT
+  AI_INFERENCE
+  SYSTEM_OBSERVATION
+  EXTERNAL_SYNC
+  IMPORTED
+}
+
+enum MemoryStatus {
+  ACTIVE
+  DEPRECATED
+  CONFLICTING
+  ARCHIVED
+  DELETED
+}
+
+enum MemoryScope {
+  GLOBAL
+  SCHEDULING
+  TASKS
+  MEETINGS
+  FOCUS_TIME
+  BREAKS
+  TRAVEL
+  WORK_HOURS
+  PERSONAL
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+  TOOL
+}
+
+enum RecommendationType {
+  SCHEDULING
+  REPRIORITIZATION
+  TIME_REALLOCATION
+  CONFLICT_RESOLUTION
+  CAPACITY_PLANNING
+  RISK_ALERT
+  OPPORTUNITY
+}
+
+enum RecommendationStatus {
+  PENDING
+  APPLIED
+  REJECTED
+  EXPIRED
+  AUTOMATICALLY_APPLIED
+}
+
+enum AiSuggestionStatus {
+  PENDING
+  APPLIED
+  REJECTED
+  EXPIRED
+}
+
+enum IntentStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum PlanStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+  ARCHIVED
+  CANCELLED
+}
+
+enum ScheduleStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum ScheduleChangeType {
+  ADD_BLOCK
+  REMOVE_BLOCK
+  RESCHEDULE
+  REALLOCATE
+  CONFLICT_RESOLUTION
+  REALITY_ADJUSTMENT
+}
+
+enum NotificationType {
+  REMINDER
+  CONFLICT_ALERT
+  RISK_ALERT
+  RECOMMENDATION
+  STATUS_UPDATE
+  MESSAGE
+  SYSTEM
+}
+
+enum NotificationPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum NotificationChannel {
+  APP
+  EMAIL
+  SMS
+  PUSH
+}
+
+enum IntegrationType {
+  GOOGLE_CALENDAR
+  MICROSOFT_OUTLOOK
+  ICAL
+  EXCHANGE
+  GOOGLE_TASKS
+  MICROSOFT_TODO
+  SLACK
+  EMAIL
+  WEATHER
+  TRAFFIC
+  CUSTOM
+}
+
+enum PermissionLevel {
+  NONE
+  READ
+  WRITE
+  EXECUTE
+  AUTO
+}
+
+enum AutonomyTriggerType {
+  SCHEDULE_CONFLICT
+  DEADLINE_APPROACHING
+  ENERGY_PATTERN_MATCH
+  AVAILABILITY_WINDOW_FOUND
+  RISK_DETECTED
+  REALITY_DEVIATION
+  MANUAL
+}
+
+enum AutonomyActionType {
+  CREATE_EVENT
+  RESCHEDULE_BLOCK
+  MARK_TASK_COMPLETE
+  SEND_NOTIFICATION
+  ADJUST_PREFERENCE
+  CREATE_TASK
+  CREATE_GOAL
+}

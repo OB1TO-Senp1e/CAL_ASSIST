@@ -1,0 +1,1 @@
+INSERT INTO "User" (email, name, "passwordHash", "createdAt", "updatedAt") VALUES ('testlogin@example.com', 'Test Login', 'plain-test-hash', NOW(), NOW()) ON CONFLICT (email) DO NOTHING;

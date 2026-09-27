@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "CAL_ASSIST — Personal Time Operating System",
+    "output": "calassist-architecture.html",
+    "quality_profile": "standard",
+    "views": [
+      { "id": "primary-path", "label": "Primary: Schedule Compilation", "focus": ["browser", "api-gateway", "time-compiler", "postgres", "calendar-engine", "time-blocks", "notifications"], "note": "User requests schedule -> Time Compiler reads tasks/events -> produces ScheduleProposal -> persists as Time Blocks -> sends reminders" },
+      { "id": "calendar-sync", "label": "Calendar Integration", "focus": ["calendar-adapters", "google-calendar", "outlook-calendar", "calendar-engine"], "note": "Bidirectional sync via OAuth2 with incremental tokens" },
+      { "id": "ai-intelligence", "label": "AI Intelligence Layer", "focus": ["api-gateway", "ai-providers", "intent-parser", "planning-engine"], "note": "OpenAI primary, Ollama fallback; intent parsing -> structured planning -> task decomposition" }
+    ]
+  },
+  "components": [
+    { "id": "browser", "type": "external", "label": "User", "sublabel": "React + Vite (3001)", "pos": [50, 300], "size": [120, 50] },
+    { "id": "api-gateway", "type": "backend", "label": "API Gateway", "sublabel": "NestJS :3000", "pos": [250, 300], "size": [140, 60], "tag": "JWT + OpenAPI" },
+    { "id": "auth", "type": "security", "label": "Auth", "sublabel": "Local + JWT", "pos": [250, 120], "size": [120, 50], "tag": "bcrypt + PKCE" },
+    { "id": "time-compiler", "type": "backend", "label": "Time Compiler", "sublabel": "Deterministic Scheduler", "pos": [480, 150], "size": [160, 60], "tag": "topo-sort + slot-pack" },
+    { "id": "hierarchy", "type": "backend", "label": "Hierarchy", "sublabel": "Goal / Project / Milestone / Task", "pos": [480, 260], "size": [160, 60], "tag": "progress aggregation" },
+    { "id": "calendar-engine", "type": "backend", "label": "Calendar Engine", "sublabel": "RRULE + IANA TZ", "pos": [480, 370], "size": [160, 60], "tag": "conflict + views" },
+    { "id": "calendar-adapters", "type": "backend", "label": "Calendar Adapters", "sublabel": "Google / Outlook / Local", "pos": [720, 150], "size": [160, 60], "tag": "OAuth2 + sync tokens" },
+    { "id": "google-calendar", "type": "external", "label": "Google Calendar API", "sublabel": "v3 / OAuth2", "pos": [950, 80], "size": [140, 50] },
+    { "id": "outlook-calendar", "type": "external", "label": "Microsoft Graph", "sublabel": "Outlook / OAuth2", "pos": [950, 180], "size": [140, 50] },
+    { "id": "notifications", "type": "backend", "label": "Notifications", "sublabel": "Email / SMS / Push / In-App", "pos": [720, 300], "size": [160, 60], "tag": "multi-channel" },
+    { "id": "ai-providers", "type": "backend", "label": "AI Providers", "sublabel": "OpenAI + Ollama", "pos": [720, 420], "size": [160, 60], "tag": "fallback chain" },
+    { "id": "openai", "type": "external", "label": "OpenAI API", "sublabel": "GPT-4o", "pos": [950, 480], "size": [120, 50] },
+    { "id": "ollama", "type": "external", "label": "Ollama (Local)", "sublabel": "Llama / Mistral", "pos": [950, 560], "size": [120, 50] },
+    { "id": "postgres", "type": "database", "label": "PostgreSQL", "sublabel": "Prisma ORM (5432)", "pos": [720, 50], "size": [160, 60], "tag": "40+ models" },
+    { "id": "redis", "type": "database", "label": "Redis", "sublabel": "Session + Cache (6379)", "pos": [250, 480], "size": [140, 60], "tag": "sessions + rate-limit" },
+    { "id": "time-blocks", "type": "backend", "label": "Time Blocks", "sublabel": "Applied schedule blocks", "pos": [480, 480], "size": [160, 60], "tag": "persisted proposals" },
+    { "id": "intent-parser", "type": "backend", "label": "Intent Parser", "sublabel": "NLP -> JSON", "pos": [950, 400], "size": [120, 50] },
+    { "id": "planning-engine", "type": "backend", "label": "Planning Engine", "sublabel": "Goal decomposition", "pos": [950, 320], "size": [120, 50] },
+    { "id": "smtp", "type": "external", "label": "SMTP", "sublabel": "Email", "pos": [1150, 300], "size": [100, 45] },
+    { "id": "twilio", "type": "external", "label": "Twilio", "sublabel": "SMS", "pos": [1150, 360], "size": [100, 45] },
+    { "id": "web-push", "type": "external", "label": "Web Push", "sublabel": "VAPID", "pos": [1150, 420], "size": [100, 45] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "CAL_ASSIST Backend (NestJS)", "wraps": ["api-gateway", "auth", "time-compiler", "hierarchy", "calendar-engine", "calendar-adapters", "notifications", "ai-providers", "intent-parser", "planning-engine", "time-blocks"] },
+    { "kind": "security-group", "label": "API Gateway :3000", "wraps": ["api-gateway"] },
+    { "kind": "region", "label": "Data Layer", "wraps": ["postgres", "redis"] }
+  ],
+  "connections": [
+    { "id": "browser-to-api", "from": "browser", "to": "api-gateway", "label": "HTTPS / JWT", "variant": "emphasis" },
+    { "id": "jwt-verify", "from": "auth", "to": "api-gateway", "label": "verify JWT", "variant": "security", "fromSide": "bottom", "toSide": "top", "via": [[320, 180], [320, 240]] },
+    { "id": "api-to-time-compiler", "from": "api-gateway", "to": "time-compiler", "label": "compile schedule" },
+    { "id": "time-compiler-to-postgres", "from": "time-compiler", "to": "postgres", "label": "read tasks/events/avail", "fromSide": "right", "toSide": "left" },
+    { "id": "time-compiler-to-calendar", "from": "time-compiler", "to": "calendar-engine", "label": "fixed events", "fromSide": "right", "toSide": "left", "labelDy": -40 },
+    { "id": "time-compiler-to-blocks", "from": "time-compiler", "to": "time-blocks", "label": "ScheduleProposal", "variant": "emphasis", "fromSide": "bottom", "toSide": "top" },
+    { "id": "time-blocks-to-postgres", "from": "time-blocks", "to": "postgres", "label": "persist blocks" },
+    { "id": "time-blocks-to-notifications", "from": "time-blocks", "to": "notifications", "label": "reminders", "variant": "dashed" },
+    { "id": "notifications-to-postgres", "from": "notifications", "to": "postgres", "label": "prefs / logs" },
+    { "id": "notifications-to-smtp", "from": "notifications", "to": "smtp", "label": "email", "variant": "dashed", "fromSide": "right", "toSide": "left" },
+    { "id": "notifications-to-twilio", "from": "notifications", "to": "twilio", "label": "SMS", "variant": "dashed", "fromSide": "right", "toSide": "left" },
+    { "id": "notifications-to-webpush", "from": "notifications", "to": "web-push", "label": "push", "variant": "dashed", "fromSide": "right", "toSide": "left" },
+    { "id": "hierarchy-to-postgres", "from": "hierarchy", "to": "postgres", "label": "CRUD hierarchy" },
+    { "id": "calendar-engine-to-postgres", "from": "calendar-engine", "to": "postgres", "label": "events / calendars" },
+    { "id": "calendar-adapters-to-google", "from": "calendar-adapters", "to": "google-calendar", "label": "OAuth2 sync", "variant": "dashed" },
+    { "id": "calendar-adapters-to-outlook", "from": "calendar-adapters", "to": "outlook-calendar", "label": "OAuth2 sync", "variant": "dashed" },
+    { "id": "calendar-adapters-to-postgres", "from": "calendar-adapters", "to": "postgres", "label": "connections / tokens" },
+    { "id": "calendar-adapters-to-calendar-engine", "from": "calendar-adapters", "to": "calendar-engine", "label": "push/pull events" },
+    { "id": "ai-to-openai", "from": "ai-providers", "to": "openai", "label": "primary", "variant": "dashed" },
+    { "id": "ai-to-ollama", "from": "ai-providers", "to": "ollama", "label": "fallback", "variant": "dashed" },
+    { "id": "ai-to-intent", "from": "ai-providers", "to": "intent-parser", "label": "completion" },
+    { "id": "intent-to-planning", "from": "intent-parser", "to": "planning-engine", "label": "structured JSON" },
+    { "id": "planning-to-hierarchy", "from": "planning-engine", "to": "hierarchy", "label": "create tasks", "variant": "dashed" },
+    { "id": "api-to-redis", "from": "api-gateway", "to": "redis", "label": "sessions / rate-limit", "variant": "dashed" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Frontend", "items": ["React 18 + Vite", "Tailwind CSS + @nuxt/ui", "Port 3001, proxies /api to :3000"] },
+    { "dot": "emerald", "title": "Core Scheduling", "items": ["Time Compiler: deterministic, never overwrites calendar", "Topological sort for dependencies", "Slot packing with buffers/breaks", "ScheduleProposal: blocks, conflicts, tradeoffs, alternatives, confidence"] },
+    { "dot": "amber", "title": "Calendar Engine", "items": ["RecurrenceEngine: RRULE parse/expand", "TimeZoneEngine: IANA via Intl.DateTimeFormat", "ConflictDetector: 4 conflict types", "ViewGenerator: Day/Week/Month/Agenda/Timeline"] },
+    { "dot": "violet", "title": "Calendar Sync", "items": ["Google Calendar API v3 + Outlook Graph API", "OAuth2 with PKCE + token encryption", "Incremental sync via syncToken / deltaLink", "Bidirectional: local <-> remote"] },
+    { "dot": "rose", "title": "Notifications", "items": ["4 channels: In-App, Email (SMTP), SMS (Twilio), Push (VAPID)", "Per-user preferences: working hours, mute", "Retry with exponential backoff"] },
+    { "dot": "orange", "title": "AI Layer", "items": ["OpenAI GPT-4o primary, Ollama local fallback", "IntentParser: natural language -> structured JSON", "PlanningEngine: goal -> project -> milestone -> task", "Shared AIProvider interface for portability"] },
+    { "dot": "slate", "title": "Data & Trust", "items": ["PostgreSQL via Prisma: 40+ models, row-level userId", "Redis: sessions, rate limiting, future job queue", "AuditLog on all mutations", "Encrypted OAuth tokens at rest"] }
+  ]
+}

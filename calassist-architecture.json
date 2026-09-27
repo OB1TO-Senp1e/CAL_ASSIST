@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "CAL_ASSIST Architecture",
+    "output": "calassist-architecture.html",
+    "quality_profile": "showcase"
+  },
+  "components": [
+    { "id": "browser", "type": "external", "label": "Web Client", "sublabel": "React + Vite :3001", "pos": [40, 260], "size": [150, 64] },
+    { "id": "api-gateway", "type": "backend", "label": "API Gateway", "sublabel": "NestJS :3000", "pos": [280, 260], "size": [150, 64], "tag": "JWT + OpenAPI" },
+    { "id": "auth", "type": "security", "label": "Auth Module", "sublabel": "Local + JWT", "pos": [280, 60], "size": [150, 64], "tag": "bcrypt + PKCE" },
+    { "id": "redis", "type": "database", "label": "Redis", "sublabel": "Sessions + rate limits", "pos": [280, 450], "size": [150, 64] },
+    { "id": "scheduler", "type": "backend", "label": "Scheduler & Blocks", "sublabel": "Time Compiler + proposals", "pos": [520, 100], "size": [170, 64], "tag": "topo-sort + slot-pack" },
+    { "id": "hierarchy", "type": "backend", "label": "Hierarchy APIs", "sublabel": "Goals / Projects / Tasks", "pos": [520, 240], "size": [170, 64], "tag": "progress aggregation" },
+    { "id": "calendar", "type": "backend", "label": "Calendar Engine & Sync", "sublabel": "RRULE + IANA + adapters", "pos": [520, 390], "size": [190, 68] },
+    { "id": "notifications", "type": "backend", "label": "Notifications", "sublabel": "Preferences + reminders", "pos": [760, 100], "size": [160, 64], "tag": "multi-channel" },
+    { "id": "ai-planning", "type": "backend", "label": "AI Planning", "sublabel": "Intent + plan generation", "pos": [760, 390], "size": [160, 64] },
+    { "id": "postgres", "type": "database", "label": "PostgreSQL", "sublabel": "Prisma ORM :5432", "pos": [980, 230], "size": [180, 68], "tag": "40+ models" },
+    { "id": "external-apis", "type": "external", "label": "Calendar & AI APIs", "sublabel": "Google · Outlook · OpenAI · Ollama", "pos": [980, 390], "size": [190, 68] },
+    { "id": "delivery-channels", "type": "external", "label": "Delivery Channels", "sublabel": "SMTP · Twilio · Web Push", "pos": [980, 100], "size": [170, 64] }
+  ],
+  "connections": [
+    { "id": "browser-to-api", "from": "browser", "to": "api-gateway", "label": "HTTPS / JWT", "variant": "emphasis" },
+    { "id": "jwt-verify", "from": "auth", "to": "api-gateway", "label": "verify JWT", "variant": "security", "fromSide": "bottom", "toSide": "top", "labelAt": [355, 192] },
+    { "id": "api-to-scheduler", "from": "api-gateway", "to": "scheduler", "label": "compile schedule", "labelAt": [420, 200] },
+    { "id": "api-to-redis", "from": "api-gateway", "to": "redis", "label": "sessions / rate-limit", "variant": "dashed", "labelAt": [355, 355] },
+    { "id": "scheduler-to-postgres", "from": "scheduler", "to": "postgres", "label": "shared persistence", "fromSide": "right", "toSide": "top", "via": [[740, 132], [740, 200], [1070, 200]], "labelAt": [850, 200] },
+    { "id": "scheduler-to-calendar", "from": "scheduler", "to": "calendar", "label": "fixed events", "fromSide": "left", "toSide": "left", "via": [[480, 132], [480, 424]], "labelAt": [480, 400] },
+    { "id": "scheduler-to-notifications", "from": "scheduler", "to": "notifications", "label": "reminders", "variant": "dashed" },
+    { "id": "calendar-to-external-apis", "from": "calendar", "to": "external-apis", "label": "OAuth2 sync", "variant": "dashed", "fromSide": "bottom", "toSide": "bottom", "via": [[615, 480], [1075, 480]], "labelAt": [800, 480] },
+    { "id": "ai-to-external-apis", "from": "ai-planning", "to": "external-apis", "label": "LLM", "variant": "dashed" },
+    { "id": "ai-to-hierarchy", "from": "ai-planning", "to": "hierarchy", "label": "create tasks", "variant": "dashed", "fromSide": "left", "toSide": "bottom", "via": [[730, 422], [730, 330], [605, 330]], "labelAt": [685, 330] },
+    { "id": "notifications-to-channels", "from": "notifications", "to": "delivery-channels", "label": "deliver", "variant": "dashed" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Product Surface", "items": ["React 18 + Vite client; Tailwind CSS and Radix UI primitives", "NestJS API on :3000; client on :3001 proxies /api", "Local/JWT authentication with bcrypt and PKCE"] },
+    { "dot": "emerald", "title": "Planning & Integrations", "items": ["Deterministic scheduler: dependency topological sort, slot packing, buffers, and ScheduleProposal alternatives", "Calendar engine: RRULE, IANA timezones, conflict detection, and Day/Week/Month/Agenda/Timeline views", "Google Calendar v3 and Outlook Graph sync using OAuth2, incremental tokens, and bidirectional updates", "OpenAI GPT-4o primary; Ollama fallback for intent parsing and planning"] },
+    { "dot": "slate", "title": "Data & Operations", "items": ["Shared PostgreSQL via Prisma: 40+ models for hierarchy, scheduling, and calendar data", "Redis for sessions and rate limits; audit logs on mutations", "Email (SMTP), SMS (Twilio), Push (VAPID), and in-app notifications", "Encrypted OAuth tokens and retry with exponential backoff"] }
+  ]
+}

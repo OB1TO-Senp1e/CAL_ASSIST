@@ -1,0 +1,150 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: calassist-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-calassist}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-calassist}
+      POSTGRES_DB: ${POSTGRES_DB:-calassist}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-calassist} -d ${POSTGRES_DB:-calassist}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - calassist-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: calassist-redis
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - calassist-network
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: calassist-api
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-calassist}:${POSTGRES_PASSWORD:-calassist}@postgres:5432/${POSTGRES_DB:-calassist}?schema=public
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      THROTTLE_TTL: 60000
+      THROTTLE_LIMIT: 100
+      CACHE_TTL: 300000
+      CACHE_MAX: 1000
+      LOG_LEVEL: info
+      AI_PROVIDER: ${AI_PROVIDER:-openai}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      NVIDIA_NIM_API_KEY: ${NVIDIA_NIM_API_KEY}
+      NVIDIA_NIM_BASE_URL: ${NVIDIA_NIM_BASE_URL:-https://integrate.api.nvidia.com/v1}
+      NVIDIA_NIM_MODEL: ${NVIDIA_NIM_MODEL:-nvidia/nemotron-3-ultra-550b-a55b}
+      OLLAMA_HOST: ${OLLAMA_HOST:-http://ollama:11434}
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - calassist-network
+    restart: unless-stopped
+
+  # Optional: Ollama for local AI
+  ollama:
+    image: ollama/ollama:latest
+    container_name: calassist-ollama
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
+    networks:
+      - calassist-network
+    profiles:
+      - ai
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # Optional: Prometheus for metrics
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    container_name: calassist-prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    networks:
+      - calassist-network
+    profiles:
+      - monitoring
+
+  # Optional: Grafana for dashboards
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: calassist-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - calassist-network
+    profiles:
+      - monitoring
+
+volumes:
+  postgres_data:
+  redis_data:
+  ollama_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  calassist-network:
+    driver: bridge
