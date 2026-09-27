@@ -100,15 +100,12 @@ export class AssistantController {
       conversationId
     );
 
-    const latest = await this.prisma.conversationMessage.findFirst({
-      where: { userId: req.user.id, role: 'ASSISTANT' },
-      orderBy: { createdAt: 'desc' },
-      select: { id: true, conversationId: true },
-    });
-
+    // The orchestrator persisted both turns, so it reports the stored ids. No
+    // global "latest assistant message" guess, which would misattribute the turn
+    // whenever a user has more than one conversation.
     return {
-      id: latest?.id ?? `assistant_${Date.now()}`,
-      conversationId: latest?.conversationId ?? conversationId ?? null,
+      id: result.messageId ?? `assistant_${Date.now()}`,
+      conversationId: result.conversationId ?? conversationId ?? null,
       role: 'ASSISTANT',
       content: result.message,
       reasoning: null,
@@ -119,7 +116,10 @@ export class AssistantController {
         toolCalls: result.toolCalls ?? null,
       },
       createdAt: new Date().toISOString(),
-      ...result,
+      proposedActions: result.proposedActions ?? [],
+      toolCalls: result.toolCalls ?? [],
+      requiresConfirmation: result.requiresConfirmation ?? false,
+      confidence: result.confidence ?? 0,
     };
   }
 

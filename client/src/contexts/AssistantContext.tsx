@@ -26,9 +26,10 @@ import type {
  * All I/O goes through `assistantService` / `calendarService`, never the mock
  * layer directly, so Stage 3 is a flag flip.
  *
- * `confirmAction` is real: confirming a calendar tool performs the same
- * `calendarService` call the calendar screen makes, so an accepted proposal
- * actually appears on the grid. Non-calendar tools (tasks/goals/projects) are
+ * `confirmAction` is real. In live mode the orchestrator's tool executes the write
+ * server-side, so the client does not re-apply it; in the Stage-2 mock flow the
+ * client applies the same `calendarService` call the calendar screen makes so the
+ * change lands in its local store. Non-calendar tools (tasks/goals/projects) are
  * acknowledged but not written — their stores arrive with unit 2d.
  */
 export type ActionState = 'pending' | 'working' | 'applied' | 'rejected';
@@ -314,7 +315,11 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
       setActionStates((s) => ({ ...s, [action.id]: 'working' }));
       try {
         const receipt = await assistantService.confirm(id, action.id, true, modifiedInput);
-        if (!DEFERRED_TOOLS.has(action.toolName)) {
+        // In live mode the orchestrator's tool already wrote the change, so the
+        // client must not re-apply it (that would double-write, and `create_event`
+        // would throw because live create is blocked). Only the Stage-2 mock flow
+        // still needs the client-side `applyAction` to mutate its localStorage store.
+        if (!isLiveAssistant && !DEFERRED_TOOLS.has(action.toolName)) {
           await applyAction(action, modifiedInput ?? action.input);
         }
         persist(id, receipt);

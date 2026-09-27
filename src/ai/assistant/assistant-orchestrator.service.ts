@@ -81,7 +81,7 @@ export class AssistantOrchestratorService {
 
     // Persist the assistant turn; proposedActions travel in modelOutput so the
     // thread can resurrect proposal cards after a reload.
-    await this.prisma.conversationMessage.create({
+    const assistantMessage = await this.prisma.conversationMessage.create({
       data: {
         conversationId: activeConversationId,
         userId,
@@ -101,6 +101,10 @@ export class AssistantOrchestratorService {
     if (response.proposedActions) {
       await this.prisma.assistantAction.createMany({
         data: response.proposedActions.map((action) => ({
+          // Reuse the proposal id the client received so `confirmAction` can look
+          // the row up by that same id. createMany would otherwise assign a cuid
+          // the client never sees, and every confirm would miss.
+          id: action.id,
           userId,
           conversationId: activeConversationId,
           actionType: action.toolName,
@@ -119,7 +123,11 @@ export class AssistantOrchestratorService {
       data: { lastMessageAt: new Date() },
     });
 
-    return response;
+    return {
+      ...response,
+      conversationId: activeConversationId,
+      messageId: assistantMessage.id,
+    };
   }
 
   async confirmAction(

@@ -84,12 +84,31 @@
   executes nothing for confirmed tools), and `create_event` remains unavailable in live mode until
   the 3b category/color gap closes; tasks/goals/projects actions are receipt-only until 3d.
 
+**Follow-up fixes (same unit)**
+- Confirm could never find its action: the orchestrator stored proposals with `createMany`, which
+  assigns its own cuids, while `confirmAction` looked up the proposal id the client had received.
+  The row is now created with `id: action.id`, so a confirm resolves the exact pending claim.
+- The message route no longer guesses the turn with a global `findFirst(role: ASSISTANT,
+  order: createdAt desc)` query (which misattributed the reply when a user has several
+  conversations). `processMessage` now returns the stored `conversationId` + `messageId`, and the
+  controller echoes them. The dead `...result` spread (which leaked raw orchestrator fields over
+  the DTO) was removed.
+- Live-mode double-write: the backend tool already mutates data during confirm, so
+  `AssistantContext.confirmAction` no longer runs `applyAction` when live. Previously it called
+  `calendarService.createEvent`, which throws in live mode (see 3b), so every accepted
+  calendar proposal failed the UI even though the server had applied it.
+
 **Verified**
 - `cd client && npm run build` → green (2026-09-27, exit 0); `npm run build` (nest) → green, exit 0.
+- Not exercised: a live end-to-end request. No `.env` exists in the repo (only `.env.example`) and
+  `DATABASE_URL` is unset, so the server cannot boot against a database. Postgres is listening on
+  5432, so this is a configuration gap, not a code gap — the next turn should create `.env` before
+  claiming any live-flow verification.
 
 **Files touched**
 - New: `src/ai/assistant/assistant.controller.ts`
 - Modified: `src/ai/assistant/assistant-orchestrator.service.ts`, `src/ai/assistant/assistant.module.ts`,
+  `src/ai/assistant/interfaces/assistant-tools.interface.ts`,
   `src/ai/intent/intent-parser.service.ts`, `client/src/services/assistant.ts`,
   `client/src/contexts/AssistantContext.tsx`, `BUILD_LOG.md`
 
@@ -141,17 +160,6 @@
 
 **Files touched**
 - Modified: `client/src/services/auth.ts`, `client/src/components/auth/LoginForm.tsx`, `client/src/components/auth/RegisterForm.tsx`, `client/src/contexts/AuthContext.tsx`, `client/src/vite-env.d.ts`, `BUILD_LOG.md`
-| 3c AI Assistant | ⬜ |
-| 3d Goals / Projects / Tasks | ⬜ |
-| 3e Time Compiler / Planning | ⬜ |
-| 3f Commitments | ⬜ |
-| 3g Reality Engine / Replanning | ⬜ |
-| 3h Memory Center | ⬜ |
-| 3i Rules UI | ⬜ |
-| 3j Proactive feed + Permissions/autonomy | ⬜ |
-| 3k Integrations | ⬜ |
-| 3l Meeting Intelligence | ⬜ |
-| 3m Command Center | ⬜ |
 
 ### Stage 4 hardening items (known from PROGRESS.md)
 - [ ] Persist commitment person/related-entity metadata + confidence
