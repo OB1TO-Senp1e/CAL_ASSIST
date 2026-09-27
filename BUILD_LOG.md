@@ -6,7 +6,7 @@
 
 ## Current position
 - **Stage:** 2 — Frontend Screens (mock data)
-- **Next unit:** 2b — Calendar (day/week/month/agenda, drag/drop, event detail)
+- **Next unit:** 2c — AI Assistant panel (message thread, tool-call proposal cards, confirm/reject)
 - **Frontend build:** `cd client && npm run build` → green (2026-09-27)
 - **Dev preview without backend:** mock layer is on by default in Stage 2 — `cd client && npx vite --port 3001`
   (`VITE_AUTH_BYPASS=1` still forces a user with no session at all; `VITE_USE_MOCK=0` switches back to the real API.)
@@ -15,7 +15,7 @@
 | Stage | Status |
 |---|---|
 | 1 — Design Foundation | ✅ DONE (2026-09-27) |
-| 2 — Frontend Screens | ⏳ IN PROGRESS (1/13) |
+| 2 — Frontend Screens | ⏳ IN PROGRESS (2/13) |
 | 3 — Backend Tie-in | ⬜ NOT STARTED |
 | 4 — Backend Hardening | ⬜ NOT STARTED |
 
@@ -23,7 +23,7 @@
 | Unit | Status |
 |---|---|
 | 2a App shell + routing + nav + auth | ✅ DONE (2026-09-27) |
-| 2b Calendar (day/week/month/agenda, drag/drop, detail) | ⬜ |
+| 2b Calendar (day/week/month/agenda, drag/drop, detail) | ✅ DONE (2026-09-27) |
 | 2c AI Assistant panel (thread, tool-call cards, confirm/reject) | ⬜ |
 | 2d Goals / Projects / Tasks | ⬜ |
 | 2e Time Compiler / Planning | ⬜ |
@@ -171,3 +171,93 @@ _(mirrors 2a–2m; none started)_
   `client/src/components/auth/{LoginForm,RequireAuth}.tsx`, `client/src/pages/{LoginPage,index}.tsx`,
   `client/src/components/layout/{DashboardLayout,LegacyPage,nav-config}.tsx|ts`,
   `client/src/vite-env.d.ts`
+
+### 2026-09-27 — Stage 2, unit 2b: Calendar ✅
+
+**Built**
+- **Calendar contract types** (`client/src/services/types.ts`) — `EventStatus`, `EventSource`,
+  `EventVisibility`, `EventCategory` (10 members), `CalendarProvider`, `ParticipantStatus`,
+  `ParticipantRole`, `EventParticipantDTO`, `ReminderDTO`, `CalendarEventDTO`, `CalendarDTO`,
+  `WorkingHours`, `DayViewDTO` / `WeekViewDTO` / `MonthViewDTO`, `CreateEventInput`,
+  `UpdateEventInput`, `ResizeEventInput`, `BulkEventInput`, `ConflictDTO`. All enum members were
+  grepped from `prisma/schema.prisma` and `src/calendar/interfaces/calendar.interface.ts`.
+- **Date/geometry helpers** (`client/src/lib/datetime.ts`) — `toIso()` (tolerates the raw
+  `{_utc,_timeZone}` shape the backend currently emits), `startOfIsoWeek`, `isoWeekDays`,
+  `minutesOfDay`, `formatTime/formatRange/formatDuration`, `overlaps`, `offsetMinutes`,
+  `snapTo(d, 15)`, and `layoutDay()` — the cluster/column overlap algorithm (same approach as
+  Google Calendar: group transitively-overlapping events, then assign columns and event width).
+- **RRULE engine** (`client/src/lib/rrule.ts`) — `parseRRule` (accepts both the string form stored on
+  `Event.recurrenceRule` and the parsed object form), `toRRuleString`, `weeklyRule`, `dailyRule`,
+  `monthlyRule`, `expandOccurrences(event, rangeStart, rangeEnd, max=400)`. Handles
+  FREQ/INTERVAL/COUNT/UNTIL/BYDAY and subtracts `exceptionDates`.
+- **Mock calendar store** (`client/src/lib/mock/calendar.ts`) — versioned `localStorage` envelope
+  (`version: 3`), 4 calendars matching real `Calendar.color` semantics (personal `#3b82f6`,
+  work `#6366f1`, focus `#14b8a6`, travel `#f59e0b`), and a ~22-event week seed: normal events,
+  all-day items, a weekly-recurring `Weekly planning` (BYDAY=MO), a `Standup` (daily, COUNT=20),
+  a multi-participant meeting, a travel block, and one **`source: 'AI_GENERATED'`** event in
+  `NEEDS_ACTION` (`Deep work — Q4 planning`) so the violet `.proposal` treatment and the
+  Accept/Reject path are exercised by real mock data.
+- **Calendar service facade** (`client/src/services/calendar.ts`) — `normalizeEvent()` plus
+  `calendarService.{listCalendars,setCalendarVisible,listEvents,weekView,monthView,agenda,
+  createEvent,updateEvent,moveEvent,resizeEvent,deleteEvent,bulk,checkConflicts}`. Endpoint paths
+  mirror the 18 routes on `@Controller('calendar/events')` exactly; components never import the mock.
+- **UI components** — `TimeGrid` (pointer-event move/resize, 15-min snap, 3px drag threshold,
+  violet ghost, all-day lane, now-line, working-hours wash), `MonthGrid` (6×7 Monday-first, max 3
+  chips + "+N more"), `AgendaList` (day-grouped, today scrolled into view), `CalendarRail`
+  (mini-month, calendar visibility toggles, type/status filters), `EventCard` / `AllDayChip` /
+  `EventSummary`, `EventDetailDialog` (Accept/Reject/Adjust for AI proposals, Edit/Confirm/
+  Duplicate/Delete for user events), `EventEditorDialog` (create/edit, recurrence presets,
+  debounced 350 ms conflict probe). Added `client/src/components/ui/field.tsx` (Select, Textarea,
+  Checkbox, Field) because no shadcn select/textarea existed yet.
+- **`CalendarPage`** rewritten: day / week / month / agenda over one shared range query, all four
+  states (loading skeleton, empty, error, populated), optimistic move/resize with revert on
+  failure, hotkeys `t/j/k/←/→/d/w/m/a/n`.
+
+**Decisions and reasons**
+1. **Drag/resize is pointer-event based, not HTML5 DnD.** HTML5 drag has no reliable continuous
+   position, so a 15-minute snap grid can't be rendered live. Pointer capture + `snapTo(15)` gives a
+   real ghost and works with touch. A 3 px threshold keeps click-to-open from being eaten by a
+   micro-drag.
+2. **The AI proposal colour is a style, not a hue.** `.proposal` (dashed violet border) marks
+   "not yet real"; accepting flips `status → CONFIRMED` and `source → USER` locally so the card
+   loses the violet treatment. Violet stays reserved for AI, per Stage 1 §3.
+3. **`normalizeEvent` is the compatibility shim for two real backend bugs** (see below) — it
+   defaults a missing `category` and maps `eventParticipants → participants`, `recurrence →
+   recurrenceRule`. Stage 4 should remove the need for it; until then it makes the Stage 3 data swap
+   a one-line flag flip.
+4. **Filters live in page state, not in the query.** The backend has no filter params on
+   `GET /calendar/events`, so filtering client-side now means Stage 3 changes nothing in the
+   component tree.
+5. **`WeekGrid.tsx` deleted**, superseded by `TimeGrid` (same responsibilities, now with
+   drag/resize). It was the Stage 1 reference screen.
+
+**⚠ Two backend contract mismatches found (Stage 4 items, already appended to the hardening list)**
+1. `src/calendar/services/calendar.service.ts` `toCalendarEvent()` reads `prismaEvent.category` and
+   `prismaEvent.color`, and `createEvent()` writes `category`/`color` into `eventData` — but the
+   Prisma `Event` model has **neither field**. `category` is therefore always `undefined` on the
+   wire and a created event's category/colour are silently dropped.
+2. `toCalendarEvent()` returns raw `DateTime` class instances for `start`/`end`. `DateTime` has no
+   `toJSON()`, so they serialise as `{_utc, _timeZone}` instead of ISO-8601 strings, which breaks
+   every consumer that expects `new Date(start)` to work.
+
+**Verified**
+- `cd client && npm run build` → green. `CalendarPage` chunk 114.76 kB (36.77 kB gzip); main
+  `index` 315.52 kB (105.52 kB gzip); CSS 70.42 kB (13.22 kB gzip).
+
+**Deferred**
+- No save/update against a live backend (Stage 3). The AI Accept/Reject path mutates local state only.
+- Recurring-event *editing* semantics ("this event / this and following / all") is not offered — the
+  editor always edits the whole series, which matches the current `PATCH /:id` contract. Split-series
+  editing needs `recurrenceId` support the backend does not expose yet.
+- Conflict detection uses the debounced `POST /conflicts/check` shape but resolves locally in mock mode.
+- Free/busy (`GET /availability`) is not surfaced in the rail yet; it belongs with the Time Compiler (2e).
+
+**Files touched**
+- New: `client/src/lib/datetime.ts`, `client/src/lib/rrule.ts`, `client/src/lib/mock/calendar.ts`,
+  `client/src/services/calendar.ts`, `client/src/components/ui/field.tsx`,
+  `client/src/components/calendar/{EventCard,TimeGrid,MonthGrid,AgendaList,CalendarRail,
+  EventDetailDialog,EventEditorDialog}.tsx`
+- Modified: `client/src/services/types.ts`, `client/src/lib/design-tokens.ts`
+  (`EVENT_CATEGORY_HUE`, `EVENT_CATEGORY_LABEL`, `EVENT_STATUS_LABEL`, `eventColor()`, `calendarSwatch()`),
+  `client/src/pages/CalendarPage.tsx`
+- Deleted: `client/src/components/calendar/WeekGrid.tsx`

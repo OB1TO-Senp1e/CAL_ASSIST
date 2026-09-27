@@ -9,7 +9,10 @@
  *   Level           — src/ai/assistant/interfaces/assistant-tools.interface.ts ToolConfirmationLevelSchema
  *                     src/commitments/commitment.types.ts riskLevel
  *                     src/daily-experience/daily-experience.types.ts RiskLevelSchema
+ *   EventCategory   — src/calendar/domain/calendar-event.ts EventCategory
+ *                     (NOT on the Prisma Event model — see BUILD_LOG mismatches)
  */
+import type { EventCategory } from '@/services/types';
 
 export type TimeBlockType =
   | 'FOCUS'
@@ -72,6 +75,44 @@ export const TIME_BLOCK_TYPE_HUE: Record<TimeBlockType, CalendarHueName> = {
   DEADLINE: 'coral',
   PERSONAL: 'rose',
   BUFFER: 'slate',
+};
+
+/**
+ * Fallback hue per EventCategory (src/calendar/domain/calendar-event.ts).
+ * Only used when the owning calendar has no colour: the calendar is what the
+ * user actually chooses, so it normally wins. Violet stays excluded (AI only).
+ */
+export const EVENT_CATEGORY_HUE: Record<EventCategory, CalendarHueName> = {
+  PERSONAL: 'rose',
+  WORK: 'iris',
+  MEETING: 'sky',
+  APPOINTMENT: 'teal',
+  REMINDER: 'slate',
+  HOLIDAY: 'lime',
+  BIRTHDAY: 'coral',
+  TRAVEL: 'amber',
+  FOCUS_TIME: 'iris',
+  CUSTOM: 'slate',
+};
+
+export const EVENT_CATEGORY_LABEL: Record<EventCategory, string> = {
+  PERSONAL: 'Personal',
+  WORK: 'Work',
+  MEETING: 'Meeting',
+  APPOINTMENT: 'Appointment',
+  REMINDER: 'Reminder',
+  HOLIDAY: 'Holiday',
+  BIRTHDAY: 'Birthday',
+  TRAVEL: 'Travel',
+  FOCUS_TIME: 'Focus time',
+  CUSTOM: 'Custom',
+};
+
+export const EVENT_STATUS_LABEL: Record<EventStatus, string> = {
+  CONFIRMED: 'Confirmed',
+  TENTATIVE: 'Tentative',
+  NEEDS_ACTION: 'Needs action',
+  CANCELLED: 'Cancelled',
 };
 
 export const TIME_BLOCK_TYPE_LABEL: Record<TimeBlockType, string> = {
@@ -157,3 +198,23 @@ export const REQUIRES_CONFIRMATION: ReadonlySet<Level> = new Set(['MEDIUM', 'HIG
 export const HOUR_HEIGHT_PX = 48;
 export const WORKDAY_START_HOUR = 8;
 export const WORKDAY_END_HOUR = 18;
+
+/* ───────────── Event colour resolution ─────────────
+ * Precedence (DESIGN_SYSTEM.md §Colour): which calendar an event belongs to is
+ * what the user chose, so it wins; the category is only a fallback. Violet is
+ * never reachable here — AI proposals are the only violet in the product.
+ */
+export function eventColor(
+  calendarColorHex: string | null | undefined,
+  category: EventCategory,
+): CalendarHueName {
+  const snapped = snapToCalendarHue(calendarColorHex);
+  // snapToCalendarHue returns 'slate' when the input is missing or near-grey, so
+  // treat slate as "no usable calendar colour" and fall through to the category.
+  return snapped === 'slate' ? EVENT_CATEGORY_HUE[category] : snapped;
+}
+
+/** A calendar's own colour, for the visibility rail (no category fallback). */
+export function calendarSwatch(calendarColorHex: string | null | undefined): CalendarHueName {
+  return snapToCalendarHue(calendarColorHex);
+}
