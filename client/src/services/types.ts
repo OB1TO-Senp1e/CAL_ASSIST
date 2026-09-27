@@ -205,3 +205,174 @@ export interface ConflictDTO {
   eventB: string;
   overlapMinutes: number;
 }
+
+/* ─────────────────────────── Assistant ───────────────────────────
+ * Sources (grep'd from backend source, never invented):
+ *   ToolCategory / ToolConfirmationLevel / ToolResultStatus / ToolResult
+ *   ProposedAction / ToolCall / AssistantMessage / AssistantResponse
+ *     → src/ai/assistant/interfaces/assistant-tools.interface.ts
+ *   Conversation / ConversationMessage / AssistantAction
+ *   AssistantRecommendation / AiSuggestion → prisma/schema.prisma
+ *   MessageRole → prisma/schema.prisma enum MessageRole
+ *   RecommendationType / RecommendationStatus → prisma/schema.prisma
+ *
+ * ⚠ No HTTP controller exposes `AssistantOrchestratorService` yet — the only AI
+ * route that exists is `POST /api/ai/intent/parse` (src/ai/intent/…). The shapes
+ * below therefore mirror the SERVICE layer, not a wire contract, so that adding
+ * the controller in Stage 3 changes endpoints but not these types.
+ */
+
+/** `ToolCategorySchema` — assistant-tools.interface.ts */
+export type ToolCategory =
+  | 'CALENDAR'
+  | 'TASKS'
+  | 'GOALS'
+  | 'PROJECTS'
+  | 'SCHEDULING'
+  | 'AVAILABILITY'
+  | 'CONFLICTS'
+  | 'INSIGHTS';
+
+/** `ToolConfirmationLevelSchema` — assistant-tools.interface.ts.
+ *  Equals the client `Level` scale in lib/design-tokens.ts, by design. */
+export type ToolConfirmationLevel = 'NONE' | 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+
+/** `ToolResultStatusSchema` — assistant-tools.interface.ts */
+export type ToolResultStatus = 'SUCCESS' | 'ERROR' | 'REQUIRES_CONFIRMATION' | 'PARTIAL';
+
+/** `ToolResult<T>` — assistant-tools.interface.ts */
+export interface ToolResult<T = unknown> {
+  status: ToolResultStatus;
+  data?: T;
+  error?: string;
+  requiresConfirmation?: boolean;
+  confirmationPrompt?: string;
+  confirmationData?: unknown;
+  metadata?: Record<string, unknown>;
+}
+
+/** `ToolCall` — assistant-tools.interface.ts */
+export interface ToolCall {
+  id: string;
+  name: string;
+  arguments: Record<string, unknown>;
+}
+
+/** `ProposedAction` — assistant-tools.interface.ts. This is what the proposal
+ *  card renders: what would happen, how risky, and whether it can be undone. */
+export interface ProposedAction {
+  id: string;
+  toolName: string;
+  description: string;
+  input: Record<string, unknown>;
+  confirmationLevel: ToolConfirmationLevel;
+  estimatedImpact: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  reversible: boolean;
+}
+
+/** `AssistantResponse` — assistant-tools.interface.ts, plus the server-side
+ *  action id used to confirm later (`AssistantOrchestratorService.confirmAction`). */
+export interface AssistantResponse {
+  message: string;
+  toolCalls?: ToolCall[];
+  proposedActions?: ProposedAction[];
+  requiresConfirmation?: boolean;
+  confidence?: number;
+}
+
+/** `ConfirmationRequest` — assistant-tools.interface.ts */
+export interface ConfirmationRequest {
+  actionId: string;
+  confirmed: boolean;
+  modifiedInput?: Record<string, unknown>;
+}
+
+/** prisma `enum MessageRole` */
+export type MessageRole = 'USER' | 'ASSISTANT' | 'SYSTEM' | 'TOOL';
+
+/**
+ * A rendered turn in the thread. Mirrors `ConversationMessage` (prisma) and
+ * carries the UI-only pieces the backend will return alongside it:
+ * `proposedActions` (from AssistantResponse) and the local delivery state.
+ */
+export interface ChatMessage {
+  id: string;
+  conversationId: string;
+  role: MessageRole;
+  content: string;
+  reasoning?: string | null;
+  /** `ConversationMessage.modelOutput` — kept opaque; holds proposedActions. */
+  proposedActions?: ProposedAction[];
+  toolCalls?: ToolCall[];
+  confidence?: number;
+  createdAt: string;
+  /** UI-only: optimistic send / failure. Never persisted by the mock. */
+  pending?: boolean;
+  failed?: boolean;
+}
+
+/** prisma `model Conversation` (the fields the UI uses). */
+export interface ConversationDTO {
+  id: string;
+  userId: string;
+  title: string | null;
+  model: string | null;
+  provider: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  lastMessageAt: string;
+}
+
+/** prisma `enum RecommendationType` */
+export type RecommendationType =
+  | 'SCHEDULING'
+  | 'REPRIORITIZATION'
+  | 'TIME_REALLOCATION'
+  | 'CONFLICT_RESOLUTION'
+  | 'CAPACITY_PLANNING'
+  | 'RISK_ALERT'
+  | 'OPPORTUNITY';
+
+/** prisma `enum RecommendationStatus` */
+export type RecommendationStatus = 'PENDING' | 'APPLIED' | 'DISMISSED' | 'EXPIRED';
+
+/** prisma `model AssistantRecommendation` */
+export interface AssistantRecommendationDTO {
+  id: string;
+  userId: string;
+  conversationId: string | null;
+  type: RecommendationType;
+  title: string;
+  description: string;
+  reasoning: string;
+  confidence: number;
+  priority: number;
+  entityType: string | null;
+  entityId: string | null;
+  status: RecommendationStatus;
+  expiresAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** A tool as the assistant can invoke it. Names/levels/descriptions are copied
+ *  verbatim from each `*.tool.ts` (13 tools registered by ToolRegistry). */
+export interface AssistantToolDescriptor {
+  name: string;
+  description: string;
+  category: ToolCategory;
+  confirmationLevel: ToolConfirmationLevel;
+}
+
+/** `ParsedIntent` — src/ai/intent/interfaces/intent.interface.ts */
+export type IntentType =
+  | 'CREATE_GOAL'
+  | 'CREATE_TASK'
+  | 'CREATE_EVENT'
+  | 'SCHEDULE_TASK'
+  | 'RESCHEDULE_EVENT'
+  | 'CANCEL_EVENT'
+  | 'QUERY_AVAILABILITY'
+  | 'CHECK_CONFLICTS'
+  | 'GET_RECOMMENDATIONS';

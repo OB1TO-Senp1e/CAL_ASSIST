@@ -47,10 +47,6 @@ export function CommitmentsPage() {
   return <PlannedPage title="Commitments" unit="2f" icon={<Sparkles className="size-4" />} description="Promises made to other people, with deadline-risk indicators." />;
 }
 
-export function AssistantPage() {
-  return <PlannedPage title="Assistant" unit="2c" icon={<Sparkles className="size-4" />} description="The full conversation thread, tool-call proposals and confirm/reject controls." />;
-}
-
 export function InsightsPage() {
   return <PlannedPage title="Insights" unit="2j" icon={<Activity className="size-4" />} description="The proactive feed: nudges the assistant raises before you ask." />;
 }

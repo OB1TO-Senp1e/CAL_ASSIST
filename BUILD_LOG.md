@@ -6,7 +6,7 @@
 
 ## Current position
 - **Stage:** 2 — Frontend Screens (mock data)
-- **Next unit:** 2c — AI Assistant panel (message thread, tool-call proposal cards, confirm/reject)
+- **Next unit:** 2d — Goals / Projects / Tasks
 - **Frontend build:** `cd client && npm run build` → green (2026-09-27)
 - **Dev preview without backend:** mock layer is on by default in Stage 2 — `cd client && npx vite --port 3001`
   (`VITE_AUTH_BYPASS=1` still forces a user with no session at all; `VITE_USE_MOCK=0` switches back to the real API.)
@@ -15,7 +15,7 @@
 | Stage | Status |
 |---|---|
 | 1 — Design Foundation | ✅ DONE (2026-09-27) |
-| 2 — Frontend Screens | ⏳ IN PROGRESS (2/13) |
+| 2 — Frontend Screens | ⏳ IN PROGRESS (3/13) |
 | 3 — Backend Tie-in | ⬜ NOT STARTED |
 | 4 — Backend Hardening | ⬜ NOT STARTED |
 
@@ -24,8 +24,8 @@
 |---|---|
 | 2a App shell + routing + nav + auth | ✅ DONE (2026-09-27) |
 | 2b Calendar (day/week/month/agenda, drag/drop, detail) | ✅ DONE (2026-09-27) |
-| 2c AI Assistant panel (thread, tool-call cards, confirm/reject) | ⬜ |
-| 2d Goals / Projects / Tasks | ⬜ |
+| 2c AI Assistant panel (thread, tool-call cards, confirm/reject) | ✅ DONE (2026-09-27) |
+| 2d Goals / Projects / Tasks | ⬜ NEXT |
 | 2e Time Compiler / Planning | ⬜ |
 | 2f Commitments | ⬜ |
 | 2g Reality Engine / Replanning | ⬜ |
@@ -44,7 +44,15 @@ _(mirrors 2a–2m; none started)_
 - [ ] Proactive intervention persistence + ack/dismiss/snooze (currently 501)
 - [ ] Replace JSON/string compat fields for permissions + rule conflicts with real models
 - [ ] Apply pending migration / schema push
-- [ ] _(Stage 3 mismatches get appended here)_
+- [ ] **NEW (2c): no HTTP controller exposes `AssistantOrchestratorService`.** `processMessage()` /
+      `confirmAction()` exist as service methods only; the sole AI route is `POST /api/ai/intent/parse`.
+      Stage 3 must add `POST /api/assistant/message` + `/confirm` (client already calls those paths).
+- [ ] **NEW (2c): `IntentType` has no `CREATE_PROJECT` member** although a `create_project` tool is
+      registered — "create a project" parses to no intent. Add the member or map it to `CREATE_GOAL`.
+- [ ] **NEW (2c): `getPendingAction()` returns a hard-coded `null`**, so `confirmAction` can never
+      succeed today — every confirm returns "Action not found or expired." Proposed actions need
+      persistence (the `AssistantAction` model exists and is unused).
+- [ ] _(further Stage 3 mismatches get appended here)_
 
 ---
 
@@ -261,3 +269,82 @@ _(mirrors 2a–2m; none started)_
   (`EVENT_CATEGORY_HUE`, `EVENT_CATEGORY_LABEL`, `EVENT_STATUS_LABEL`, `eventColor()`, `calendarSwatch()`),
   `client/src/pages/CalendarPage.tsx`
 - Deleted: `client/src/components/calendar/WeekGrid.tsx`
+
+### 2026-09-27 — Stage 2, unit 2c: AI Assistant panel ✅
+
+**Built**
+- **Assistant contract types** (`client/src/services/types.ts`) — `ToolCategory`,
+  `ToolConfirmationLevel`, `ToolResultStatus`, `ToolResult<T>`, `ToolCall`, `ProposedAction`,
+  `AssistantResponse`, `ConfirmationRequest`, `MessageRole`, `ChatMessage`, `ConversationDTO`,
+  `RecommendationType`/`Status`, `AssistantRecommendationDTO`, `AssistantToolDescriptor`,
+  `IntentType`. All grep'd from `src/ai/assistant/interfaces/assistant-tools.interface.ts`,
+  `src/ai/intent/interfaces/intent.interface.ts` and the prisma models — none invented.
+- **Mock assistant store** (`client/src/lib/mock/assistant.ts`) — the 13-tool catalog copied
+  verbatim from `src/ai/assistant/tools/*.tool.ts` (name/description/category/confirmationLevel),
+  mirrors of the orchestrator's own `estimateImpact`/`isReversible` buckets, a seeded prior
+  conversation with an already-applied proposal, and a **deterministic responder** that classifies
+  with the backend's nine `IntentType` values and then emits proposals whose `input` objects satisfy
+  the real tool schemas field-for-field. Conflict/availability answers are computed from the actual
+  mock events, so what the assistant says matches the grid.
+- **Service facade** (`client/src/services/assistant.ts`) — `listTools`, `listConversations`,
+  `listMessages`, `send`, `confirm`, `createConversation`, `renameConversation`,
+  `deleteConversation`, `listRecommendations`. Mock behind `USE_MOCK`; the real branch points at the
+  proposed endpoints. Cancel/unknown-action copy matches `confirmAction`'s literal strings.
+- **`AssistantContext`** — one shared conversation store for both surfaces. Optimistic send with
+  failed-bubble revert, conversation auto-creation + title backfill from the first message, and
+  `confirmAction` that **actually calls `calendarService`** for create/move/delete/update event, so
+  an accepted proposal appears on the calendar exactly as if the user had done it by hand.
+- **Components** — `AssistantThread` (role-distinct turns, collapsed tool-call disclosure, "Why
+  this?", confidence badge, `ai-shimmer` thinking state, tail-follow that never yanks a scrolled-up
+  reader), `ProposalCard` (level badge, full input table, **Adjust** in-place editing of primitive
+  fields, impact + reversibility, Confirm/Reject), `AssistantComposer` (Enter sends, Shift+Enter
+  newlines, auto-grow), `ConversationList`, and rewritten `AssistantPanel` (conversation switcher in
+  the header).
+- **Full-page `client/src/pages/AssistantPage.tsx`** — conversation rail, page-sized thread, plus a
+  **Tools tab** listing all 13 tools with their real confirmation levels.
+
+**Decisions and reasons**
+1. **One context for both surfaces.** The docked panel and `/assistant` render the same thread; a
+   proposal started in the panel is still there on the page. Two stores would have meant two truths.
+2. **Confirming is real, not a receipt.** A confirmed `create_event`/`move_event`/`delete_event`/
+   `update_event` goes through `calendarService`, so 2b and 2c are actually wired together — the
+   strongest available proof that the mock seam is in the right place. Tasks/goals/projects are
+   receipt-only because their stores are 2d's, and pretending otherwise would be a lie in the UI.
+3. **`Adjust` edits before applying.** `ConfirmationRequest.modifiedInput` is in the real contract,
+   so the UI exposes it rather than silently dropping a field the backend supports.
+4. **The responder is deterministic and documented as such.** No LLM call in Stage 2, no fake
+   "thinking" claims. Reason strings state the actual rule used (working hours, gaps found, count of
+   events scanned).
+5. **No new shadcn/ui primitives were added** — `Badge`, `Button`, `Skeleton`, `Kbd`,
+   `DropdownMenu`, `Dialog` were all sufficient.
+
+**⚠ Four more backend contract mismatches found (appended to Stage 4)**
+1. **No controller exposes the orchestrator.** `processMessage`/`confirmAction` are service-only.
+2. **`IntentType` lacks `CREATE_PROJECT`** even though a `create_project` tool exists.
+3. **`getPendingAction()` is hard-coded to return `null`**, so `confirmAction` always answers
+   "Action not found or expired." — confirmation is non-functional server-side today. The unused
+   `AssistantAction` prisma model is the obvious home for it.
+4. (carried from 2b) `Event.category`/`Event.color` absent from the Prisma `Event` model; `DateTime`
+   does not serialise to ISO.
+
+**Verified**
+- `cd client && npm run build` → green. 6.15s, no type errors.
+
+**Deferred**
+- **The main chunk regressed to 501 kB (167 kB gzip)** from 316 kB, because `AssistantPanel` is
+  imported eagerly by `DashboardLayout` and now pulls the thread + proposal card into the entry
+  chunk. Route-level splitting of the assistant internals, or lazy-loading the panel body until
+  first open, is the fix — do it in 2m alongside the command palette.
+- Tool-call *argument* values are not shown (only the tool names + category); a full JSON viewer is
+  a dev affordance, not a user one.
+- `listRecommendations()` is implemented but currently returns `[]` in mock; the recommendation
+  surface belongs to the Proactive feed (2j).
+- Streaming responses are not simulated; `ai-shimmer` stands in for a token stream.
+
+**Files touched**
+- New: `client/src/lib/mock/assistant.ts`, `client/src/services/assistant.ts`,
+  `client/src/contexts/AssistantContext.tsx`, `client/src/pages/AssistantPage.tsx`,
+  `client/src/components/assistant/{AssistantThread,ProposalCard,AssistantComposer,ConversationList}.tsx`
+- Modified: `client/src/services/types.ts`, `client/src/components/assistant/AssistantPanel.tsx`
+  (rewritten), `client/src/components/layout/DashboardLayout.tsx` (AssistantProvider),
+  `client/src/App.tsx` (real AssistantPage route), `client/src/pages/index.tsx` (stub removed)

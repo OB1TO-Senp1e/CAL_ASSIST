@@ -4,6 +4,7 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { LegacyPage } from '@/components/layout/LegacyPage';
 import { RouteFallback } from '@/components/layout/RouteFallback';
 import { AuthProvider } from '@/contexts/AuthContext';
+import { AssistantProvider } from '@/contexts/AssistantContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { RequireAuth } from '@/components/auth/RequireAuth';
 import { LoginPage } from '@/pages/LoginPage';
@@ -23,7 +24,7 @@ const ArchitecturePage = lazy(() => import('@/pages/ArchitecturePage').then((m) 
  * Placeholder surfaces for units 2c–2m. Declared individually (rather than one
  * dynamic helper) so each keeps its own chunk and stays type-checked by name.
  */
-const AssistantPage = lazy(() => import('@/pages').then((m) => ({ default: m.AssistantPage })));
+const AssistantPage = lazy(() => import('@/pages/AssistantPage').then((m) => ({ default: m.AssistantPage })));
 const GoalsPage = lazy(() => import('@/pages').then((m) => ({ default: m.GoalsPage })));
 const ProjectsPage = lazy(() => import('@/pages').then((m) => ({ default: m.ProjectsPage })));
 const CommitmentsPage = lazy(() => import('@/pages').then((m) => ({ default: m.CommitmentsPage })));
@@ -78,7 +79,7 @@ function App() {
             <Route path="tasks" element={<TasksPage />} />
             <Route path="search" element={<SearchPage />} />
 
-            <Route path="assistant" element={<LegacyPage title="Assistant"><AssistantPage /></LegacyPage>} />
+            <Route path="assistant" element={<AssistantPage />} />
             <Route path="goals" element={<LegacyPage title="Goals"><GoalsPage /></LegacyPage>} />
             <Route path="projects" element={<LegacyPage title="Projects"><ProjectsPage /></LegacyPage>} />
             <Route path="commitments" element={<LegacyPage title="Commitments"><CommitmentsPage /></LegacyPage>} />

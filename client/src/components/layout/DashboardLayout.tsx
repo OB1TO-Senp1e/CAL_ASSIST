@@ -4,6 +4,7 @@ import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useHotkeys } from '@/lib/hotkeys';
 import { AssistantPanel } from '@/components/assistant/AssistantPanel';
+import { AssistantProvider } from '@/contexts/AssistantContext';
 import { RouteFallback } from './RouteFallback';
 import { ALL_NAV_ITEMS } from './nav-config';
 import { ShellProvider, useShell } from './shell-context';
@@ -104,9 +105,13 @@ function ShellFrame() {
 }
 
 export function DashboardLayout() {
+  // AssistantProvider sits inside the authenticated shell only: the public auth
+  // routes have no assistant, and the panel + page must share one thread.
   return (
-    <ShellProvider>
-      <ShellFrame />
-    </ShellProvider>
+    <AssistantProvider>
+      <ShellProvider>
+        <ShellFrame />
+      </ShellProvider>
+    </AssistantProvider>
   );
 }
