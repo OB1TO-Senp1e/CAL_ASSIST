@@ -13,31 +13,78 @@ export class IntentParserService {
   async parseIntent(userId: string, text: string): Promise<ParsedIntent> {
     const userContext = await this.getUserContext(userId);
 
-    const prompt = this.buildIntentParsingPrompt(text, userContext);
+    try {
+      const prompt = this.buildIntentParsingPrompt(text, userContext);
 
-    const aiResponse = await this.aiProvider.generateStructured(prompt, {
-      temperature: 0.3,
-      maxTokens: 2000,
-    });
+      const aiResponse = await this.aiProvider.generateStructured(prompt, {
+        temperature: 0.3,
+        maxTokens: 2000,
+      });
 
-    const intent: ParsedIntent = {
-      type: aiResponse.type,
-      confidence: aiResponse.confidence,
-      entities: aiResponse.entities,
-      constraints: aiResponse.constraints,
-      originalText: text,
-    };
-
-    await this.prisma.intent.create({
-      data: {
-        userId,
+      const intent: ParsedIntent = {
+        type: aiResponse.type,
+        confidence: aiResponse.confidence,
+        entities: aiResponse.entities,
+        constraints: aiResponse.constraints,
         originalText: text,
-        parsedJson: JSON.stringify(intent),
-        status: 'COMPLETED',
-      },
-    });
+      };
 
-    return intent;
+      await this.prisma.intent.create({
+        data: {
+          userId,
+          originalText: text,
+          parsedJson: JSON.stringify(intent),
+          status: 'COMPLETED',
+        },
+      });
+
+      return intent;
+    } catch (error: any) {
+      // Neither LLM provider is reachable (no OPENAI_API_KEY / OLLAMA_URL).
+      // Fall back to a deterministic classification so the assistant thread
+      // still answers instead of 500-ing. Kept simple: intent + entities only.
+      const fallback = this.classifyLocally(text);
+      await this.prisma.intent.create({
+        data: {
+          userId,
+          originalText: text,
+          parsedJson: JSON.stringify(fallback),
+          status: 'COMPLETED',
+          errorMessage: error?.message || 'LLM provider unavailable; local classifier used',
+        },
+      });
+      return fallback;
+    }
+  }
+
+  /**
+   * Local classifier used when no AI provider is reachable. Uses the same
+   * nine IntentType members the LLM prompt does; crude keyword buckets are
+   * enough to keep proposals flowing in a live-but-LLM-less environment.
+   */
+  private classifyLocally(text: string): ParsedIntent {
+    const lower = text.toLowerCase().trim();
+
+    const includes = (...tokens: string[]) => tokens.some((t) => lower.includes(t));
+
+    const maybeDate = /\b(tomorrow|today|monday|tuesday|wednesday|thursday|friday|at \d|march|april|\d{1,2}[:/.]\d{1,2})\b/;
+
+    if (includes('create', 'make')) {
+      if (includes('event', 'meeting', 'appointment', 'lunch', 'call', 'dr')) return { type: 'CREATE_EVENT', confidence: 0.9, entities: { title: text }, originalText: text, constraints: [] };
+      if (includes('task', 'todo', 'to-do', 'follow up', 'email')) return { type: 'CREATE_TASK', confidence: 0.9, entities: { title: text }, originalText: text, constraints: [] };
+      if (includes('goal', 'objective', 'aim', 'target')) return { type: 'CREATE_GOAL', confidence: 0.9, entities: { title: text }, originalText: text, constraints: [] };
+      if (includes('proposal', 'plan', 'schedule')) return { type: 'SCHEDULE_TASK', confidence: 0.8, entities: { title: text }, originalText: text, constraints: [] };
+      return { type: 'CREATE_TASK', confidence: 0.75, entities: { title: text }, originalText: text, constraints: [] };
+    }
+
+    if (includes('move', 'reschedule', 'postpone', 'push')) return { type: 'RESCHEDULE_EVENT', confidence: 0.85, entities: { title: text }, originalText: text, constraints: [] };
+    if (includes('cancel', 'delete', 'remove', 'drop')) return { type: 'CANCEL_EVENT', confidence: 0.85, entities: { title: text }, originalText: text, constraints: [] };
+    if (includes('schedule', 'plan', 'block', 'time for', 'find time')) return { type: 'SCHEDULE_TASK', confidence: 0.85, entities: { title: text }, originalText: text, constraints: [] };
+    if (includes('conflict', 'double-book', 'overlap')) return { type: 'CHECK_CONFLICTS', confidence: 0.9, entities: { title: text }, originalText: text, constraints: [] };
+    if (includes('available', 'availability', 'free', 'when', 'slot')) return { type: 'QUERY_AVAILABILITY', confidence: 0.9, entities: { title: text }, originalText: text, constraints: [] };
+    if (includes('recommend', 'priority', 'suggest') || maybeDate.test(lower)) return { type: 'GET_RECOMMENDATIONS', confidence: 0.7, entities: { title: text }, originalText: text, constraints: [] };
+
+    return { type: 'CREATE_TASK', confidence: 0.5, entities: { title: text }, originalText: text, constraints: [] };
   }
 
   private buildIntentParsingPrompt(text: string, context: any): string {

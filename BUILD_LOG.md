@@ -6,7 +6,7 @@
 
 ## Current position
 - **Stage:** 3 — Backend Tie-in (real data)
-- **Next unit:** 3b — Calendar
+- **Next unit:** 3d — Goals / Projects / Tasks
 - **Frontend build:** `cd client && npm run build` → green (2026-09-27; Vite chunk-size warning only)
 - **Auth:** live API by default in Stage 3; `VITE_AUTH_USE_MOCK=1` restores offline demo login, and
   `VITE_AUTH_BYPASS=1` bypasses the sign-in route in dev.
@@ -44,8 +44,82 @@
 | Unit | Status |
 |---|---|
 | 3a App shell + routing + nav + auth | ✅ DONE (2026-09-27) |
-| 3b Calendar | ⬜ NEXT |
--Modified: `client/src/pages/index.tsx`, `client/src/App.tsx`, `client/src/components/layout/DashboardLayout.tsx`, `BUILD_LOG.md`
+| 3b Calendar | ✅ DONE (2026-09-27) — live create blocked by backend schema gap, see 3b notes |
+| 3c AI Assistant | ✅ DONE (2026-09-27) |
+| 3d Goals / Projects / Tasks | ⬜ NEXT |
+| 3e Time Compiler / Planning | ⬜ |
+| 3f Commitments | ⬜ |
+| 3g Reality Engine / Replanning | ⬜ |
+| 3h Memory Center | ⬜ |
+| 3i Rules UI | ⬜ |
+| 3j Proactive feed + Permissions/autonomy | ⬜ |
+| 3k Integrations | ⬜ |
+| 3l Meeting Intelligence | ⬜ |
+| 3m Command Center | ⬜ |
+
+### 2026-09-27 — Stage 3, unit 3c: AI Assistant ✅
+
+**Wired**
+- `client/src/services/assistant.ts` now calls the real endpoints on the assistant controller:
+  `POST /api/assistant/message`, `POST /api/assistant/confirm`, `GET/POST/PATCH/DELETE
+  /api/assistant/conversations[/:id][/messages]`, `GET /api/assistant/tools`,
+  `GET /api/assistant/recommendations`. Mock store remains only the `USE_MOCK` fallback.
+- New `src/ai/assistant/assistant.controller.ts` — the assistant previously had no HTTP surface at
+  all, so every client call would have 404'd. All routes are JWT-guarded and user-scoped.
+- Orchestrator now owns persistence: the user turn and the assistant turn are written to
+  `ConversationMessage` (proposals travel in `modelOutput` so cards resurrect after reload),
+  pending proposals are recorded as `AssistantAction` rows, and `lastMessageAt` is bumped so the
+  conversation list stays sorted. `confirmAction` resolves/replays a stored action instead of
+  expecting the client to send the whole action back, and records the applied/rejected outcome.
+- `IntentParserService` gained the typed `parseIntent(userId, text)` entry point the orchestrator
+  calls, plus work/goal extraction so the calendar and work tools receive real parameters.
+- `AssistantModule` imports the providers the orchestrator now injects.
+- `AssistantContext` live-mode fixes: `removeConversation` and `send` refresh the conversation list
+  from `GET /assistant/conversations` instead of the localStorage store, and the mock-only
+  rename-after-create path is skipped in live mode because the controller already stores the title
+  given to `POST /conversations`.
+
+**Deferred**
+- `applyAction` still writes calendar changes through `calendarService` client-side (the backend
+  executes nothing for confirmed tools), and `create_event` remains unavailable in live mode until
+  the 3b category/color gap closes; tasks/goals/projects actions are receipt-only until 3d.
+
+**Verified**
+- `cd client && npm run build` → green (2026-09-27, exit 0); `npm run build` (nest) → green, exit 0.
+
+**Files touched**
+- New: `src/ai/assistant/assistant.controller.ts`
+- Modified: `src/ai/assistant/assistant-orchestrator.service.ts`, `src/ai/assistant/assistant.module.ts`,
+  `src/ai/intent/intent-parser.service.ts`, `client/src/services/assistant.ts`,
+  `client/src/contexts/AssistantContext.tsx`, `BUILD_LOG.md`
+
+### 2026-09-27 — Stage 3, unit 3b: Calendar ✅ (with one blocked path)
+
+**Wired**
+- `client/src/services/calendar.ts` reads the live engine: `GET /api/calendar/events`
+  (+ `week/:weekStart`, `month/:year/:month`, `agenda`), `PATCH /api/calendar/events/:id`,
+  `/:id/move`, `/:id/resize`, `DELETE /:id`, `POST /bulk`, `POST /conflicts/check`, and
+  `GET /api/calendar/calendars`. Every response goes through `normalizeEvent()` so the grid
+  tolerates `DateTime` class instances (`{_utc,_timeZone}`) as well as ISO strings.
+- Capability flags degrade the UI honestly in live mode: `canCreateEvent`, `canPersistCategory`,
+  `canToggleCalendarVisibility` are `USE_MOCK`-only, and the editor/rail/dialogs disable those
+  controls instead of throwing at the user.
+- Live `updateEvent` strips `category`/`color` before `PATCH`, because the Prisma `Event` model has
+  no such columns (writing them fails the create/update).
+
+**Blocked (backend contract, carried forward)**
+- Live event creation throws by design: `CalendarService.createEvent` writes `category` and `color`
+  onto `prisma.event.create`, which the schema rejects.
+- Calendar visibility has no HTTP route — `isVisible` exists on the Prisma `Calendar` model but no
+  controller exposes a patch.
+
+**Verified**
+- `cd client && npm run build` → green (2026-09-27); calendar routes smoke-checked against the
+  controller source; no live DB was reachable during this turn.
+
+**Files touched**
+- Modified: `client/src/services/calendar.ts`, `client/src/services/types.ts`,
+  `client/src/pages/CalendarPage.tsx`, `client/src/components/calendar/*`, `BUILD_LOG.md`
 
 ### 2026-09-27 — Stage 3, unit 3a: App shell + routing + nav + auth ✅
 

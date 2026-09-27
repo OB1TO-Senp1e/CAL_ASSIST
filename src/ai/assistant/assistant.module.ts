@@ -5,6 +5,7 @@ import { IntentParserService } from '../../ai/intent/intent-parser.service';
 import { TimeCompilerService } from '../../scheduling/time-compiler/time-compiler.service';
 import { ToolRegistry } from './tool-registry.service';
 import { AssistantOrchestratorService } from './assistant-orchestrator.service';
+import { AssistantController } from './assistant.controller';
 import { CreateEventTool } from './tools/create-event.tool';
 import { UpdateEventTool } from './tools/update-event.tool';
 import { DeleteEventTool } from './tools/delete-event.tool';
@@ -20,6 +21,7 @@ import { ExplainScheduleTool } from './tools/explain-schedule.tool';
 import { PlanDayTool } from './tools/plan-day.tool';
 
 @Module({
+  controllers: [AssistantController],
   imports: [AiProvidersModule],
   providers: [
     PrismaService,

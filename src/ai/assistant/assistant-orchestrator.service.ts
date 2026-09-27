@@ -31,6 +31,34 @@ export class AssistantOrchestratorService {
   ): Promise<AssistantResponse> {
     const context = await this.buildContext(userId);
 
+    // Persist the user turn so `GET /assistant/conversations/:id/messages`
+    // returns a complete thread (the composer also writes optimistically on
+    // the client; storing here makes the write idempotent).
+    let activeConversationId = conversationId;
+    if (!activeConversationId) {
+      const existing = await this.prisma.conversation.findFirst({
+        where: { userId, isActive: true },
+        orderBy: { lastMessageAt: 'desc' },
+        select: { id: true },
+      });
+      activeConversationId = existing?.id;
+    }
+    if (!activeConversationId) {
+      const created = await this.prisma.conversation.create({
+        data: { userId },
+      });
+      activeConversationId = created.id;
+    }
+
+    await this.prisma.conversationMessage.create({
+      data: {
+        conversationId: activeConversationId,
+        userId,
+        role: 'USER',
+        content: message,
+      },
+    });
+
     const intent = await this.intentParser.parseIntent(userId, message);
 
     const intentActions = await this.extractIntentActions(intent, context);
@@ -39,18 +67,59 @@ export class AssistantOrchestratorService {
 
     const requiresConfirmation = proposedActions.some((a) => a.confirmationLevel !== 'NONE');
 
-    if (requiresConfirmation) {
-      return {
-        message: this.formatProposedActions(proposedActions),
-        proposedActions,
-        requiresConfirmation: true,
-        confidence: this.calculateOverallConfidence(proposedActions),
-      };
+    const response = requiresConfirmation
+      ? {
+          message: this.formatProposedActions(proposedActions),
+          proposedActions,
+          requiresConfirmation: true,
+          confidence: this.calculateOverallConfidence(proposedActions),
+        }
+      : this.formatExecutionResults(
+          await this.executeActions(proposedActions, context),
+          proposedActions
+        );
+
+    // Persist the assistant turn; proposedActions travel in modelOutput so the
+    // thread can resurrect proposal cards after a reload.
+    await this.prisma.conversationMessage.create({
+      data: {
+        conversationId: activeConversationId,
+        userId,
+        role: 'ASSISTANT',
+        content: response.message,
+        modelOutput: response.proposedActions
+          ? JSON.stringify({
+              proposedActions: response.proposedActions,
+              requiresConfirmation: response.requiresConfirmation ?? false,
+              confidence: response.confidence ?? null,
+            })
+          : undefined,
+      },
+    });
+
+    // Record pending claims so confirmAction can find them later.
+    if (response.proposedActions) {
+      await this.prisma.assistantAction.createMany({
+        data: response.proposedActions.map((action) => ({
+          userId,
+          conversationId: activeConversationId,
+          actionType: action.toolName,
+          entityType: action.toolName,
+          parameters: action.input as any,
+          confidence: action.confirmationLevel === 'CRITICAL' ? 0.7 : 0.9,
+          reasoning: action.description,
+          wasApplied: false,
+        })),
+      });
     }
 
-    const results = await this.executeActions(proposedActions, context);
+    // Keep the conversation list sorted by activity.
+    await this.prisma.conversation.update({
+      where: { id: activeConversationId },
+      data: { lastMessageAt: new Date() },
+    });
 
-    return this.formatExecutionResults(results, proposedActions);
+    return response;
   }
 
   async confirmAction(
@@ -62,24 +131,75 @@ export class AssistantOrchestratorService {
     const context = await this.buildContext(userId);
 
     if (!confirmed) {
+      // Record the rejection so the action can never be applied later.
+      await this.prisma.assistantAction.updateMany({
+        where: { userId, id: actionId, wasApplied: false },
+        data: {
+          wasApplied: true,
+          outcome: { status: 'REJECTED', message: 'Action cancelled by user.' },
+          appliedAt: new Date(),
+        },
+      });
       return {
         message: 'Action cancelled.',
         confidence: 1.0,
       };
     }
 
-    const proposedAction = await this.getPendingAction(userId, actionId);
-    if (!proposedAction) {
+    const record = await this.prisma.assistantAction.findFirst({
+      where: { id: actionId, userId, wasApplied: false },
+    });
+    if (!record) {
       return {
         message: 'Action not found or expired.',
         confidence: 0,
       };
     }
 
+    const proposedAction: ProposedAction = {
+      id: record.id,
+      toolName: record.actionType,
+      description: record.reasoning ?? record.actionType,
+      input: (record.parameters as Record<string, any>) ?? {},
+      confirmationLevel: 'NONE',
+      estimatedImpact: this.estimateImpact(record.actionType, record.parameters),
+      reversible: this.isReversible(record.actionType),
+    };
+
     const input = modifiedInput || proposedAction.input;
     const result = await this.toolRegistry.executeTool(proposedAction.toolName, input, context);
 
-    return this.formatSingleResult(proposedAction, result);
+    await this.prisma.assistantAction.updateMany({
+      where: { userId, id: actionId, wasApplied: false },
+      data: {
+        wasApplied: true,
+        outcome: {
+          status: result.status,
+          message: result.error ?? result.data ?? undefined,
+        },
+        appliedAt: new Date(),
+      },
+    });
+
+    // Persist the SYSTEM receipt so a live thread shows what was applied.
+    const formatted = this.formatSingleResult(proposedAction, result);
+    if (record.conversationId) {
+      await this.prisma.conversationMessage.create({
+        data: {
+          conversationId: record.conversationId,
+          userId,
+          role: 'SYSTEM',
+          content: formatted.message,
+          modelOutput: JSON.stringify({ confidence: formatted.confidence ?? null }),
+        },
+      });
+      await this.prisma.conversation.update({
+        where: { id: record.conversationId },
+        data: { lastMessageAt: new Date() },
+      });
+    }
+
+    return formatted;
   }
 
   private async buildContext(userId: string): Promise<ToolExecutionContext & { context: Context }> {
@@ -149,9 +269,10 @@ export class AssistantOrchestratorService {
     intent: ParsedIntent,
     context: ToolExecutionContext & { context: Context }
   ): Promise<IntentAction[]> {
-    const toolDefinitions = this.toolRegistry.getToolDefinitionsForLLM();
+    try {
+      const toolDefinitions = this.toolRegistry.getToolDefinitionsForLLM();
 
-    const prompt = `
+      const prompt = `
 You are CalAssist's assistant orchestrator. Based on the user's intent and available tools, determine which tools to call.
 
 User Intent: ${JSON.stringify(intent)}
@@ -178,12 +299,169 @@ Respond with valid JSON array of actions:
 ]
 `;
 
-    const aiResponse = await this.aiProvider.generateStructured(prompt, {
-      temperature: 0.3,
-      maxTokens: 3000,
-    });
+      const aiResponse = await this.aiProvider.generateStructured(prompt, {
+        temperature: 0.3,
+        maxTokens: 3000,
+      });
 
-    return aiResponse.actions || [];
+      if (Array.isArray(aiResponse.actions) && aiResponse.actions.length > 0) {
+        return aiResponse.actions;
+      }
+    } catch (error: any) {
+      // No LLM reachable; fall through to the deterministic mapper below.
+    }
+
+    return this.mapIntentToActionsLocally(intent);
+  }
+
+  /**
+   * Deterministic intent→action mapper used when no LLM provider is reachable.
+   * Maps the nine ParsedIntent members onto the registered tool input schemas
+   * so proposals still reach the confirm step in a live-but-LLM-less backend.
+   */
+  private mapIntentToActionsLocally(intent: ParsedIntent): IntentAction[] {
+    const title = String(intent.entities?.title ?? intent.originalText ?? 'Untitled');
+    const startDate = intent.entities?.startDate as string | undefined;
+    const endDate = intent.entities?.endDate as string | undefined;
+    const priority = intent.entities?.priority;
+    const description = intent.entities?.description as string | undefined;
+
+    const withReasoning = (
+      toolName: string,
+      input: Record<string, any>,
+      reasoning: string
+    ): IntentAction => {
+      // Use each tool's registered default confirmation level instead of
+      // hard-coding NONE, so high-risk writes (delete, move, create) still
+      // surface as confirmable proposals.
+      const tool = this.toolRegistry.getTool(toolName);
+      return {
+        toolName,
+        input,
+        reasoning,
+        confidence: intent.confidence ?? 0.6,
+        requiresConfirmation: (tool?.confirmationLevel ?? 'NONE') !== 'NONE',
+        confirmationLevel: tool?.confirmationLevel ?? 'NONE',
+      };
+    };
+
+    switch (intent.type) {
+      case 'CREATE_EVENT': {
+        const start = startDate
+          ? String(startDate)
+          : new Date(Date.now() + 60 * 60000).toISOString();
+        const end = endDate
+          ? String(endDate)
+          : new Date(Date.parse(start) + 60 * 60000).toISOString();
+        return [
+          withReasoning(
+            'create_event',
+            { title, description, startDate: start, endDate: end },
+            `Create "${title}"`
+          ),
+        ];
+      }
+      case 'CREATE_TASK':
+        return [
+          withReasoning(
+            'create_task',
+            {
+              title,
+              description,
+              priority: typeof priority === 'number' ? priority : 3,
+              estimatedDurationMinutes: intent.entities?.durationMinutes ?? 60,
+              ...(startDate ? { startDate: String(startDate) } : {}),
+              ...(intent.entities?.dueDate ? { dueDate: String(intent.entities.dueDate) } : {}),
+            },
+            `Create task "${title}"`
+          ),
+        ];
+      case 'CREATE_GOAL':
+        return [
+          withReasoning(
+            'create_goal',
+            {
+              title,
+              description,
+              ...(startDate ? { startDate: String(startDate) } : {}),
+              ...(intent.entities?.targetDate ? { targetDate: String(intent.entities.targetDate) } : {}),
+            },
+            `Create goal "${title}"`
+          ),
+        ];
+      case 'SCHEDULE_TASK':
+        return [
+          withReasoning(
+            'create_schedule_proposal',
+            {
+              timeRange: {
+                start: new Date().toISOString(),
+                end: new Date(Date.now() + 7 * 86400000).toISOString(),
+              },
+              timezone: 'UTC',
+            },
+            `Build a schedule for "${title}"`
+          ),
+        ];
+      case 'QUERY_AVAILABILITY': {
+        const start = startDate ? String(startDate) : new Date().toISOString();
+        return [
+          withReasoning(
+            'find_availability',
+            {
+              startDate: start,
+              endDate: endDate
+                ? String(endDate)
+                : new Date(Date.parse(start) + 86400000).toISOString(),
+              durationMinutes: intent.entities?.durationMinutes ?? 60,
+            },
+            `Find availability for "${title}"`
+          ),
+        ];
+      }
+      case 'CHECK_CONFLICTS':
+        return [
+          withReasoning(
+            'detect_conflicts',
+            {
+              startDate: String(startDate ?? new Date().toISOString()),
+              endDate: String(
+                endDate ??
+                  new Date(
+                    Date.parse(String(startDate ?? new Date().toISOString())) + 86400000
+                  ).toISOString()
+              ),
+            },
+            `Check conflicts for "${title}"`
+          ),
+        ];
+      case 'RESCHEDULE_EVENT':
+      case 'CANCEL_EVENT': {
+        const toolName = intent.type === 'RESCHEDULE_EVENT' ? 'move_event' : 'delete_event';
+        const input: Record<string, any> = { eventId: intent.entities?.eventId ?? '' };
+        if (intent.type === 'RESCHEDULE_EVENT') {
+          const start = startDate ? String(startDate) : new Date().toISOString();
+          input.newStartDate = start;
+          input.newEndDate = endDate ?? new Date(Date.parse(start) + 60000).toISOString();
+        }
+        return [
+          withReasoning(
+            toolName,
+            input,
+            intent.type === 'RESCHEDULE_EVENT' ? `Move "${title}"` : `Delete "${title}"`
+          ),
+        ];
+      }
+      case 'GET_RECOMMENDATIONS':
+      default:
+        return [
+          withReasoning(
+            'explain_schedule',
+            { date: startDate ?? new Date().toISOString(), includeMetrics: true },
+            `Explain today's schedule`
+          ),
+        ];
+    }
   }
 
   private async validateAndPrepareActions(
@@ -297,9 +575,5 @@ Respond with valid JSON array of actions:
   private isReversible(toolName: string): boolean {
     const irreversible = ['delete_event'];
     return !irreversible.includes(toolName);
-  }
-
-  private async getPendingAction(userId: string, actionId: string): Promise<ProposedAction | null> {
-    return null;
   }
 }

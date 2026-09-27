@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from 'react';
 import { assistantService, assistantStore } from '@/services/assistant';
+import { USE_MOCK } from '@/services/auth';
 import { calendarService } from '@/services/calendar';
 import type {
   AssistantToolDescriptor,
@@ -62,7 +63,13 @@ function persistable(message: ChatMessage): ChatMessage {
   return rest;
 }
 
+/** True when the assistant uses the live API (not the localStorage mock). */
+const isLiveAssistant = !USE_MOCK;
+
+/** Persist a turn. Live mode is server-persisted by the orchestrator; the
+ *  localStorage store is only the Stage-2 mock fallback. */
 function persist(conversationId: string, message: ChatMessage): void {
+  if (isLiveAssistant) return;
   const all = assistantStore.loadMessages();
   assistantStore.saveMessages([...all, persistable(message)]);
 }
@@ -169,6 +176,12 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
   const removeConversation = useCallback(async (id: string) => {
     try {
       await assistantService.deleteConversation(id);
+      if (isLiveAssistant) {
+        const rest = await assistantService.listConversations();
+        setConversations(rest);
+        if (activeRef.current === id) setActiveId(rest[0]?.id ?? null);
+        return;
+      }
       const rest = assistantStore.loadConversations();
       setConversations(rest);
       if (activeRef.current === id) setActiveId(rest[0]?.id ?? null);
@@ -206,8 +219,10 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
       const settledUser = { ...tempUser, conversationId: id, pending: false };
       persist(id, settledUser);
 
-      // Name the thread from its first user message.
-      if (assistantStore.titleFrom(body)) {
+      // Name the thread from its first user message. The live controller already
+      // stores the supplied title on CREATE, so only the mock fallback needs the
+      // rename-after-create path.
+      if (assistantStore.titleFrom(body) && !isLiveAssistant) {
         const existing = assistantStore.loadConversations().find((c) => c.id === id);
         if (existing && !existing.title) {
           await assistantService.renameConversation(id, assistantStore.titleFrom(body));
@@ -227,7 +242,11 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
           return next;
         });
       }
-      setConversations(assistantStore.loadConversations());
+      if (isLiveAssistant) {
+        setConversations(await assistantService.listConversations());
+      } else {
+        setConversations(assistantStore.loadConversations());
+      }
     } catch (e: unknown) {
       setMessages((list) =>
         list.map((m) => (m.id === tempUser.id ? { ...m, pending: false, failed: true } : m)),
