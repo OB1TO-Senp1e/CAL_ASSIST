@@ -127,6 +127,22 @@ export class TasksService {
       await this.validateDependencies(userId, request.dependencies, id);
     }
 
+    // Completion timestamp is derived from the status transition so a client that
+    // only sends `{ status: 'COMPLETED' }` still gets a completedAt, and reopening
+    // a task clears the stale one. An explicit completedAt always wins.
+    let completedAt: Date | null | undefined = request.completedAt
+      ? new Date(request.completedAt)
+      : undefined;
+    if (request.status === 'COMPLETED' && completedAt === undefined) {
+      completedAt = new Date();
+    } else if (
+      request.status &&
+      request.status !== 'COMPLETED' &&
+      request.completedAt === undefined
+    ) {
+      completedAt = task.completedAt ? null : undefined;
+    }
+
     // Update task
     const updated = await this.prisma.task.update({
       where: { id },
@@ -142,7 +158,7 @@ export class TasksService {
         actualDurationMin: request.actualDurationMinutes,
         dueDate: request.dueDate ? new Date(request.dueDate) : undefined,
         startDate: request.startDate ? new Date(request.startDate) : undefined,
-        completedAt: request.completedAt ? new Date(request.completedAt) : undefined,
+        completedAt,
         flexibility: request.flexibility,
         energyRequirement: request.energyRequirement,
         context: request.context,

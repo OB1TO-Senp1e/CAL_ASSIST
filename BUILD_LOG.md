@@ -6,7 +6,10 @@
 
 ## Current position
 - **Stage:** 3 — Backend Tie-in (real data)
-- **Next unit:** 3d — Goals / Projects / Tasks
+- **Next unit:** 3e — Time Compiler / Planning
+- **Runtime:** `.env` now exists (copied from `.env.example`, local Postgres, migrations up to date),
+  so the API boots on `http://localhost:3000/api` and live smoke tests are runnable. `.env` is
+  git-ignored; recreate it locally from `.env.example` on a fresh clone.
 - **Frontend build:** `cd client && npm run build` → green (2026-09-27; Vite chunk-size warning only)
 - **Auth:** live API by default in Stage 3; `VITE_AUTH_USE_MOCK=1` restores offline demo login, and
   `VITE_AUTH_BYPASS=1` bypasses the sign-in route in dev.
@@ -46,8 +49,8 @@
 | 3a App shell + routing + nav + auth | ✅ DONE (2026-09-27) |
 | 3b Calendar | ✅ DONE (2026-09-27) — live create blocked by backend schema gap, see 3b notes |
 | 3c AI Assistant | ✅ DONE (2026-09-27) |
-| 3d Goals / Projects / Tasks | ⬜ NEXT |
-| 3e Time Compiler / Planning | ⬜ |
+| 3d Goals / Projects / Tasks | ✅ DONE (2026-09-27) — live CRUD + status transitions verified |
+| 3e Time Compiler / Planning | ⬜ NEXT |
 | 3f Commitments | ⬜ |
 | 3g Reality Engine / Replanning | ⬜ |
 | 3h Memory Center | ⬜ |
@@ -80,9 +83,11 @@
   given to `POST /conversations`.
 
 **Deferred**
-- `applyAction` still writes calendar changes through `calendarService` client-side (the backend
-  executes nothing for confirmed tools), and `create_event` remains unavailable in live mode until
-  the 3b category/color gap closes; tasks/goals/projects actions are receipt-only until 3d.
+- ~~`applyAction` still writes calendar changes through `calendarService` client-side~~ — superseded
+  by the follow-up below: live confirms are server-owned and the client no longer re-applies them.
+  `create_event` remains unavailable in live mode until the 3b category/color gap closes.
+- ~~tasks/goals/projects actions are receipt-only until 3d~~ — resolved in 3d: the backend work tools
+  execute for real (verified below).
 
 **Follow-up fixes (same unit)**
 - Confirm could never find its action: the orchestrator stored proposals with `createMany`, which
@@ -100,10 +105,26 @@
 
 **Verified**
 - `cd client && npm run build` → green (2026-09-27, exit 0); `npm run build` (nest) → green, exit 0.
-- Not exercised: a live end-to-end request. No `.env` exists in the repo (only `.env.example`) and
-  `DATABASE_URL` is unset, so the server cannot boot against a database. Postgres is listening on
-  5432, so this is a configuration gap, not a code gap — the next turn should create `.env` before
-  claiming any live-flow verification.
+- **Live end-to-end smoke test now run** (2026-09-27, after creating `.env`; Postgres reachable,
+  `prisma migrate status` → up to date, server boots and connects). Against the running API:
+  - `POST /auth/register` + `POST /auth/login` → 201/200, `access_token` issued. Note auth login and
+    register are deliberately unprefixed (`/auth/*`, see `setGlobalPrefix` excludes), everything
+    else is `/api/*`; the Vite dev proxy forwards both.
+  - `POST /assistant/conversations` → row persisted; `GET` lists it; `DELETE` removes it (list then 0).
+  - `POST /assistant/message` → returns a real stored cuid `id` and real `conversationId` (not
+    `assistant_<ts>`/`null`), and proposals carry the `action_<ts>_<rand>` id.
+  - `GET /assistant/conversations/:id/messages` → 3 rows after send+confirm: USER, ASSISTANT
+    (proposal payload present in `modelOutput`), and a SYSTEM receipt for the confirm outcome.
+  - `POST /assistant/confirm` → resolves the stored action and executes server-side (previously
+    "Action not found or expired"). A `create_task` confirm produced exactly **one** new task row
+    (count 1 → 2), confirming the live double-apply fix from the client side is also correct at the
+    data layer.
+  - The AI providers are unconfigured (placeholder `OPENAI_API_KEY`, no Ollama running), so every
+    turn falls back to the deterministic rule-based intent parser. The assistant flow therefore
+    works offline, but tool *selection* is rule-based — live LLM behaviour is still unverified.
+- Not covered: `create_event` confirm in live mode (blocked by the 3b `category`/`color` Prisma
+  mismatch), and calendar UI refresh after an accepted event proposal — the client no longer
+  re-applies writes live, so the calendar screen must refetch from the API instead.
 
 **Files touched**
 - New: `src/ai/assistant/assistant.controller.ts`
@@ -111,6 +132,63 @@
   `src/ai/assistant/interfaces/assistant-tools.interface.ts`,
   `src/ai/intent/intent-parser.service.ts`, `client/src/services/assistant.ts`,
   `client/src/contexts/AssistantContext.tsx`, `BUILD_LOG.md`
+
+### 2026-09-27 — Stage 3, unit 3d: Goals / Projects / Tasks ✅
+
+**Wired / verified against the live API** (server + Postgres running, real JWT user):
+- `client/src/services/work.ts` calls `GET/POST/PATCH/DELETE /api/{goals,projects,tasks}[/:id]` and
+  the routes all exist and are JWT-guarded. Confirmed live:
+  - Create goal → `GoalDTO` shape matches exactly (`status: PENDING`, `targetDate`, timestamps).
+  - Create project with `goalId` → `ProjectDTO` matches (`goalId`, `dueDate`).
+  - Create task with `projectId` + `goalId` → `TaskDTO` matches, and the request field
+    `estimatedDurationMinutes` is correctly mapped to the persisted `estimatedDurationMin`
+    (returned as `45`). A minimal `{ title }` create also succeeds with Prisma defaults
+    (`status PENDING`, `source USER`, `flexibility/energyRequirement MEDIUM`).
+  - List endpoints return **plain arrays** as the service types promise, and the query filters the
+    client sends actually work: `?status=COMPLETED&projectId=…`, `?status=IN_PROGRESS`,
+    `GET /projects?goalId=…`.
+  - PATCH + DELETE work; user scoping is enforced (a second user sees 0 goals/tasks and gets 404
+    reading another user's goal).
+- Client status unions match the Prisma enums exactly (`GoalStatus`, `ProjectStatus`, `TaskStatus`,
+  `TaskSource`, `TaskFlexibility`, `EnergyLevel`), so no normalizer is needed for 3d. API responses
+  carry extra additive fields the client types omit (`deletedAt`, `intentId`, `parentTaskId`,
+  `dependencies`, `dependentOf`, `timeBlocks`) — harmless to the typed UI.
+
+**Fixed — completion timestamps now derive from status transitions**
+The three services disagreed with each other and with the Stage 2 mock rule
+(complete ⇒ stamp `completedAt`, reopen ⇒ clear it):
+- `tasks.service.ts` only set `completedAt` when the client explicitly sent it, so PATCHing
+  `{ status: 'COMPLETED' }` left it null (observed live). It now stamps `new Date()` on completion,
+  clears it when a completed task moves to any other status, and still honours an explicit
+  `completedAt`.
+- `goals.service.ts` stamped on completion but never cleared on reopen — now clears.
+- `projects.service.ts` never touched `completedAt` at all despite the column existing — now
+  matches the goal/task rule.
+Verified live after rebuild: task/goal/project → COMPLETED returns a timestamp, → IN_PROGRESS /
+PENDING returns null. `client/src/services/work.ts` needed no change; its mock branch already
+implemented this rule, so the fix brings live behaviour in line with what the UI already assumed.
+
+**Found but not fixed (Stage 4 candidates)**
+- No runtime request validation on these routes: `@Body()` is typed with
+  `Create/UpdateXxxRequest = z.infer<…>`, but the global pipe in `src/main.ts` is class-validator's
+  `ValidationPipe`, which ignores Zod-inferred types. Bad payloads therefore reach Prisma — the
+  first live task create returned a raw **500** from an invalid `projectId` FK instead of a 400.
+  Fixing this belongs in the backend-hardening stage, not a data-source swap.
+- `priority` defaults differ: Prisma uses `0`, the mock store uses `5`. Omitting priority on a live
+  create yields `0`, which can silently reorder priority-sensitive UI.
+- Hard deletes only: `deletedAt` exists on all three models but the services `delete()` and never
+  filter on it, so it is a dead column here (soft-delete support would also need `findAll` filters).
+- Work pages refresh by calling their loader on mount, so an assistant-confirmed `create_task`
+  appears on the next navigation/refetch rather than instantly — same class of caveat as calendar.
+
+**Verified**
+- `npm run build` (nest) → green, exit 0. `cd client && npm run build` → green, exit 0 (pre-existing
+  chunk-size warning only). No client code changed in this unit, so the 3d contract was confirmed by
+  live HTTP calls rather than UI-only inspection.
+
+**Files touched**
+- Modified: `src/tasks/tasks.service.ts`, `src/goals/goals.service.ts`,
+  `src/projects/projects.service.ts`, `BUILD_LOG.md`
 
 ### 2026-09-27 — Stage 3, unit 3b: Calendar ✅ (with one blocked path)
 

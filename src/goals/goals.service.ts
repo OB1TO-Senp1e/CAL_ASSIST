@@ -88,7 +88,13 @@ export class GoalsService {
         priority: request.priority,
         startDate: request.startDate ? new Date(request.startDate) : undefined,
         targetDate: request.targetDate ? new Date(request.targetDate) : undefined,
-        completedAt: request.status === 'COMPLETED' ? new Date() : undefined,
+        // Completing stamps the time; moving back out of COMPLETED clears it.
+        completedAt:
+          request.status === 'COMPLETED'
+            ? new Date()
+            : request.status && goal.completedAt
+              ? null
+              : undefined,
       },
     });
   }
