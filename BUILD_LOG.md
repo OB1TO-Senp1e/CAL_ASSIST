@@ -6,22 +6,23 @@
 
 ## Current position
 - **Stage:** 2 — Frontend Screens (mock data)
-- **Next unit:** 2a — App shell + routing + nav + auth screens
+- **Next unit:** 2b — Calendar (day/week/month/agenda, drag/drop, event detail)
 - **Frontend build:** `cd client && npm run build` → green (2026-09-27)
-- **Dev preview without backend:** `cd client && VITE_AUTH_BYPASS=1 npx vite --port 3001`
+- **Dev preview without backend:** mock layer is on by default in Stage 2 — `cd client && npx vite --port 3001`
+  (`VITE_AUTH_BYPASS=1` still forces a user with no session at all; `VITE_USE_MOCK=0` switches back to the real API.)
 
 ## Stage status
 | Stage | Status |
 |---|---|
 | 1 — Design Foundation | ✅ DONE (2026-09-27) |
-| 2 — Frontend Screens | ⏳ IN PROGRESS (0/13) |
+| 2 — Frontend Screens | ⏳ IN PROGRESS (1/13) |
 | 3 — Backend Tie-in | ⬜ NOT STARTED |
 | 4 — Backend Hardening | ⬜ NOT STARTED |
 
 ### Stage 2 screen-groups
 | Unit | Status |
 |---|---|
-| 2a App shell + routing + nav + auth | ⬜ |
+| 2a App shell + routing + nav + auth | ✅ DONE (2026-09-27) |
 | 2b Calendar (day/week/month/agenda, drag/drop, detail) | ⬜ |
 | 2c AI Assistant panel (thread, tool-call cards, confirm/reject) | ⬜ |
 | 2d Goals / Projects / Tasks | ⬜ |
@@ -107,3 +108,66 @@ _(mirrors 2a–2m; none started)_
   `client/index.html`, `client/vite.config.ts`, `client/components.json`,
   `client/package.json`, `client/package-lock.json`
 - Deleted: `client/tailwind.config.js`, `client/postcss.config.cjs`
+
+### 2026-09-27 — Stage 2, unit 2a: App shell + routing + nav + auth ✅
+
+**Built**
+- **Mock data layer** (`client/src/lib/mock/db.ts`) — the Stage 2 seam. In-memory store seeded with a
+  demo user, persisted to `localStorage` (so a login survives reload), with simulated latency
+  (220–480ms) so loading states are real and observable. Exposes `authenticate`, `createUser`,
+  `setSession/getSessionUserId/clearSession`, `resetMockDb`.
+- **Auth service facade** (`client/src/services/auth.ts`) — components never touch the mock directly.
+  `USE_MOCK` is derived from `VITE_USE_MOCK`; Stage 3 flips it and the same call sites hit the real
+  API. Endpoint paths and error strings were copied from the backend source, not the docs.
+- **Real auth screens** — `AuthCard` (split layout; product statement on the right, hidden below `lg`),
+  `LoginForm`, `RegisterForm`, `LoginPage`, `RegisterPage`, `RequireAuth`.
+- **Shell/routing** — `App.tsx` rewritten around lazy routes; nav completed in `nav-config.ts`;
+  `RouteFallback` + `Skeleton` + `Spinner` primitives added.
+
+**Decisions and reasons**
+1. **Auth contract verified against source, not PROGRESS.md.** `JwtStrategy.validate` returns
+   `{ id, email }`; `usersService.findById` selects `id, email, name, createdAt, updatedAt, preferences,
+   goals, projects`; `POST /auth/logout` deletes the `Session` row. `/auth/login|register|logout` sit
+   outside the `api` prefix (`main.ts` `setGlobalPrefix` exclude list) while `/api/users/me` is inside
+   it — the service mirrors that split exactly.
+2. **`AuthContext` no longer navigates.** It exposes `status: 'loading' | 'authenticated' | 'anonymous'`
+   and `RequireAuth` owns the redirect, passing `state.from`. The old context called `navigate('/')`
+   inside `login`, which destroyed the "return to the page you asked for" behaviour and made the
+   `/login` route unreachable on refresh.
+3. **Session restore renders a shell-shaped skeleton, not a spinner** (`RequireAuth`). Same layout,
+   zero layout shift, and no flash of the login screen on a deep-link refresh.
+4. **Mock mode is the default in Stage 2 and is stated in the UI.** The sign-in screen offers a
+   one-click demo account rather than hiding the fact that there is no backend yet. `VITE_AUTH_BYPASS=1`
+   is retained for the Stage 1 design-review workflow.
+5. **Register signs you straight in.** `POST /auth/register` returns the user but no token, so the form
+   establishes a session immediately afterwards; the copy states plainly that there is no email
+   verification step rather than implying one.
+6. **Nav now covers the whole product surface** (Today · Calendar · Assistant | Plan: Goals, Projects,
+   Tasks, Commitments, Compiler | Run: Meetings, Reality, Insights | System: Memory, Rules,
+   Permissions, Integrations, Proactive). Every entry has a real route. Unbuilt groups render a
+   `PlannedPage` that names the unit that will build it, so no stub reads as finished.
+7. **Suspense boundary moved into `DashboardLayout`** (around `<Outlet/>`) so a lazy chunk resolves
+   inside the real shell — sidebar and top bar never flicker. `LegacyPage` is now purely a header
+   wrapper and needs no boundary of its own.
+
+**Verified**
+- `cd client && npm run build` → green. Main bundle 313.90 kB (104.81 kB gzip); pages now emit as
+  separate chunks (`CalendarPage` 7.57 kB, `TodayPage` 8.18 kB, `TasksPage` 3.54 kB).
+
+**Deferred (unchanged from Stage 1)**
+- Today/Tasks keep their pre-design-system markup (`page-eyebrow`, `page-title`, `surface-card`,
+  `field-control`). They are wrapped by `LegacyPage`; Tasks is rebuilt in 2d, Today when its data
+  groups land. `LoginPage`/`LoginForm` are now built natively.
+- `resetMockDb` is exported and unused — it is wired to the developer menu in 2m, not dead code to delete.
+- Assistant composer still disabled (2c); `⌘K` still dispatches with no listener (2m).
+- No real loading/error handling against a live backend yet — that is Stage 3's job; the mock layer's
+  latency and thrown errors exercise the same UI paths in the meantime.
+
+**Files touched**
+- New: `client/src/lib/mock/db.ts`, `client/src/services/auth.ts`, `client/src/services/types.ts`,
+  `client/src/components/auth/{AuthCard,RegisterForm}.tsx`, `client/src/pages/RegisterPage.tsx`,
+  `client/src/components/layout/RouteFallback.tsx`, `client/src/components/ui/{skeleton,spinner}.tsx`
+- Modified: `client/src/App.tsx`, `client/src/contexts/AuthContext.tsx`,
+  `client/src/components/auth/{LoginForm,RequireAuth}.tsx`, `client/src/pages/{LoginPage,index}.tsx`,
+  `client/src/components/layout/{DashboardLayout,LegacyPage,nav-config}.tsx|ts`,
+  `client/src/vite-env.d.ts`

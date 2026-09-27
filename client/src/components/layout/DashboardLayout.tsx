@@ -1,9 +1,10 @@
-import { useEffect, useRef } from 'react';
+import { Suspense, useEffect, useRef } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useHotkeys } from '@/lib/hotkeys';
 import { AssistantPanel } from '@/components/assistant/AssistantPanel';
+import { RouteFallback } from './RouteFallback';
 import { ALL_NAV_ITEMS } from './nav-config';
 import { ShellProvider, useShell } from './shell-context';
 import { Sidebar, SidebarContent } from './Sidebar';
@@ -92,7 +93,9 @@ function ShellFrame() {
       </div>
 
       <main className="flex min-w-0 flex-1 flex-col">
-        <Outlet />
+        <Suspense fallback={<RouteFallback />}>
+          <Outlet />
+        </Suspense>
       </main>
 
       <AssistantPanel />

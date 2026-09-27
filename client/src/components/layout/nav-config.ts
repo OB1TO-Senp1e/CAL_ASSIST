@@ -1,14 +1,22 @@
 import {
+  Activity,
+  Bell,
+  BookOpenCheck,
   CalendarDays,
   CheckSquare,
+  Compass,
   FolderKanban,
   Handshake,
+  HardDrive,
   LineChart,
   Network,
   Settings,
+  ShieldCheck,
   Sparkles,
   Sun,
   Target,
+  Users,
+  Zap,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -25,7 +33,14 @@ export interface NavSection {
   items: NavItem[];
 }
 
-/** Routes map 1:1 to <Route> entries in App.tsx. */
+/**
+ * Sidebar structure. Every entry maps 1:1 to a <Route> in App.tsx.
+ *
+ * The sections mirror the product's actual workflow — plan it, run it, review it
+ * — rather than a flat list of every backend module. Modules with no dedicated
+ * screen yet (meetings, memory, rules, integrations, proactive) are reachable by
+ * their route and the command palette so the nav stays scannable.
+ */
 export const NAV_SECTIONS: NavSection[] = [
   {
     items: [
@@ -41,11 +56,26 @@ export const NAV_SECTIONS: NavSection[] = [
       { name: 'Projects', href: '/projects', icon: FolderKanban, shortcut: 'P' },
       { name: 'Tasks', href: '/tasks', icon: CheckSquare, shortcut: 'K' },
       { name: 'Commitments', href: '/commitments', icon: Handshake, shortcut: 'M' },
+      { name: 'Compiler', href: '/compiler', icon: Zap, shortcut: 'O' },
     ],
   },
   {
-    label: 'Review',
-    items: [{ name: 'Insights', href: '/insights', icon: LineChart, shortcut: 'I' }],
+    label: 'Run',
+    items: [
+      { name: 'Meetings', href: '/meetings', icon: Users, shortcut: 'E' },
+      { name: 'Reality', href: '/reality', icon: Activity, shortcut: 'R' },
+      { name: 'Insights', href: '/insights', icon: LineChart, shortcut: 'I' },
+    ],
+  },
+  {
+    label: 'System',
+    items: [
+      { name: 'Memory', href: '/memory', icon: HardDrive },
+      { name: 'Rules', href: '/rules', icon: BookOpenCheck, shortcut: 'U' },
+      { name: 'Permissions', href: '/permissions', icon: ShieldCheck },
+      { name: 'Integrations', href: '/integrations', icon: Compass },
+      { name: 'Proactive', href: '/proactive', icon: Bell, shortcut: 'V' },
+    ],
   },
 ];
 

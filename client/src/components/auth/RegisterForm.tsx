@@ -1,18 +1,26 @@
 import { useState } from 'react';
-import { AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { AlertCircle, Check, Eye, EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { useAuth } from '@/contexts/AuthContext';
 import { authErrorMessage } from '@/services/auth';
-import { DEMO_CREDENTIALS } from '@/lib/mock/db';
 
-type Errors = Partial<Record<'email' | 'password', string>>;
+type Field = 'name' | 'email' | 'password';
+type Errors = Partial<Record<Field, string>>;
 
-/** Sign-in form. Errors are shown inline on the field and as one form-level alert. */
-export function LoginForm({ onSuccess }: { onSuccess?: () => void }) {
-  const { login } = useAuth();
+const MIN_PASSWORD = 8;
+
+/**
+ * Create-account form. The real endpoint is POST /auth/register
+ * (`{ email, password, name? }`); the backend has no email-verification step yet,
+ * so the confirmation copy is explicit about that rather than implying a flow
+ * that does not exist.
+ */
+export function RegisterForm({ onSuccess }: { onSuccess?: () => void }) {
+  const { register } = useAuth();
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -20,11 +28,14 @@ export function LoginForm({ onSuccess }: { onSuccess?: () => void }) {
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  const longEnough = password.length >= MIN_PASSWORD;
+
   function validate(): boolean {
     const next: Errors = {};
     if (!email.trim()) next.email = 'Enter your email address.';
     else if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim())) next.email = 'That does not look like an email address.';
-    if (!password) next.password = 'Enter your password.';
+    if (!password) next.password = 'Choose a password.';
+    else if (!longEnough) next.password = `Use at least ${MIN_PASSWORD} characters.`;
     setErrors(next);
     return Object.keys(next).length === 0;
   }
@@ -35,7 +46,7 @@ export function LoginForm({ onSuccess }: { onSuccess?: () => void }) {
     if (!validate()) return;
     setSubmitting(true);
     try {
-      await login(email.trim(), password);
+      await register(email.trim(), password, name.trim() || undefined);
       onSuccess?.();
     } catch (error) {
       setFormError(authErrorMessage(error));
@@ -57,36 +68,45 @@ export function LoginForm({ onSuccess }: { onSuccess?: () => void }) {
       )}
 
       <div className="space-y-1.5">
-        <Label htmlFor="login-email">Email</Label>
+        <Label htmlFor="register-name">
+          Name <span className="font-normal text-subtle-foreground">(optional)</span>
+        </Label>
         <Input
-          id="login-email"
+          id="register-name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          autoComplete="name"
+          placeholder="Alex Rivera"
+          disabled={submitting}
+          autoFocus
+        />
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="register-email">Email</Label>
+        <Input
+          id="register-email"
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           autoComplete="email"
           placeholder="you@example.com"
           aria-invalid={Boolean(errors.email)}
-          aria-describedby={errors.email ? 'login-email-error' : undefined}
           disabled={submitting}
-          autoFocus
         />
-        {errors.email && (
-          <p id="login-email-error" className="text-xs text-destructive">
-            {errors.email}
-          </p>
-        )}
+        {errors.email && <p className="text-xs text-destructive">{errors.email}</p>}
       </div>
 
       <div className="space-y-1.5">
-        <Label htmlFor="login-password">Password</Label>
+        <Label htmlFor="register-password">Password</Label>
         <div className="relative">
           <Input
-            id="login-password"
+            id="register-password"
             type={showPassword ? 'text' : 'password'}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            autoComplete="current-password"
-            placeholder="Enter your password"
+            autoComplete="new-password"
+            placeholder={`At least ${MIN_PASSWORD} characters`}
             aria-invalid={Boolean(errors.password)}
             className="pr-9"
             disabled={submitting}
@@ -101,34 +121,32 @@ export function LoginForm({ onSuccess }: { onSuccess?: () => void }) {
             {showPassword ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
           </button>
         </div>
-        {errors.password && <p className="text-xs text-destructive">{errors.password}</p>}
+        {errors.password ? (
+          <p className="text-xs text-destructive">{errors.password}</p>
+        ) : (
+          password.length > 0 && (
+            <p className={`flex items-center gap-1 text-xs ${longEnough ? 'text-success' : 'text-muted-foreground'}`}>
+              {longEnough && <Check className="size-3" />}
+              {longEnough ? 'Long enough' : `${MIN_PASSWORD - password.length} more character${MIN_PASSWORD - password.length === 1 ? '' : 's'}`}
+            </p>
+          )
+        )}
       </div>
 
       <Button type="submit" disabled={submitting} className="w-full justify-center">
         {submitting ? (
           <>
             <Spinner className="size-3.5" />
-            Signing in…
+            Creating account…
           </>
         ) : (
-          'Sign in'
+          'Create account'
         )}
       </Button>
 
-      {/* Stage 2 runs on mock data, so the demo account is surfaced rather than hidden. */}
-      <button
-        type="button"
-        onClick={() => {
-          setEmail(DEMO_CREDENTIALS.email);
-          setPassword(DEMO_CREDENTIALS.password);
-          setErrors({});
-          setFormError(null);
-        }}
-        className="w-full rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground transition-colors duration-(--dur-instant) hover:border-border-strong hover:text-foreground"
-      >
-        Use the demo account — <span className="tabular font-medium">{DEMO_CREDENTIALS.email}</span> /{' '}
-        <span className="tabular font-medium">{DEMO_CREDENTIALS.password}</span>
-      </button>
+      <p className="text-xs text-muted-foreground">
+        This creates a local account immediately — there is no email verification step yet.
+      </p>
     </form>
   );
 }
