@@ -4,6 +4,7 @@ import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useHotkeys } from '@/lib/hotkeys';
 import { AssistantPanel } from '@/components/assistant/AssistantPanel';
+import { CommandCenter } from './CommandCenter';
 import { AssistantProvider } from '@/contexts/AssistantContext';
 import { RouteFallback } from './RouteFallback';
 import { ALL_NAV_ITEMS } from './nav-config';
@@ -100,6 +101,7 @@ function ShellFrame() {
       </main>
 
       <AssistantPanel />
+      <CommandCenter />
     </div>
   );
 }

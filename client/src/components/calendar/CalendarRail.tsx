@@ -21,6 +21,7 @@ export function CalendarRail({
   onToggleCategory,
   statuses,
   onToggleStatus,
+  canToggleCalendar = true,
 }: {
   anchor: Dayjs;
   onPickDay: (day: Dayjs) => void;
@@ -30,6 +31,7 @@ export function CalendarRail({
   onToggleCategory: (category: EventCategory) => void;
   statuses: EventStatus[];
   onToggleStatus: (status: EventStatus) => void;
+  canToggleCalendar?: boolean;
 }) {
   const activeCategories = useMemo(() => new Set(categories), [categories]);
   const activeStatuses = useMemo(() => new Set(statuses), [statuses]);
@@ -54,7 +56,9 @@ export function CalendarRail({
                 <button
                   type="button"
                   onClick={() => onToggleCalendar(calendar.id)}
+                  disabled={!canToggleCalendar}
                   aria-pressed={calendar.isVisible}
+                  title={!canToggleCalendar ? 'Calendar visibility updates are not supported by the backend.' : undefined}
                   className="flex h-row-sm w-full items-center gap-2 rounded-md px-1.5 text-sm transition-colors duration-(--dur-instant) hover:bg-accent"
                 >
                   <span className="size-2 shrink-0 rounded-full" style={{ background: palette.solid }} aria-hidden />

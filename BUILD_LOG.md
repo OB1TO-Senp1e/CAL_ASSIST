@@ -5,18 +5,22 @@
 > created from the loop prompt's stage definitions.)
 
 ## Current position
-- **Stage:** 2 — Frontend Screens (mock data)
-- **Next unit:** 2d — Goals / Projects / Tasks
-- **Frontend build:** `cd client && npm run build` → green (2026-09-27)
-- **Dev preview without backend:** mock layer is on by default in Stage 2 — `cd client && npx vite --port 3001`
-  (`VITE_AUTH_BYPASS=1` still forces a user with no session at all; `VITE_USE_MOCK=0` switches back to the real API.)
+- **Stage:** 3 — Backend Tie-in (real data)
+- **Next unit:** 3b — Calendar
+- **Frontend build:** `cd client && npm run build` → green (2026-09-27; Vite chunk-size warning only)
+- **Auth:** live API by default in Stage 3; `VITE_AUTH_USE_MOCK=1` restores offline demo login, and
+  `VITE_AUTH_BYPASS=1` bypasses the sign-in route in dev.
+- **Stage 3 default:** live API mode. Offline full-mock preview requires both
+  `VITE_USE_MOCK=1` and `VITE_AUTH_USE_MOCK=1`; dev-only `VITE_AUTH_BYPASS=1` skips auth.
+- **Previews:** live-auth server on `http://localhost:3001`; offline mock-auth preview on
+  `http://localhost:3002` (auth-only mock; use both flags for all mock data).
 
 ## Stage status
 | Stage | Status |
 |---|---|
 | 1 — Design Foundation | ✅ DONE (2026-09-27) |
-| 2 — Frontend Screens | ⏳ IN PROGRESS (3/13) |
-| 3 — Backend Tie-in | ⬜ NOT STARTED |
+| 2 — Frontend Screens | ✅ DONE (13/13, 2026-09-27) |
+| 3 — Backend Tie-in | ⏳ IN PROGRESS (1/13) |
 | 4 — Backend Hardening | ⬜ NOT STARTED |
 
 ### Stage 2 screen-groups
@@ -25,19 +29,55 @@
 | 2a App shell + routing + nav + auth | ✅ DONE (2026-09-27) |
 | 2b Calendar (day/week/month/agenda, drag/drop, detail) | ✅ DONE (2026-09-27) |
 | 2c AI Assistant panel (thread, tool-call cards, confirm/reject) | ✅ DONE (2026-09-27) |
-| 2d Goals / Projects / Tasks | ⬜ NEXT |
-| 2e Time Compiler / Planning | ⬜ |
-| 2f Commitments | ⬜ |
-| 2g Reality Engine / Replanning | ⬜ |
-| 2h Memory Center | ⬜ |
-| 2i Rules UI | ⬜ |
-| 2j Proactive feed + Permissions/autonomy | ⬜ |
-| 2k Integrations | ⬜ |
-| 2l Meeting Intelligence | ⬜ |
-| 2m Command Center | ⬜ |
+| 2d Goals / Projects / Tasks | ✅ DONE (2026-09-27) |
+| 2e Time Compiler / Planning | ✅ DONE (2026-09-27) |
+| 2f Commitments | ✅ DONE (2026-09-27) |
+| 2g Reality Engine / Replanning | ✅ DONE (2026-09-27) |
+| 2h Memory Center | ✅ DONE (2026-09-27) |
+| 2i Rules UI | ✅ DONE (2026-09-27) |
+| 2j Proactive feed + Permissions/autonomy | ✅ DONE (2026-09-27) |
+| 2k Integrations | ✅ DONE (2026-09-27) |
+| 2l Meeting Intelligence | ✅ DONE (2026-09-27) |
+| 2m Command Center | ✅ DONE (2026-09-27) |
 
 ### Stage 3 tie-ins
-_(mirrors 2a–2m; none started)_
+| Unit | Status |
+|---|---|
+| 3a App shell + routing + nav + auth | ✅ DONE (2026-09-27) |
+| 3b Calendar | ⬜ NEXT |
+-Modified: `client/src/pages/index.tsx`, `client/src/App.tsx`, `client/src/components/layout/DashboardLayout.tsx`, `BUILD_LOG.md`
+
+### 2026-09-27 — Stage 3, unit 3a: App shell + routing + nav + auth ✅
+
+**Wired**
+- Auth now uses the live API by default while the not-yet-integrated screen groups keep their independent mock switch.
+- Login stores the returned JWT; session restore reads the real profile from `GET /api/users/me`.
+- Registration follows the verified two-step contract: `POST /auth/register` creates the user but returns no token, then `POST /auth/login` establishes the session and stores its JWT.
+- Logout calls `POST /api/auth/logout` and always clears the local token. The backend's global prefix excludes login/register but not logout.
+- The demo credential button is shown only with `VITE_AUTH_USE_MOCK=1`; registration copy no longer calls the live account a local-only account.
+
+**Deferred**
+- Other data facades remain mocked until their Stage 3 units. A live backend was not available for end-to-end requests during this turn.
+- Offline UI review remains available with `VITE_AUTH_USE_MOCK=1` (or dev-only `VITE_AUTH_BYPASS=1`).
+
+**Verified**
+- `cd client && npm run build` → green (2026-09-27); only the existing Vite chunk-size warning remains.
+- Browser check: live-auth login screen has no demo-login control by default; mock-auth sign-in on port 3002 reaches Today as Demo User.
+- Backend availability check: `localhost:3000` is not listening, so live login/register/profile/logout requests were not exercised.
+
+**Files touched**
+- Modified: `client/src/services/auth.ts`, `client/src/components/auth/LoginForm.tsx`, `client/src/components/auth/RegisterForm.tsx`, `client/src/contexts/AuthContext.tsx`, `client/src/vite-env.d.ts`, `BUILD_LOG.md`
+| 3c AI Assistant | ⬜ |
+| 3d Goals / Projects / Tasks | ⬜ |
+| 3e Time Compiler / Planning | ⬜ |
+| 3f Commitments | ⬜ |
+| 3g Reality Engine / Replanning | ⬜ |
+| 3h Memory Center | ⬜ |
+| 3i Rules UI | ⬜ |
+| 3j Proactive feed + Permissions/autonomy | ⬜ |
+| 3k Integrations | ⬜ |
+| 3l Meeting Intelligence | ⬜ |
+| 3m Command Center | ⬜ |
 
 ### Stage 4 hardening items (known from PROGRESS.md)
 - [ ] Persist commitment person/related-entity metadata + confidence
@@ -52,6 +92,32 @@ _(mirrors 2a–2m; none started)_
 - [ ] **NEW (2c): `getPendingAction()` returns a hard-coded `null`**, so `confirmAction` can never
       succeed today — every confirm returns "Action not found or expired." Proposed actions need
       persistence (the `AssistantAction` model exists and is unused).
+- [ ] **NEW (2e): Time Compiler ignores its requested work.** `TimeCompilerController.buildSchedulingInput()`
+  currently supplies `tasks: []` and empty fixed events/availability; `taskIds`, `goalId`, and
+  `projectId` do not populate the input. Proposal list/get/apply endpoints are placeholders, and
+  `compile-and-apply` does not create time blocks.
+- [ ] **NEW (2k): Integration routes differ from PROGRESS.md.** The source controller is
+  `@Controller('calendar')` (`/api/calendar/...`), not `/api/integrations/calendar/...`; no
+  travel-time controller is present, despite the documented route. Stage 3 must not call a
+  nonexistent travel endpoint.
+- [ ] **NEW (2k): Notification preferences are not a usable read contract.**
+  `GET /api/notifications/preferences` returns a message directing callers elsewhere; the
+  POST body is `any`. Resolve the actual preference endpoint/model before the Stage 3 swap.
+- [ ] **NEW (2l): Meeting results are not persisted/retrievable.** Preparation/process endpoints
+  exist, but all `GET /:meetingId/...` methods return placeholder messages rather than saved
+  outputs.
+- [ ] **NEW (3b/3k): `GET /api/calendar/connections` returns token fields.**
+  `CalendarConnectionService.getAllConnections()` includes Prisma access/refresh tokens.
+  The client strips them before exposing connection rows, but the server must stop returning
+  secrets to browsers.
+- [ ] **NEW (3b): Calendar event creation contracts cannot currently succeed.** `CreateEventSchema`
+  requires `calendarId` to be a UUID although Prisma calendar IDs are CUIDs, and the service
+  writes `category`/`color` columns absent from Prisma `Event`. Live create is disabled.
+- [ ] **NEW (3b): Calendar route collisions.** Both `CalendarModule` and `CalendarAdaptersModule`
+  register `GET /api/calendar/events` with different query parameter contracts; verify route
+  registration and unify the endpoint before relying on date filters.
+- [ ] **NEW (2f/2l): Commitment person metadata is not in the write/read DTO or Prisma model.**
+  Meeting extraction includes a person, but creating a commitment currently cannot persist it.
 - [ ] _(further Stage 3 mismatches get appended here)_
 
 ---
@@ -258,7 +324,31 @@ _(mirrors 2a–2m; none started)_
   editor always edits the whole series, which matches the current `PATCH /:id` contract. Split-series
   editing needs `recurrenceId` support the backend does not expose yet.
 - Conflict detection uses the debounced `POST /conflicts/check` shape but resolves locally in mock mode.
-- Free/busy (`GET /availability`) is not surfaced in the rail yet; it belongs with the Time Compiler (2e).
+
+### 2026-09-27 — Stage 2, unit 2d: Goals / Projects / Tasks ✅
+
+**Built**
+- Three connected work surfaces with status filters, search, progress counts, due-date risk, and responsive list rows. Each row opens a detail dialog; create/edit forms share the API's supported fields, and task completion is a one-click status update.
+- Added persistent, realistic mock goal/project/task data and a typed service facade. The mock handles CRUD, status changes, and task duration field translation; the real branch uses the verified `/api/goals`, `/api/projects`, and `/api/tasks` endpoints.
+- Added loading skeletons, empty/no-match states, inline errors with retry, related goal/project labels, and cross-navigation between all three routes.
+- Replaced the legacy Tasks surface and removed the placeholder wrapper around Goals and Projects.
+
+**Contract decisions**
+1. Goal reads support `ON_HOLD` per Prisma, but goal update validation does not; the detail editor omits that option rather than sending a rejected value.
+2. Task create/update input is `estimatedDurationMinutes`; returned Prisma task records are `estimatedDurationMin`. The typed facade preserves both names at the boundary.
+3. Projects and tasks may omit a parent goal/project; the UI keeps the API's nullable/optional relationship semantics.
+
+**Deferred**
+- Milestone editing and task dependency editing are not part of this unit's CRUD forms; the backend has separate milestone and dependency surfaces.
+- Stage 3 replaces mock data with live endpoint responses and adds live-network behavior. This unit does not change backend code.
+
+**Verified**
+- `cd client && npm run build` → green (2026-09-27). The existing Vite chunk-size warning remains; no build errors.
+
+**Files touched**
+- New: `client/src/lib/mock/work.ts`, `client/src/services/work.ts`, `client/src/pages/WorkPage.tsx`
+- Modified: `client/src/services/types.ts`, `client/src/pages/TasksPage.tsx`, `client/src/pages/index.tsx`, `client/src/App.tsx`, `BUILD_LOG.md`
+- Free/busy remains outside the Stage 2 mock; 2e proposals use selected task estimates and working-hour preferences only.
 
 **Files touched**
 - New: `client/src/lib/datetime.ts`, `client/src/lib/rrule.ts`, `client/src/lib/mock/calendar.ts`,
@@ -348,3 +438,37 @@ _(mirrors 2a–2m; none started)_
 - Modified: `client/src/services/types.ts`, `client/src/components/assistant/AssistantPanel.tsx`
   (rewritten), `client/src/components/layout/DashboardLayout.tsx` (AssistantProvider),
   `client/src/App.tsx` (real AssistantPage route), `client/src/pages/index.tsx` (stub removed)
+
+### 2026-09-27 — Stage 2, units 2e–2m: Planning through Command Center ✅
+
+**Built**
+- **2e Time Compiler / Planning:** task and goal selection, date window, ordering strategy, generated schedule proposal, fixed review state, alternatives, tradeoffs, unsatisfied-window warning, and explicit apply confirmation. Applying updates only the local proposal; it does not write calendar blocks.
+- **2f Commitments:** persistent mock create/edit/delete/status flow, deadline and risk summaries, risk factors, and detail view. Commitments use the service contract's `object`/`deadline`/`source` fields; person metadata is not represented as saved data.
+- **2g Reality / Replanning:** deviation and impact summaries, recommendations with what/why/options, A/B/C re-plan review, and explicit confirmation before mock apply.
+- **2h Memory Center:** search/type filtering, create/edit/archive, confirm inferred entries, confidence/scope/tags, and conflict resolution.
+- **2i Rules:** natural-language entry with a reviewable interpretation before save, enabled/disabled rule list, structured condition display, and conflict resolution. Stage 2 interpretation is deterministic mock logic, not an AI parse.
+- **2j Proactive / Permissions:** intervention ranking, acknowledge/dismiss/snooze, preference controls, autonomy templates, active policy boundaries, risk threshold, confirmation requirements, and explicit permission list. Delegate requires an extra confirmation.
+- **2k Integrations:** mock Google/Outlook/local calendar connection state and sync feedback, travel-time estimate form, and notification channel/working-hours preferences.
+- **2l Meeting Intelligence:** calendar meeting selection, preparation checklist/context/agenda, note processing, confidence-scored action/commitment/deadline/follow-up suggestions, and per-item confirmation before adding selected mock tasks, commitments, and deadlines.
+- **2m Command Center:** searchable `Ctrl/⌘K` palette from the sidebar and keyboard, routes to all product surfaces, assistant-panel toggle, theme cycle, plus a searchable full-page command directory.
+- All routes were switched from the `PlannedPage` placeholder to real components. The mock stores persist in `localStorage`; screen components use typed facades rather than importing seed data directly.
+
+**Contract decisions and verified limitations**
+1. Client DTOs were copied from the relevant source schemas/interfaces and serialized response mappings. Travel-time preview is explicitly a local estimate; source inspection found no travel-time HTTP controller.
+2. Proactive action controls work in Stage 2 mock only. The documented backend ack/dismiss/snooze routes remain `501` and must be visibly disabled in Stage 3.
+3. Integration connection paths come from `src/integrations/calendar-adapters/calendar.controller.ts` (`/api/calendar/...`), not the broader `/api/integrations/*` description in PROGRESS.md.
+4. All consequential post-meeting extractions remain suggestions until individually selected and confirmed. A commitment person is displayed from extraction but is not persisted because the current commitment contract has no person field.
+
+**Deferred**
+- No live API calls or backend edits; Stage 3 performs the data-source swap in 3a–3m order.
+- Real OAuth, provider sync, route estimation, and server-side meeting extraction/storage are not exercised by mock mode.
+- Stage 2 schedule generation does not account for real calendar free/busy, and applying the mock proposal does not create time blocks.
+- Audit history/undo and editing every autonomy-policy constraint are not included in the Permissions screen.
+
+**Verified**
+- `cd client && npm run build` → green (2026-09-27); TypeScript and Vite succeed. Vite reports the existing large-chunk warning (entry chunk about 514 kB).
+- Browser smoke-tested `/compiler`, `/commitments`, `/reality`, `/memory`, `/rules`, `/proactive`, `/permissions`, `/integrations`, `/settings`, `/meetings`, `/insights`, `/search`, and the global command palette. All rendered expected headings with no page errors.
+
+**Files touched**
+- New: `client/src/services/workflow-types.ts`, `client/src/lib/mock/operations.ts`, `client/src/services/operations.ts`, `client/src/lib/mock/knowledge.ts`, `client/src/services/knowledge.ts`, `client/src/lib/mock/integrations.ts`, `client/src/services/integrations.ts`, `client/src/lib/commands.ts`, `client/src/components/layout/CommandCenter.tsx`, `client/src/pages/WorkflowPages.tsx`
+- Modified: `client/src/pages/index.tsx`, `client/src/App.tsx`, `client/src/components/layout/DashboardLayout.tsx`, `BUILD_LOG.md`

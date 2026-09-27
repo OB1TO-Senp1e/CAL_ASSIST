@@ -37,10 +37,10 @@ export interface Profile extends AuthUser {
 export type EventStatus = 'CONFIRMED' | 'TENTATIVE' | 'CANCELLED' | 'NEEDS_ACTION';
 
 /** prisma/schema.prisma `enum EventSource` */
-export type EventSource = 'USER' | 'AI_GENERATED' | 'IMPORTED' | 'SYSTEM';
+export type EventSource = 'USER' | 'AI_GENERATED' | 'SYNCED';
 
 /** prisma/schema.prisma `enum EventVisibility` */
-export type EventVisibility = 'PRIVATE' | 'PUBLIC' | 'SHARED';
+export type EventVisibility = 'PRIVATE' | 'PUBLIC' | 'CONFIDENTIAL';
 
 /** src/calendar/domain/calendar-event.ts `EventCategory` */
 export type EventCategory =
@@ -203,7 +203,108 @@ export interface ConflictDTO {
   type: 'OVERLAP' | 'CONTAINS' | 'ADJACENT' | 'RECURRENCE_OVERLAP';
   eventA: string;
   eventB: string;
+  eventBTitle?: string;
   overlapMinutes: number;
+}
+
+/* ───────────────────────── Goals / Projects / Tasks ─────────────────────────
+ * Statuses and write fields mirror prisma/schema.prisma plus the Zod request
+ * schemas under src/{goals,projects,tasks}/interfaces. Task duration names
+ * intentionally differ: requests use `estimatedDurationMinutes`; Prisma reads
+ * return `estimatedDurationMin`.
+ */
+
+export type GoalStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'ON_HOLD';
+export type GoalUpdateStatus = Exclude<GoalStatus, 'ON_HOLD'>;
+export type ProjectStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'BLOCKED' | 'ON_HOLD';
+export type TaskStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'BLOCKED' | 'ON_HOLD';
+export type TaskFlexibility = 'LOW' | 'MEDIUM' | 'HIGH';
+export type EnergyLevel = 'LOW' | 'MEDIUM' | 'HIGH';
+
+interface WorkRecord {
+  id: string;
+  userId: string;
+  title: string;
+  description: string | null;
+  priority: number;
+  startDate: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GoalDTO extends WorkRecord {
+  status: GoalStatus;
+  targetDate: string | null;
+}
+
+export interface ProjectDTO extends WorkRecord {
+  goalId: string | null;
+  status: ProjectStatus;
+  dueDate: string | null;
+  milestones?: unknown[];
+  tasks?: TaskDTO[];
+}
+
+export interface TaskDTO extends WorkRecord {
+  projectId: string | null;
+  goalId: string | null;
+  milestoneId: string | null;
+  status: TaskStatus;
+  estimatedDurationMin: number | null;
+  actualDurationMin: number | null;
+  dueDate: string | null;
+  source: 'USER' | 'AI_GENERATED' | 'IMPORTED';
+  flexibility: TaskFlexibility;
+  energyRequirement: EnergyLevel;
+  context: string | null;
+  preferredTime: string | null;
+  location: string | null;
+}
+
+export interface CreateGoalInput {
+  title: string;
+  description?: string;
+  priority?: number;
+  startDate?: string;
+  targetDate?: string;
+}
+
+export type UpdateGoalInput = Partial<CreateGoalInput> & { status?: GoalUpdateStatus };
+
+export interface CreateProjectInput {
+  title: string;
+  description?: string;
+  goalId?: string | null;
+  priority?: number;
+  startDate?: string;
+  dueDate?: string;
+}
+
+export type UpdateProjectInput = Partial<CreateProjectInput> & { status?: ProjectStatus };
+
+export interface CreateTaskInput {
+  title: string;
+  description?: string;
+  projectId?: string | null;
+  goalId?: string | null;
+  milestoneId?: string | null;
+  priority?: number;
+  estimatedDurationMinutes?: number;
+  dueDate?: string;
+  startDate?: string;
+  dependencies?: string[];
+  flexibility?: TaskFlexibility;
+  energyRequirement?: EnergyLevel;
+  context?: string;
+  preferredTime?: string;
+  location?: string;
+}
+
+export interface UpdateTaskInput extends Partial<CreateTaskInput> {
+  status?: TaskStatus;
+  actualDurationMinutes?: number;
+  completedAt?: string;
 }
 
 /* ─────────────────────────── Assistant ───────────────────────────

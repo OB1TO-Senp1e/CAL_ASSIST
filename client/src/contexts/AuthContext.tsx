@@ -5,8 +5,8 @@ import type { AuthUser } from '@/services/types';
 /**
  * Auth state for the shell.
  *
- * Stage 2: backed by the mock layer (`services/auth.ts`) — real screens, no real
- * backend. Stage 3 flips `USE_MOCK` and the call sites below stay identical.
+ * Stage 3a: backed by the real auth/profile endpoints by default. Offline
+ * previews can opt into the auth mock independently of other screen groups.
  *
  * Deliberately does NOT navigate. Route protection is a rendering concern, so
  * `RequireAuth` owns it — that keeps the "return to where you were" redirect

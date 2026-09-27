@@ -36,6 +36,8 @@ import type {
   ConversationDTO,
 } from './types';
 
+const API_UNAVAILABLE = 'Assistant message and conversation endpoints are not exposed by the current backend.';
+
 function nowIso(): string {
   return new Date().toISOString();
 }
@@ -51,6 +53,7 @@ function titleFrom(message: string): string {
 }
 
 export const assistantService = {
+  apiAvailable: USE_MOCK,
   /** The 13 tools the assistant can invoke (`ToolRegistry.onModuleInit`). */
   listTools(): AssistantToolDescriptor[] {
     return ASSISTANT_TOOLS;
@@ -62,8 +65,7 @@ export const assistantService = {
       await latency(90, 200);
       return sortConversations(loadConversations());
     }
-    const { data } = await api.get<ConversationDTO[]>('/api/assistant/conversations');
-    return sortConversations(data);
+    throw new Error(API_UNAVAILABLE);
   },
 
   /** Messages for one conversation, oldest first. */
@@ -75,10 +77,8 @@ export const assistantService = {
         .sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1))
         .map(({ pending: _p, failed: _f, ...m }) => m);
     }
-    const { data } = await api.get<ChatMessage[]>(
-      `/api/assistant/conversations/${conversationId}/messages`,
-    );
-    return data;
+    void conversationId;
+    throw new Error(API_UNAVAILABLE);
   },
 
   /**
@@ -105,20 +105,8 @@ export const assistantService = {
         createdAt: nowIso(),
       };
     }
-    const { data } = await api.post<AssistantResponse>('/api/assistant/message', {
-      conversationId,
-      message,
-    });
-    return {
-      id: mockAssistantId('msg'),
-      conversationId,
-      role: 'ASSISTANT',
-      content: data.message,
-      proposedActions: data.proposedActions,
-      toolCalls: data.toolCalls,
-      confidence: data.confidence,
-      createdAt: nowIso(),
-    };
+    void conversationId; void message;
+    throw new Error(API_UNAVAILABLE);
   },
 
   /**
@@ -170,20 +158,8 @@ export const assistantService = {
         createdAt: nowIso(),
       };
     }
-    const { data } = await api.post<AssistantResponse>('/api/assistant/confirm', {
-      conversationId,
-      actionId,
-      confirmed,
-      modifiedInput,
-    });
-    return {
-      id: mockAssistantId('msg'),
-      conversationId,
-      role: 'SYSTEM',
-      content: data.message,
-      confidence: data.confidence,
-      createdAt: nowIso(),
-    };
+    void conversationId; void actionId; void confirmed; void modifiedInput;
+    throw new Error(API_UNAVAILABLE);
   },
 
   /** Create a conversation. Returns the new row so the caller can select it. */
@@ -205,8 +181,8 @@ export const assistantService = {
       saveConversations([conv, ...loadConversations()]);
       return conv;
     }
-    const { data } = await api.post<ConversationDTO>('/api/assistant/conversations', { title });
-    return data;
+    void title;
+    throw new Error(API_UNAVAILABLE);
   },
 
   /** Rename a conversation once its first message gives it a subject. */
@@ -218,7 +194,8 @@ export const assistantService = {
       saveConversations(next);
       return;
     }
-    await api.patch(`/api/assistant/conversations/${conversationId}`, { title });
+    void conversationId; void title;
+    throw new Error(API_UNAVAILABLE);
   },
 
   async deleteConversation(conversationId: string): Promise<void> {
@@ -228,7 +205,8 @@ export const assistantService = {
       saveMessages(loadMessages().filter((m) => m.conversationId !== conversationId));
       return;
     }
-    await api.delete(`/api/assistant/conversations/${conversationId}`);
+    void conversationId;
+    throw new Error(API_UNAVAILABLE);
   },
 
   /** Pending recommendations (prisma `AssistantRecommendation`, status PENDING). */
@@ -237,10 +215,7 @@ export const assistantService = {
       await latency(120, 260);
       return [];
     }
-    const { data } = await api.get<AssistantRecommendationDTO[]>(
-      '/api/assistant/recommendations?status=PENDING',
-    );
-    return data;
+    throw new Error(API_UNAVAILABLE);
   },
 };
 

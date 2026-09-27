@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { useAuth } from '@/contexts/AuthContext';
-import { authErrorMessage } from '@/services/auth';
+import { authErrorMessage, USE_AUTH_MOCK } from '@/services/auth';
 import { DEMO_CREDENTIALS } from '@/lib/mock/db';
 
 type Errors = Partial<Record<'email' | 'password', string>>;
@@ -115,8 +115,7 @@ export function LoginForm({ onSuccess }: { onSuccess?: () => void }) {
         )}
       </Button>
 
-      {/* Stage 2 runs on mock data, so the demo account is surfaced rather than hidden. */}
-      <button
+      {USE_AUTH_MOCK && <button
         type="button"
         onClick={() => {
           setEmail(DEMO_CREDENTIALS.email);
@@ -128,7 +127,7 @@ export function LoginForm({ onSuccess }: { onSuccess?: () => void }) {
       >
         Use the demo account — <span className="tabular font-medium">{DEMO_CREDENTIALS.email}</span> /{' '}
         <span className="tabular font-medium">{DEMO_CREDENTIALS.password}</span>
-      </button>
+      </button>}
     </form>
   );
 }
