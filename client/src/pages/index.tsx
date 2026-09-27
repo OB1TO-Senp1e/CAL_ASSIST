@@ -2,21 +2,15 @@ import { Sparkles } from 'lucide-react';
 
 function ComingSoonPage({ title, description }: { title: string; description: string }) {
   return (
-    <div className="mx-auto max-w-6xl space-y-6 p-5 md:p-8">
-      <header>
-        <p className="page-eyebrow mb-2">Your personal time OS</p>
-        <h1 className="page-title">{title}</h1>
-      </header>
-      <section className="surface-card grid min-h-72 place-items-center p-8 text-center">
-        <div className="max-w-sm">
-          <div className="mx-auto mb-4 grid h-12 w-12 place-items-center rounded-2xl bg-secondary text-primary">
-            <Sparkles className="h-5 w-5" />
-          </div>
-          <h2 className="font-semibold tracking-tight">Coming soon</h2>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">{description}</p>
+    <section className="grid min-h-[60vh] place-items-center p-8 text-center" aria-label={title}>
+      <div className="max-w-xs">
+        <div className="mx-auto mb-3 grid size-9 place-items-center rounded-lg border border-border bg-card text-muted-foreground shadow-e1">
+          <Sparkles className="size-4" />
         </div>
-      </section>
-    </div>
+        <h2 className="text-sm font-medium">{title} is coming soon</h2>
+        <p className="mt-1 text-xs text-muted-foreground">{description}</p>
+      </div>
+    </section>
   );
 }
 

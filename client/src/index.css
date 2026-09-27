@@ -1,107 +1,399 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/*
+ * CalAssist design tokens — the single source of truth for the visual system.
+ * Rationale lives in /DESIGN_SYSTEM.md. Change values here, never inline.
+ *
+ * Layers:
+ *   1. Raw tokens (:root / .dark)       — CSS custom properties, full color values (oklch)
+ *   2. Tailwind theme mapping (@theme)   — exposes tokens as utilities (bg-primary, text-2xs, shadow-e2…)
+ *   3. Base + component primitives       — a few shared classes (.surface, .kbd, .proposal…)
+ */
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import '@fontsource-variable/geist';
+@import '@fontsource-variable/geist-mono';
 
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ───────────────────────── 1. RAW TOKENS — LIGHT ───────────────────────── */
 :root {
-  --background: 228 33% 98%;
-  --foreground: 225 31% 16%;
-  --card: 0 0% 100%;
-  --card-foreground: 225 31% 16%;
-  --popover: 0 0% 100%;
-  --popover-foreground: 225 31% 16%;
-  --primary: 231 76% 59%;
-  --primary-foreground: 0 0% 100%;
-  --secondary: 238 75% 96%;
-  --secondary-foreground: 231 59% 42%;
-  --muted: 228 28% 95%;
-  --muted-foreground: 225 13% 48%;
-  --accent: 238 75% 96%;
-  --accent-foreground: 231 59% 42%;
-  --destructive: 0 72% 55%;
-  --destructive-foreground: 0 0% 100%;
-  --border: 228 21% 89%;
-  --input: 228 21% 89%;
-  --ring: 231 76% 59%;
-  --radius: 1rem;
+  color-scheme: light;
+
+  /* Neutrals: cool graphite, hue 265, very low chroma. */
+  --background: oklch(0.992 0.002 265);
+  --foreground: oklch(0.21 0.012 265);
+  --surface-sunken: oklch(0.975 0.003 265); /* sidebar, gutters, calendar off-hours */
+  --card: oklch(1 0 0);
+  --card-foreground: var(--foreground);
+  --popover: oklch(1 0 0);
+  --popover-foreground: var(--foreground);
+  --muted: oklch(0.962 0.004 265);
+  --muted-foreground: oklch(0.52 0.014 265);
+  --subtle-foreground: oklch(0.66 0.01 265); /* tertiary text: timestamps, gutters */
+  --border: oklch(0.918 0.005 265);
+  --border-strong: oklch(0.86 0.008 265);
+  --input: oklch(0.89 0.006 265);
+
+  /* Brand: "Iris" indigo. Used for primary actions, selection, focus. Never for decoration. */
+  --primary: oklch(0.52 0.19 268);
+  --primary-foreground: oklch(0.99 0.005 268);
+  --secondary: oklch(0.96 0.02 268);
+  --secondary-foreground: oklch(0.42 0.16 268);
+  --accent: oklch(0.955 0.012 268); /* hover/selected row wash */
+  --accent-foreground: oklch(0.3 0.08 268);
+  --ring: oklch(0.52 0.19 268 / 0.55);
+
+  /* AI layer: "Aurora" violet. Reserved EXCLUSIVELY for assistant-originated content. */
+  --ai: oklch(0.56 0.2 300);
+  --ai-foreground: oklch(0.99 0.005 300);
+  --ai-soft: oklch(0.965 0.025 300);
+  --ai-soft-foreground: oklch(0.42 0.17 300);
+  --ai-border: oklch(0.8 0.09 300);
+
+  /* Status */
+  --destructive: oklch(0.56 0.21 25);
+  --destructive-foreground: oklch(0.99 0.005 25);
+  --success: oklch(0.58 0.14 155);
+  --success-soft: oklch(0.96 0.03 155);
+  --warning: oklch(0.7 0.15 70);
+  --warning-soft: oklch(0.97 0.04 80);
+  --info: oklch(0.58 0.13 235);
+  --info-soft: oklch(0.96 0.025 235);
+  --now: oklch(0.6 0.22 25); /* current-time indicator */
+
+  /* Risk / confirmation scale — mirrors backend enums NONE|LOW|MEDIUM|HIGH|CRITICAL
+     (ToolConfirmationLevelSchema, CommitmentRisk.riskLevel, daily-experience RiskLevelSchema). */
+  --level-none: oklch(0.66 0.01 265);
+  --level-low: oklch(0.6 0.12 235);
+  --level-medium: oklch(0.7 0.15 70);
+  --level-high: oklch(0.63 0.19 45);
+  --level-critical: oklch(0.56 0.21 25);
+
+  /* Calendar palette — 8 hues at matched lightness/chroma so no calendar "shouts".
+     Each hue yields: solid (dot/rail), soft (card fill), ink (card text). Mapped to
+     TimeBlockType in lib/design-tokens.ts; user calendars (Calendar.color) snap to nearest. */
+  --cal-l-solid: 0.62;
+  --cal-c-solid: 0.15;
+  --cal-l-soft: 0.955;
+  --cal-c-soft: 0.035;
+  --cal-l-ink: 0.36;
+  --cal-c-ink: 0.1;
+
+  /* Calendar grid geometry */
+  --hour-height: 48px;
+  --gutter-width: 56px;
+
+  /* Radius — tight. 6px is the workhorse. */
+  --radius: 0.5rem;
+
+  /* Elevation — hairline-first; shadows only signal "floating above the page". */
+  --shadow-color: 265 20% 20%;
+  --e1: 0 1px 2px oklch(0.2 0.02 265 / 0.05);
+  --e2: 0 1px 2px oklch(0.2 0.02 265 / 0.04), 0 4px 12px -2px oklch(0.2 0.02 265 / 0.08);
+  --e3: 0 2px 4px oklch(0.2 0.02 265 / 0.04), 0 12px 32px -6px oklch(0.2 0.02 265 / 0.16);
+  --e4: 0 4px 8px oklch(0.2 0.02 265 / 0.06), 0 24px 64px -12px oklch(0.2 0.02 265 / 0.28);
 }
 
-* {
-  border-color: hsl(var(--border));
+/* ───────────────────────── 1b. RAW TOKENS — DARK ───────────────────────── */
+.dark {
+  color-scheme: dark;
+
+  --background: oklch(0.175 0.006 265);
+  --foreground: oklch(0.94 0.004 265);
+  --surface-sunken: oklch(0.145 0.006 265);
+  --card: oklch(0.195 0.007 265);
+  --popover: oklch(0.215 0.008 265);
+  --muted: oklch(0.235 0.008 265);
+  --muted-foreground: oklch(0.7 0.01 265);
+  --subtle-foreground: oklch(0.55 0.01 265);
+  --border: oklch(0.27 0.008 265);
+  --border-strong: oklch(0.34 0.01 265);
+  --input: oklch(0.31 0.01 265);
+
+  --primary: oklch(0.66 0.17 268);
+  --primary-foreground: oklch(0.16 0.02 268);
+  --secondary: oklch(0.27 0.05 268);
+  --secondary-foreground: oklch(0.85 0.08 268);
+  --accent: oklch(0.25 0.02 268);
+  --accent-foreground: oklch(0.92 0.02 268);
+  --ring: oklch(0.66 0.17 268 / 0.6);
+
+  --ai: oklch(0.7 0.17 300);
+  --ai-foreground: oklch(0.16 0.02 300);
+  --ai-soft: oklch(0.26 0.05 300);
+  --ai-soft-foreground: oklch(0.86 0.09 300);
+  --ai-border: oklch(0.45 0.12 300);
+
+  --destructive: oklch(0.66 0.19 25);
+  --destructive-foreground: oklch(0.16 0.02 25);
+  --success: oklch(0.7 0.14 155);
+  --success-soft: oklch(0.26 0.04 155);
+  --warning: oklch(0.78 0.14 75);
+  --warning-soft: oklch(0.28 0.04 75);
+  --info: oklch(0.7 0.12 235);
+  --info-soft: oklch(0.26 0.04 235);
+  --now: oklch(0.68 0.2 25);
+
+  --level-none: oklch(0.55 0.01 265);
+  --level-low: oklch(0.7 0.12 235);
+  --level-medium: oklch(0.78 0.14 75);
+  --level-high: oklch(0.72 0.17 45);
+  --level-critical: oklch(0.66 0.19 25);
+
+  --cal-l-solid: 0.7;
+  --cal-c-solid: 0.14;
+  --cal-l-soft: 0.27;
+  --cal-c-soft: 0.045;
+  --cal-l-ink: 0.9;
+  --cal-c-ink: 0.06;
+
+  /* In dark mode depth reads from lighter surfaces + a top highlight, not from shadow. */
+  --e1: 0 0 0 1px oklch(1 0 0 / 0.03);
+  --e2: 0 0 0 1px oklch(1 0 0 / 0.05), 0 4px 12px -2px oklch(0 0 0 / 0.4);
+  --e3: 0 0 0 1px oklch(1 0 0 / 0.06), 0 12px 32px -6px oklch(0 0 0 / 0.55);
+  --e4: 0 0 0 1px oklch(1 0 0 / 0.07), 0 24px 64px -12px oklch(0 0 0 / 0.7);
 }
 
-html {
-  min-width: 320px;
-  background: hsl(var(--background));
+/* ───────────────────────── 2. TAILWIND THEME MAPPING ───────────────────────── */
+@theme inline {
+  --font-sans: 'Geist Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'Geist Mono Variable', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* Type scale — dense app UI. 13px is body. Line-heights tuned for 4px grid. */
+  --text-2xs: 0.6875rem; /* 11 — meta, badges, gutter labels */
+  --text-2xs--line-height: 1rem;
+  --text-xs: 0.75rem; /* 12 — secondary text, event card body */
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.8125rem; /* 13 — DEFAULT body, rows, inputs */
+  --text-sm--line-height: 1.25rem;
+  --text-base: 0.875rem; /* 14 — emphasized body, dialog text */
+  --text-base--line-height: 1.25rem;
+  --text-lg: 1rem; /* 16 — section titles */
+  --text-lg--line-height: 1.5rem;
+  --text-xl: 1.25rem; /* 20 — page titles */
+  --text-xl--line-height: 1.75rem;
+  --text-2xl: 1.5rem; /* 24 — hero numbers, empty-state titles */
+  --text-2xl--line-height: 2rem;
+  --text-3xl: 1.875rem; /* 30 — auth/marketing only */
+  --text-3xl--line-height: 2.25rem;
+
+  /* Spacing — Tailwind's 4px base is our grid. Semantic sizes for recurring geometry. */
+  --spacing: 0.25rem;
+  --spacing-row: 2rem; /* 32 — list row / nav item height */
+  --spacing-row-sm: 1.75rem; /* 28 — compact rows, toolbar controls */
+  --spacing-topbar: 3rem; /* 48 */
+  --spacing-sidebar: 15rem; /* 240 */
+  --spacing-sidebar-collapsed: 3.25rem; /* 52 */
+  --spacing-assistant: 24rem; /* 384 */
+  --spacing-hour: var(--hour-height);
+  --spacing-gutter: var(--gutter-width);
+
+  /* Colors */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-subtle-foreground: var(--subtle-foreground);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-ai: var(--ai);
+  --color-ai-foreground: var(--ai-foreground);
+  --color-ai-soft: var(--ai-soft);
+  --color-ai-soft-foreground: var(--ai-soft-foreground);
+  --color-ai-border: var(--ai-border);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-now: var(--now);
+  --color-level-none: var(--level-none);
+  --color-level-low: var(--level-low);
+  --color-level-medium: var(--level-medium);
+  --color-level-high: var(--level-high);
+  --color-level-critical: var(--level-critical);
+
+  /* Radius */
+  --radius-xs: calc(var(--radius) - 5px); /* 3 — badges, kbd */
+  --radius-sm: calc(var(--radius) - 4px); /* 4 — event cards, chips */
+  --radius-md: calc(var(--radius) - 2px); /* 6 — buttons, inputs, rows */
+  --radius-lg: var(--radius); /* 8 — cards, popovers */
+  --radius-xl: calc(var(--radius) + 4px); /* 12 — dialogs, panels */
+
+  /* Elevation */
+  --shadow-e1: var(--e1);
+  --shadow-e2: var(--e2);
+  --shadow-e3: var(--e3);
+  --shadow-e4: var(--e4);
+
+  /* Motion — see DESIGN_SYSTEM.md §Motion. Fast, decelerating, never bouncy. */
+  --ease-out-quick: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in-out-soft: cubic-bezier(0.45, 0, 0.25, 1);
+  --animate-ai-shimmer: ai-shimmer 1.6s linear infinite;
+  --animate-caret: caret 1s steps(1) infinite;
+
+  @keyframes ai-shimmer {
+    from { background-position: 200% 0; }
+    to { background-position: -200% 0; }
+  }
+  @keyframes caret {
+    50% { opacity: 0; }
+  }
 }
 
-body {
-  min-width: 320px;
-  min-height: 100vh;
-  margin: 0;
-  background:
-    radial-gradient(ellipse at 82% 0%, hsl(238 75% 96% / 0.72), transparent 36rem),
-    hsl(var(--background));
-  color: hsl(var(--foreground));
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  font-feature-settings: "cv11", "ss01";
-  -webkit-font-smoothing: antialiased;
+/* Motion duration tokens (plain vars; use as duration-(--dur-fast)) */
+:root {
+  --dur-instant: 80ms; /* hover, press */
+  --dur-fast: 140ms; /* popovers, toggles */
+  --dur-base: 200ms; /* panels, drawers */
+  --dur-slow: 280ms; /* route-level spatial moves (rare) */
 }
 
-button,
-input {
-  font: inherit;
+/* ───────────────────────── 3. BASE ───────────────────────── */
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+  html {
+    min-width: 320px;
+    background: var(--background);
+  }
+  body {
+    min-height: 100vh;
+    margin: 0;
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+    font-feature-settings: 'ss01', 'cv11';
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']) {
+    cursor: pointer;
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 1px;
+  }
+  ::selection {
+    background: color-mix(in oklch, var(--primary) 22%, transparent);
+  }
+  /* Thin, quiet scrollbars */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+  }
 }
 
-button {
-  cursor: pointer;
-}
+/* ───────────────────────── 4. SHARED PRIMITIVES ───────────────────────── */
+@layer components {
+  /* Flat bordered surface — the default container. Shadow only when floating. */
+  .surface {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--card);
+  }
 
-button:focus-visible,
-a:focus-visible,
-input:focus-visible {
-  outline: 3px solid hsl(var(--ring) / 0.3);
-  outline-offset: 2px;
-}
+  /* Keyboard hint chip — keyboard-first UI advertises its shortcuts. */
+  .kbd {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.125rem;
+    height: 1.125rem;
+    padding: 0 0.25rem;
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: var(--radius-xs);
+    background: var(--card);
+    color: var(--muted-foreground);
+    font-family: var(--font-mono);
+    font-size: 0.625rem;
+    font-weight: 500;
+    line-height: 1;
+  }
 
-::selection {
-  background: hsl(var(--primary) / 0.16);
-}
+  /* Proposal treatment: anything the AI suggests but the user has not confirmed.
+     Dashed violet edge = "not real yet". Becomes solid once accepted. */
+  .proposal {
+    border: 1px dashed var(--ai-border);
+    background:
+      repeating-linear-gradient(
+        -45deg,
+        transparent 0 6px,
+        color-mix(in oklch, var(--ai) 5%, transparent) 6px 12px
+      ),
+      var(--ai-soft);
+    color: var(--ai-soft-foreground);
+  }
 
-.surface-card {
-  border: 1px solid hsl(var(--border) / 0.8);
-  border-radius: 1.125rem;
-  background: hsl(var(--card) / 0.92);
-  box-shadow: 0 10px 32px hsl(225 35% 22% / 0.045);
-}
+  /* Streaming / thinking shimmer for AI text placeholders. */
+  .ai-shimmer {
+    background: linear-gradient(
+      90deg,
+      var(--muted) 0%,
+      color-mix(in oklch, var(--ai) 18%, var(--muted)) 50%,
+      var(--muted) 100%
+    );
+    background-size: 200% 100%;
+    animation: var(--animate-ai-shimmer);
+  }
 
-.page-title {
-  color: hsl(var(--foreground));
-  font-size: clamp(1.65rem, 3vw, 2rem);
-  font-weight: 700;
-  letter-spacing: -0.04em;
-  line-height: 1.15;
-}
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
 
-.page-eyebrow {
-  color: hsl(var(--primary));
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.field-control {
-  border: 1px solid hsl(var(--input));
-  border-radius: 0.75rem;
-  background: hsl(var(--card));
-  color: hsl(var(--foreground));
-  transition: border-color 150ms ease, box-shadow 150ms ease;
-}
-
-.field-control:focus {
-  border-color: hsl(var(--primary) / 0.65);
-  box-shadow: 0 0 0 3px hsl(var(--primary) / 0.1);
-  outline: none;
+  /* Legacy compatibility (pre-design-system pages: Today, Tasks, Login).
+     Remapped onto tokens so they render coherently until rebuilt in Stage 2. */
+  .surface-card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--card);
+  }
+  .page-title {
+    font-size: var(--text-xl);
+    line-height: var(--text-xl--line-height);
+    font-weight: 600;
+    letter-spacing: -0.015em;
+  }
+  .page-eyebrow {
+    color: var(--muted-foreground);
+    font-size: var(--text-2xs);
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .field-control {
+    border: 1px solid var(--input);
+    border-radius: var(--radius-md);
+    background: var(--card);
+    color: var(--foreground);
+    transition: border-color var(--dur-fast) var(--ease-out-quick);
+  }
+  .field-control:focus {
+    border-color: var(--primary);
+    outline: 2px solid var(--ring);
+    outline-offset: 0;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

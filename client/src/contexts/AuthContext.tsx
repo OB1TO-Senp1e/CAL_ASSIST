@@ -31,6 +31,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
 
   useEffect(() => {
+    // Dev-only design review mode: `VITE_AUTH_BYPASS=1 npm run dev` renders the app
+    // with a mock user and no API. Stripped from production builds by the DEV guard.
+    if (import.meta.env.DEV && import.meta.env.VITE_AUTH_BYPASS === '1') {
+      setUser({ id: 'dev-user', email: 'dev@calassist.local', name: 'Dev Preview' });
+      setLoading(false);
+      return;
+    }
     const token = localStorage.getItem('token');
     if (token) {
       authAPI.getProfile()
