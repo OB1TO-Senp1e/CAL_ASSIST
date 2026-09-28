@@ -8,6 +8,8 @@ Measurements are from the current worktree on `perf/optimise` and use the produc
 |---|---:|---|
 | Login entry JS | Before P1: 510,891 bytes raw / 169,864 bytes gzip; after P1: 299,701 bytes raw / 102,309 bytes gzip | Initial JS guideline <= 200 KB gzip |
 | Authenticated shell JS chunk | After P1: 20,855 bytes raw / 6,301 bytes gzip | Loaded only for authenticated routes |
+| Authenticated home route JS graph | 524,430 bytes raw / 182,251 bytes gzip | Includes entry, DashboardLayout, TodayPage, and their static JS dependencies |
+| Authenticated home route gzip budget | 200,477 bytes | Current measured route graph + 10% |
 | Initial stylesheet | 78,617 bytes raw / 14,557 bytes gzip | Measured |
 | Async Calendar route chunk | 46,842 bytes raw / 13,374 bytes gzip | Per emitted chunk; see build report |
 | Async Tasks route chunk | 17,065 bytes raw / 5,266 bytes gzip | Per emitted chunk; see build report |
@@ -40,7 +42,7 @@ Measurements are from the current worktree on `perf/optimise` and use the produc
 | P6 | HUMAN | No isolated local/test LLM or TTFT harness is available; assistant requests persist user content and may call a billable provider, so no baseline request was sent. |
 | P7 | HUMAN | P0 did not produce request-frequency/latency evidence; cache remains intentionally absent rather than being added speculatively. |
 | P8 | HUMAN | No mobile Lighthouse/CLS or authenticated main-flow timing is available; no skeleton/motion changes made without layout-shift or feedback measurements. |
-| P9 | TODO | Budget guard and README benchmark instructions remain to be implemented. |
+| P9 | DONE | `npm run test:ci` builds and checks the authenticated-home graph (182,251 <= 200,477 gzip bytes), executes a synthetic over-budget failure test, and runs Jest; CI installs client dependencies and uses this command. README documents local reruns. |
 | P10 | TODO | Final report remains to be written after iterations. |
 
 ## Measurements Log
@@ -68,6 +70,10 @@ Measurements are from the current worktree on `perf/optimise` and use the produc
 | 6 | Assistant time-to-first-token / fallback | — | HUMAN; no local model or isolated test provider; no user content sent to an external LLM | Requires a controlled assistant fixture and TTFT-capable client measurement |
 | 7 | Cache hit rate / latency / invalidation | — | HUMAN; no endpoint identified as hot from measured traffic | No caching change made without per-user hit-rate and invalidation evidence |
 | 8 | Main-flow feedback / layout shift | — | HUMAN; no mobile Lighthouse/CLS run or authenticated main-flow timing | Browser only verified the public login page; no interaction timing inferred |
+| 9 | Authenticated home gzip budget | No guard | PASS at 182,251 bytes; enforced ceiling 200,477 bytes | `npm run perf:budget` |
+| 9 | Budget guard pass/fail behavior | No guard test | PASS; exact ceiling accepted and ceiling + 1 rejected | `npm run test:perf-budget` |
+| 9 | CI test command | `npm test` | PASS; budget build/check, guard tests, and full Jest suite | `$env:DATABASE_URL='postgresql://127.0.0.1:1/calassist'; npm run test:ci` |
+| 9 | Backend production build | — | PASS | `npm run build` |
 
 The bundle script reports raw and gzip bytes for every emitted JS/CSS asset and the HTML entry's static JS dependency graph. The API smoke script is deliberately loopback-only, issues GET requests, performs no seeding or writes, and does not call an external LLM.
 
@@ -89,7 +95,8 @@ The bundle script reports raw and gzip bytes for every emitted JS/CSS asset and 
 | 6 | Made no assistant streaming/context change without controlled TTFT and fallback measurements; no content was sent to the configured provider. |
 | 7 | Added no cache: the measured baseline does not identify a hot endpoint, and user-scoped cache invalidation cannot be validated without a local seed. |
 | 8 | Made no perceived-performance UI changes without a mobile CLS/interaction measurement; preserved existing loading and reduced-motion behavior. |
+| 9 | Budget is based on the exact emitted JS graph for the authenticated home route and fixed at 10% above its measured 182,251-byte gzip baseline; CI runs it before unit tests. |
 
 ## Iteration Counter
 
-8 — P0 baseline, P1 route split, and P2-P8 measurement limitations.
+9 — P0 baseline, P1 route split, P2-P8 HUMAN, and P9 regression guard.

@@ -70,6 +70,35 @@ npm test
 npm run test:coverage
 ```
 
+### Performance checks
+
+The CI test job builds the frontend and checks the gzipped JavaScript required
+for the authenticated home route (entry, dashboard shell, and Today page). The
+budget is 10% above the measured baseline in `scripts/perf-budget-check.mjs`.
+Run the same check locally with:
+
+```bash
+npm ci --prefix client --legacy-peer-deps
+npm run perf:budget
+npm run test:perf-budget
+```
+
+For API timings, start the backend against a **local seeded development
+database**, then provide a development user's JWT. The script sends only
+loopback GET requests for the one-year event list, calendar connections, and
+assistant reads; it does not seed data, write records, or call an LLM:
+
+```powershell
+$env:PERF_BASE_URL = "http://localhost:3000"
+$env:PERF_TOKEN = "<development-user-jwt>"
+$env:PERF_ITERATIONS = "20"
+node scripts/perf-smoke.mjs
+```
+
+The API benchmark refuses non-loopback hosts. To include Prisma query output,
+set `PRISMA_QUERY_LOGGING=true` while `NODE_ENV=development`; query logging is
+disabled in other environments.
+
 ## API Endpoints
 
 ### Authentication
