@@ -36,7 +36,7 @@ Measurements are from the current worktree on `perf/optimise` and use the produc
 | P2 | HUMAN | No React/render profiler or authenticated interaction session is available; no render counts or INP claim is inferred from source inspection. |
 | P3 | HUMAN | No authenticated local seed/session for a representative waterfall; the loopback GET benchmark is ready in `scripts/perf-smoke.mjs` but was not run against the hosted DB. |
 | P4 | HUMAN | `.env` targets the hosted pooler; no local PostgreSQL instance is available for seeded p95s or `EXPLAIN`. No migration or external DB request was made. |
-| P5 | TODO | Google API call count not captured. |
+| P5 | HUMAN | No test Google account/calendar or API-call counter is available; did not trigger OAuth, calendar sync, or external Google requests. |
 | P6 | TODO | No assistant time-to-first-token benchmark captured. |
 | P7 | TODO | No cache target established from measured hot traffic. |
 | P8 | TODO | No interaction/perceived-performance benchmark captured. |
@@ -64,6 +64,7 @@ Measurements are from the current worktree on `perf/optimise` and use the produc
 | 2 | Render count / interaction profile | — | HUMAN; profiler and authenticated interaction setup unavailable | No browser performance profiler is installed; interactive routes require a development session |
 | 3 | Request counts and endpoint waterfall | — | HUMAN; no local seeded user session or safe endpoint target available | `node scripts/perf-smoke.mjs` requires `PERF_TOKEN` and is loopback-only |
 | 4 | Local read-endpoint p95 and query plans | — | HUMAN; no local PostgreSQL instance; hosted database intentionally not queried | `node scripts/perf-smoke.mjs` and `EXPLAIN (ANALYZE, BUFFERS)` require a local seeded DB |
+| 5 | Google API calls per sync/view | — | HUMAN; no test calendar or request counter; OAuth/consent flow not triggered | Google sync integration tests require test credentials and an authorized calendar |
 
 The bundle script reports raw and gzip bytes for every emitted JS/CSS asset and the HTML entry's static JS dependency graph. The API smoke script is deliberately loopback-only, issues GET requests, performs no seeding or writes, and does not call an external LLM.
 
@@ -81,7 +82,8 @@ The bundle script reports raw and gzip bytes for every emitted JS/CSS asset and 
 | 2 | Made no render optimization without an interaction profile; memoization and virtualization are not applied speculatively. |
 | 3 | Made no caching, optimistic-update, or cancellation change without a representative authenticated network waterfall; existing Axios behavior remains unchanged. |
 | 4 | Made no query/index change without local query-plan evidence; avoids running seed data, `EXPLAIN ANALYZE`, or migrations against the hosted pooler. |
+| 5 | Made no Google sync changes without a measurable API-call baseline; did not access external calendars or alter consent/scope behavior. |
 
 ## Iteration Counter
 
-4 — P0 baseline, P1 route split, and P2-P4 measurement limitations.
+5 — P0 baseline, P1 route split, and P2-P5 measurement limitations.
