@@ -1,6 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../../common/services/prisma.service';
 import { AiProviderService } from '../../integrations/ai-providers/ai-provider.service';
+import { MetricsService } from '../../metrics/metrics.service';
 import { IntentParserService } from '../../ai/intent/intent-parser.service';
 import { ToolRegistry } from './tool-registry.service';
 import {
@@ -19,6 +20,7 @@ import {
   ToolConfirmationLevel,
 } from './interfaces/assistant-tools.interface';
 import { ParsedIntent } from '../../ai/intent/interfaces/intent.interface';
+import { extractSequencedTaskTitles } from '../../ai/intent/local-intent.classifier';
 
 @Injectable()
 export class AssistantOrchestratorService {
@@ -28,7 +30,9 @@ export class AssistantOrchestratorService {
     private readonly prisma: PrismaService,
     private readonly aiProvider: AiProviderService,
     private readonly intentParser: IntentParserService,
-    private readonly toolRegistry: ToolRegistry
+    private readonly toolRegistry: ToolRegistry,
+    // Optional and last so existing construction (including specs) is unaffected.
+    @Optional() private readonly metrics?: MetricsService
   ) {}
 
   async processMessage(
@@ -299,6 +303,22 @@ export class AssistantOrchestratorService {
       return this.mapIntentToActionsLocally(intent);
     }
 
+    const sequencedTaskTitles = extractSequencedTaskTitles(intent.originalText);
+    if (sequencedTaskTitles.length > 1) {
+      return sequencedTaskTitles.map((title) => ({
+        toolName: 'create_task',
+        input: {
+          title,
+          priority: typeof intent.entities?.priority === 'number' ? intent.entities.priority : 3,
+          estimatedDurationMinutes: intent.entities?.durationMinutes ?? 60,
+        },
+        reasoning: `Create task "${title}" from the requested sequence`,
+        confidence: intent.confidence ?? 0.8,
+        requiresConfirmation: true,
+        confirmationLevel: 'LOW',
+      }));
+    }
+
     try {
       const toolDefinitions = this.toolRegistry.getToolDefinitionsForLLM();
 
@@ -357,11 +377,16 @@ Rules for "input":
       if (Array.isArray(actions) && actions.length > 0) {
         return this.enrichActionsWithParsedEntities(intent, actions);
       }
+      // The provider answered but proposed nothing usable. Counted separately from
+      // a transport failure: an outage and a model that keeps ignoring the tool
+      // list need different fixes, and one counter would hide both.
+      this.metrics?.recordLocalFallback('extract_actions', 'provider_returned_no_actions');
     } catch (error: any) {
       // No LLM reachable; fall through to the deterministic mapper below.
       this.logger.warn(
         `Action extraction via AI provider failed, using local mapper: ${error?.message ?? error}`
       );
+      this.metrics?.recordLocalFallback('extract_actions', 'provider_error');
     }
 
     return this.mapIntentToActionsLocally(intent);
@@ -376,11 +401,11 @@ Rules for "input":
       const input = { ...action.input };
       const title = String(entities.title ?? intent.originalText ?? 'Untitled');
       if (intent.type === 'CREATE_EVENT' && action.toolName === 'create_event') {
-        input.title = title;
+        input.title = input.title || title;
         if (entities.startDate) input.startDate = String(entities.startDate);
         if (entities.endDate) input.endDate = String(entities.endDate);
       } else if (intent.type === 'CREATE_TASK' && action.toolName === 'create_task') {
-        input.title = title;
+        input.title = input.title || title;
         if (typeof entities.priority === 'number') input.priority = entities.priority;
         if (typeof entities.durationMinutes === 'number') {
           input.estimatedDurationMinutes = entities.durationMinutes;
@@ -388,12 +413,12 @@ Rules for "input":
         if (entities.startDate) input.startDate = String(entities.startDate);
         if (entities.dueDate) input.dueDate = String(entities.dueDate);
       } else if (intent.type === 'CREATE_GOAL' && action.toolName === 'create_goal') {
-        input.title = title;
+        input.title = input.title || title;
         if (typeof entities.priority === 'number') input.priority = entities.priority;
         if (entities.startDate) input.startDate = String(entities.startDate);
         if (entities.dueDate) input.targetDate = String(entities.dueDate);
       } else if (intent.type === 'CREATE_PROJECT' && action.toolName === 'create_project') {
-        input.title = title;
+        input.title = input.title || title;
         if (typeof entities.priority === 'number') input.priority = entities.priority;
         if (entities.startDate) input.startDate = String(entities.startDate);
         if (entities.dueDate) input.dueDate = String(entities.dueDate);

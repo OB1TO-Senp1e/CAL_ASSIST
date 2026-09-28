@@ -34,7 +34,9 @@ export class OutlookCalendarAdapter extends BaseCalendarAdapter {
       redirect_uri: this.redirectUri,
       response_type: 'code',
       scope: this._scopes.join(' '),
-      state: `${userId}:${state}`,
+      // The state is the server-minted signed JWT (self-contained: it carries
+      // the user id), so it must travel verbatim to the callback.
+      state,
       prompt: 'consent',
     });
     return `https://login.microsoftonline.com/${this.tenantId}/oauth2/v2.0/authorize?${params.toString()}`;

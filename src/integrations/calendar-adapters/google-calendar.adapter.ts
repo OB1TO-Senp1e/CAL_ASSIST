@@ -33,7 +33,7 @@ export class GoogleCalendarAdapter extends BaseCalendarAdapter {
       redirect_uri: this.redirectUri,
       response_type: 'code',
       scope: this._scopes.join(' '),
-      state: `${userId}:${state}`,
+      state,
       access_type: 'offline',
       prompt: 'consent',
     });

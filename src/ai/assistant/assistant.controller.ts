@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { z } from 'zod';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
+import { AiProviderService } from '../../integrations/ai-providers/ai-provider.service';
 import { AssistantOrchestratorService } from './assistant-orchestrator.service';
 import { ToolRegistry } from './tool-registry.service';
 import { PrismaService } from '../../common/services/prisma.service';
@@ -73,7 +74,9 @@ export class AssistantController {
   constructor(
     private readonly orchestrator: AssistantOrchestratorService,
     private readonly toolRegistry: ToolRegistry,
-    private readonly prisma: PrismaService
+    private readonly prisma: PrismaService,
+    // Read-only reporting of provider capability + circuit state for ops/probes.
+    private readonly aiProviders: AiProviderService
   ) {}
 
   @Post('message')
@@ -201,6 +204,20 @@ export class AssistantController {
       category: tool.category,
       confirmationLevel: tool.confirmationLevel,
     }));
+  }
+
+  /**
+   * Read-only provider health for ops and the Stage 5a probe: which providers are
+   * wired, what each claims it can do, and the live circuit-breaker state. Nothing
+   * here triggers a request to a provider - capabilities are the declared set, so
+   * calling it cannot make a bad credential look like an outage.
+   */
+  @Get('providers/health')
+  providerHealth() {
+    return {
+      activeProvider: this.aiProviders.providerName,
+      providers: this.aiProviders.describeProviders(),
+    };
   }
 
   @Get('recommendations')

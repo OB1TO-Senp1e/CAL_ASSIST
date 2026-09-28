@@ -37,7 +37,8 @@ export class AppleCalendarAdapter extends BaseCalendarAdapter {
       redirect_uri: this.redirectUri,
       response_type: 'code',
       scope: this._scopes.join(' '),
-      state: `${userId}:${state}`,
+      // Signed-JWT state is self-contained; pass it verbatim (see Google adapter).
+      state,
       response_mode: 'form_post',
     });
     return `https://appleid.apple.com/auth/authorize?${params.toString()}`;

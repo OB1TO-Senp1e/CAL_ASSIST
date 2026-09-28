@@ -107,6 +107,31 @@ describe('AssistantOrchestratorService parsed tool payloads', () => {
     });
   });
 
+  it('preserves distinct task titles from a multi-task AI response', () => {
+    const intent = {
+      type: 'CREATE_TASK',
+      confidence: 0.9,
+      entities: { title: 'planning, designing, execution' },
+      originalText: 'Create tasks for planning, designing, and execution',
+    } as ParsedIntent;
+    const actions = [
+      action('create_task'),
+      action('create_task'),
+      action('create_task'),
+    ].map((item, index) => ({
+      ...item,
+      input: { title: ['Planning', 'Designing', 'Execution'][index] },
+    }));
+
+    const enriched = service['enrichActionsWithParsedEntities'](intent, actions);
+
+    expect(enriched.map((item) => item.input.title)).toEqual([
+      'Planning',
+      'Designing',
+      'Execution',
+    ]);
+  });
+
   it('maps schedule questions to explain_schedule rather than a write action', () => {
     const intent: ParsedIntent = {
       type: 'GET_RECOMMENDATIONS',

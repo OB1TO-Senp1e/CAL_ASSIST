@@ -1,12 +1,16 @@
 import { z } from 'zod';
 
-export const TravelModeSchema = z.enum([
-  'DRIVING',
-  'WALKING',
-  'BICYCLING',
-  'TRANSIT',
-  'FLIGHT',
-]);
+export const TravelModeSchema = z
+  .union([
+    z.enum(['DRIVING', 'WALKING', 'BICYCLING', 'TRANSIT', 'FLIGHT']),
+    z.enum(['driving', 'walking', 'bicycling', 'transit', 'flight']),
+  ])
+  .transform((value) => value.toUpperCase() as
+    | 'DRIVING'
+    | 'WALKING'
+    | 'BICYCLING'
+    | 'TRANSIT'
+    | 'FLIGHT');
 
 export type TravelMode = z.infer<typeof TravelModeSchema>;
 

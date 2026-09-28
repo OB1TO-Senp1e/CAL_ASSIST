@@ -1,6 +1,7 @@
 import {
   classifyLocally,
   extractDurationMinutes,
+  extractSequencedTaskTitles,
   extractTitle,
   MAX_TITLE_LENGTH,
 } from './local-intent.classifier';
@@ -130,6 +131,16 @@ describe('local-intent.classifier', () => {
       expect(classifyLocally('Create project redesign website').confidence).toBeGreaterThanOrEqual(
         0.9,
       );
+    });
+  });
+
+  describe('sequenced task extraction', () => {
+    it('splits conversational task steps into individual titles', () => {
+      expect(
+        extractSequencedTaskTitles(
+          'planning was my first task then designing and then execution at the end'
+        )
+      ).toEqual(['planning', 'designing', 'execution']);
     });
   });
 

@@ -59,10 +59,10 @@ export class GoogleMapsTravelTimeProvider implements TravelTimeProvider {
       destination,
       mode,
       key: this.apiKey,
-      traffic_model: 'best_guess',
     });
     if (request.departureTime) {
       params.set('departure_time', String(Math.floor(new Date(request.departureTime).getTime() / 1000)));
+      params.set('traffic_model', 'best_guess');
     }
     if (request.arrivalTime) {
       params.set('arrival_time', String(Math.floor(new Date(request.arrivalTime).getTime() / 1000)));
@@ -107,7 +107,11 @@ export class GoogleMapsTravelTimeProvider implements TravelTimeProvider {
       };
     } catch (error: any) {
       this.logger.error(`Google Maps directions failed: ${error.message}`);
-      throw error;
+      // An upstream rejection (REQUEST_DENIED/billing, outage) is a provider
+      // condition, not a server bug; degrade as 503 like the missing-key path
+      // so clients can retry rather than surfacing a raw 500.
+      if (error instanceof ServiceUnavailableException) throw error;
+      throw new ServiceUnavailableException(`Travel time unavailable: ${error.message}`);
     }
   }
 

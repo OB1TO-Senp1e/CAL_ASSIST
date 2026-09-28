@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { PrismaService } from '../../common/services/prisma.service';
 import { AiProvidersModule } from '../../integrations/ai-providers/ai-providers.module';
+import { MetricsModule } from '../../metrics/metrics.module';
 import { IntentParserService } from '../../ai/intent/intent-parser.service';
 import { TimeCompilerService } from '../../scheduling/time-compiler/time-compiler.service';
 import { ToolRegistry } from './tool-registry.service';
@@ -22,7 +23,10 @@ import { PlanDayTool } from './tools/plan-day.tool';
 
 @Module({
   controllers: [AssistantController],
-  imports: [AiProvidersModule],
+  // MetricsModule feeds the orchestrator's optional MetricsService, which counts
+  // the local-mapper fallback so a provider outage is visible in /metrics rather
+  // than only in warn logs.
+  imports: [AiProvidersModule, MetricsModule],
   providers: [
     PrismaService,
     IntentParserService,

@@ -47,6 +47,24 @@ export interface LocalIntent {
 /** Maximum length accepted by `Create*InputSchema.title` (`.min(1).max(200)`). */
 export const MAX_TITLE_LENGTH = 200;
 
+/** Extracts the common conversational form used to enumerate task steps. */
+export function extractSequencedTaskTitles(text: string): string[] {
+  const match = squash(String(text ?? '')).match(
+    /^(.+?)\s+was\s+my\s+first\s+task\s+then\s+(.+)$/i
+  );
+  if (!match) return [];
+
+  const titles = [match[1], ...match[2].split(/\s+then\s+/i)]
+    .map((title) => title
+      .replace(/^(?:and|the)\s+/i, '')
+      .replace(/\s+at\s+the\s+end$/i, '')
+      .replace(/\s+and$/i, '')
+      .trim())
+    .filter(Boolean);
+
+  return titles.length > 1 ? titles : [];
+}
+
 /**
  * Entity noun -> intent. A noun found directly after the command verb is the
  * strongest available signal, so it wins over any keyword scan.
