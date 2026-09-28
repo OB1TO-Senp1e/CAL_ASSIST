@@ -6,15 +6,16 @@
 
 ## Current position
 - **Stage:** 4 — Backend Hardening
-- **Next unit:** Stage 4h is closed (assistant LLM path + Memory schema sync, live-verified).
-  Remaining Stage 4 candidates: `connections` token-field scrub beyond what 4g shipped,
-  Luxon serialisation at the calendar boundary (interim `toIso()`), the `calendarId`
-  UUID-vs-CUID latent check, and real-provider answer-quality passes once keys rotate.
-- **Verification of record (2026-09-28, Stage 4h):** `npx tsc --noEmit` 0 · `npx jest --silent`
-  **125/125** · `scripts/stage3-probe.ps1` → **100 PASS / 0 FAIL / 0 WARN / 1 INFO** ·
-  `scripts/audit-live.js` → **18/18** (assistant proposes *and confirms* through the real
-  Ollama LLM path with a clean extracted title) · `scripts/s4-gate-probe.ps1` all steps OK incl.
-  new 7/7b compile→apply with a first-task user. Stage 1 ✅, Stage 2 ✅ (13/13), Stage 3 ✅ (13/13).
+- **Next unit:** Stage 4i is closed (connections token-scrub + per-calendar delta sync, live-verified).
+  Remaining Stage 4 candidates: Luxon serialisation at the calendar boundary (interim `toIso()`),
+  the `calendarId` UUID-vs-CUID latent check, and real-provider answer-quality passes once keys
+  rotate.
+- **Verification of record (2026-09-28, Stage 4i):** `npx tsc --noEmit` 0 · `npx jest --silent`
+  **127/127** (11 suites; the +2 over the 4h baseline are the new
+  `calendar-connection.service.spec.ts` scrub guards) · `scripts/s4i-probe.ps1` → **all PASS** incl.
+  the `s4i-check-db.js` DB-truth step · `scripts/stage3-probe.ps1` → **100 PASS / 0 FAIL / 1 INFO** ·
+  `scripts/s4-gate-probe.ps1` steps 1–10 all OK. Earlier (4h): `audit-live.js` 18/18 with the real
+  Ollama LLM path proposing *and* confirming. Stage 1 ✅, Stage 2 ✅ (13/13), Stage 3 ✅ (13/13).
 - **Live backend right now:** Nest (`node dist/main.js` of the latest build) on
   `http://localhost:3000/api` (`GET /api/health` → 200), Vite **dev** server on `http://localhost:3001`
   with `/api` + `/auth` proxied to 3000.
@@ -43,7 +44,7 @@
 | 1 — Design Foundation | ✅ DONE (2026-09-27) |
 | 2 — Frontend Screens | ✅ DONE (13/13, 2026-09-27) |
 | 3 — Backend Tie-in | ✅ DONE (13/13 wired and live-verified, 2026-09-27) |
-| 4 — Backend Hardening | 🟨 IN PROGRESS (4f, 4g, 4h done; remaining items listed under 4h) |
+| 4 — Backend Hardening | 🟨 IN PROGRESS (4f, 4g, 4h, 4i done; remaining items listed under 4i) |
 
 ### Stage 2 screen-groups
 | Unit | Status |
@@ -78,6 +79,68 @@
 | 3k Integrations | ✅ DONE (2026-09-27) — travel-time returns clean 503 without a key; OAuth callback live |
 | 3l Meeting Intelligence | ✅ DONE (2026-09-27) — preparation/post-meeting retrievable, not placeholders |
 | 3m Command Center | ✅ DONE (2026-09-27) — daily/current, morning, briefing, context, health live |
+
+### 2026-09-28 — Stage 4i: connections token scrub + per-calendar delta sync ✅ (live-verified)
+
+The last two open calendar-integration items from the Stage 4 audit, closed together because they
+live in the same two services.
+
+**Scrub: OAuth material no longer leaves the server**
+- `GET /api/calendar/connections` and `GET /api/calendar/connections/:provider` previously returned
+  whole Prisma rows: `accessToken`, `refreshToken`, and the connection's `syncToken` — plus, via
+  `calendars: true`, every `Calendar` column including its own `syncToken` delta cursor.
+- `calendar-connection.service.ts` now reads with explicit projections:
+  `PUBLIC_CONNECTION_SELECT` (id/userId/provider/externalUserId/scopes/isActive/lastSync/syncError/
+  createdAt/updatedAt/tokenExpiresAt + nested `PUBLIC_CALENDAR_SELECT`) and
+  `PUBLIC_CALENDAR_SELECT` (drops `syncToken` + `connectionId`). `getPublicConnection(s)` are the
+  service's public readers; `getAllConnections()` delegates to `getPublicConnections()`, so the
+  `GET /api/calendar/calendars` flatMap is scrubbed too. `getConnection()` (raw row) stays internal
+  — the sync path needs the tokens.
+- `tokenExpiresAt` is deliberately kept: the UI renders "needs reconnection" from it and it is not a
+  secret. Client contract follows: `CalendarConnectionDTO` and the mock seeds drop `syncToken`.
+- Guards: `calendar-connection.service.spec.ts` asserts the select objects handed to Prisma contain
+  no forbidden key at any depth (the 2 tests that took the suite count 125 → 127).
+
+**Delta sync: the sync pipeline was structurally broken, not just unoptimised**
+- `syncCalendarsList()` fed **raw provider calendar objects** into `syncCalendarEvents()`, which
+  used `calendar.id` as the `Event.calendarId` FK — an external id like `local_primary`, so any real
+  sync would have thrown on the FK. It now upserts each calendar and returns the **DB rows**
+  (`select: { id, syncToken }`), which also gives each calendar its persisted delta cursor.
+- `syncCalendarEvents()` receives that stored `syncToken` and, on success, writes
+  `nextSyncToken` back to the `Calendar` row — previously the cursor was discarded and every sync
+  was a full sync.
+- The connection-level `syncToken` write was removed: delta state is per-calendar (the adapter
+  returns one `nextSyncToken` per calendar); `CalendarConnection.syncToken` is no longer written and
+  now only tracks health via `lastSync`/`syncError`.
+- `externalId` is coerced with `String(cal.id ?? cal.externalId ?? '')` so the composite
+  `userId_connectionId_externalId` upsert key is stable across re-syncs.
+
+**Verified (live, against the rebuilt backend on :3000)**
+- `scripts/s4i-probe.ps1` (new) → **all PASS**: fresh user empty list → `POST callback/LOCAL` →
+  `accessToken`/`refreshToken`/`syncToken` absent at every depth on `/connections`,
+  `/connections/LOCAL`, `/calendars`, and the `sync/all` summary, while `tokenExpiresAt`/
+  `syncError`/`isActive` remain → `POST sync/LOCAL` **200, calendarsSynced=1** (pre-4i this path
+  could only 500 on the FK) → second sync exercises the stored-cursor delta path → disconnect
+  empties the list.
+- `scripts/s4i-check-db.js` (new, run mid-probe): proves the scrub is a projection, not data loss —
+  connection row still holds `accessToken`+`refreshToken`, calendar row linked by FK with
+  `externalId=local_primary` and a persisted `syncToken` cursor. **ALL PASS**.
+- Regression: `scripts/stage3-probe.ps1` → **100 PASS / 0 FAIL / 1 INFO** (the 3f reminder INFO is
+  by-design); `scripts/s4-gate-probe.ps1` steps 1–10 all OK. `npx tsc --noEmit` 0 ·
+  `npx jest --silent` **127/127** · `npm run build` green · client build green.
+
+**Files touched**
+- Backend: `src/integrations/calendar-adapters/calendar-connection.service.ts` (public selects),
+  `src/integrations/calendar-adapters/calendar-sync.service.ts` (DB-row sync, per-calendar cursor),
+  `src/integrations/calendar-adapters/calendar-connection.service.spec.ts` (new)
+- Client: `client/src/services/workflow-types.ts`, `client/src/lib/mock/integrations.ts`
+  (`syncToken` removed from the connection DTO/seed)
+- Scripts: `scripts/s4i-probe.ps1`, `scripts/s4i-check-db.js` (new)
+
+**Remaining Stage 4 candidates** (unchanged list from 4h, minus the scrub): Luxon `DateTime`
+serialisation at the calendar boundary (interim `toIso()`), the `calendarId` UUID-vs-CUID zod check,
+proactive-intervention persistence, permissions/rule-conflict real models, notification-preferences
+follow-ups, meeting-result retrieval breadth, real-provider answer quality once keys rotate.
 
 ### 2026-09-28 — Stage 4h: assistant LLM path repaired + Memory schema drift closed ✅ (live-verified)
 
@@ -668,10 +731,12 @@ implemented this rule, so the fix brings live behaviour in line with what the UI
 - [ ] **NEW (2l): Meeting results are not persisted/retrievable.** Preparation/process endpoints
   exist, but all `GET /:meetingId/...` methods return placeholder messages rather than saved
   outputs.
-- [ ] **NEW (3b/3k): `GET /api/calendar/connections` returns token fields.**
-  `CalendarConnectionService.getAllConnections()` includes Prisma access/refresh tokens.
-  The client strips them before exposing connection rows, but the server must stop returning
-  secrets to browsers.
+- [x] ~~**NEW (3b/3k): `GET /api/calendar/connections` returns token fields.**~~ — **CLOSED 2026-09-28
+      (4i)**: `CalendarConnectionService` now answers the public routes with explicit Prisma
+      `select`s (`PUBLIC_CONNECTION_SELECT` / `PUBLIC_CALENDAR_SELECT`) that exclude
+      `accessToken`/`refreshToken`/`syncToken` at every depth; `getAllConnections()` delegates to
+      `getPublicConnections()`. Live-verified by `scripts/s4i-probe.ps1` (incl. DB-truth check that
+      tokens are still *stored*, just not returned). See the 4i log entry.
 - [ ] **NEW (3b): Calendar event creation contracts cannot currently succeed.** ~~the service writes
       `category`/`color` columns absent from Prisma `Event`~~ — **that half is CLOSED 2026-09-27**
       (migration `20260927110000_add_event_category_color`; live create now round-trips both fields,

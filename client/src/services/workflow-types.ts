@@ -257,7 +257,7 @@ export interface UserPermissionDTO {
 
 export interface CalendarConnectionDTO {
   id: string; userId: string; provider: CalendarProvider; externalUserId?: string | null; scopes: string[]; isActive: boolean;
-  lastSync?: string | null; syncToken?: string | null; syncError?: string | null; createdAt: string; updatedAt: string; calendars: CalendarDTO[];
+  lastSync?: string | null; syncError?: string | null; tokenExpiresAt?: string | null; createdAt: string; updatedAt: string; calendars: CalendarDTO[];
 }
 export interface NotificationPreferencesDTO {
   email?: { enabled: boolean; address?: string }; sms?: { enabled: boolean; phoneNumber?: string };

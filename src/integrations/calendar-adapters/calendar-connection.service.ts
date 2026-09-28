@@ -16,6 +16,29 @@ export interface CalendarConnectionData {
 }
 
 /**
+ * Calendar rows shipped inside a public connection. `syncToken` is a provider
+ * delta-sync cursor (it embeds the provider's own sync state for this
+ * connection) and `connectionId` is internal wiring, so both are excluded.
+ * The previous `calendars: true` returned every column, leaking `syncToken`
+ * on GET /api/calendar/connections — closed by Stage 4i.
+ */
+const PUBLIC_CALENDAR_SELECT = {
+  id: true,
+  userId: true,
+  name: true,
+  description: true,
+  color: true,
+  timezone: true,
+  isVisible: true,
+  isPrimary: true,
+  provider: true,
+  externalId: true,
+  lastSynced: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
+
+/**
  * Public connection shape. OAuth material (accessToken, refreshToken,
  * syncToken) never leaves the server: the client only needs to know which
  * provider is connected, its scopes, and sync health. `tokenExpiresAt` is kept
@@ -33,6 +56,7 @@ const PUBLIC_CONNECTION_SELECT = {
   createdAt: true,
   updatedAt: true,
   tokenExpiresAt: true,
+  calendars: { select: PUBLIC_CALENDAR_SELECT },
 } as const;
 
 @Injectable()
@@ -177,7 +201,7 @@ export class CalendarConnectionService {
   async getPublicConnection(userId: string, provider: string) {
     return this.prisma.calendarConnection.findFirst({
       where: { userId, provider: provider.toUpperCase() as any, isActive: true },
-      select: { ...PUBLIC_CONNECTION_SELECT, calendars: true },
+      select: PUBLIC_CONNECTION_SELECT,
     });
   }
 
@@ -185,7 +209,7 @@ export class CalendarConnectionService {
   async getPublicConnections(userId: string) {
     return this.prisma.calendarConnection.findMany({
       where: { userId, isActive: true },
-      select: { ...PUBLIC_CONNECTION_SELECT, calendars: true },
+      select: PUBLIC_CONNECTION_SELECT,
     });
   }
 
