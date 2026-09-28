@@ -39,7 +39,7 @@ Measurements are from the current worktree on `perf/optimise` and use the produc
 | P3 | HUMAN | No authenticated local seed/session for a representative waterfall; the loopback GET benchmark is ready in `scripts/perf-smoke.mjs` but was not run against the hosted DB. |
 | P4 | HUMAN | `.env` targets the hosted pooler; no local PostgreSQL instance is available for seeded p95s or `EXPLAIN`. No migration or external DB request was made. |
 | P5 | HUMAN | No test Google account/calendar or API-call counter is available; did not trigger OAuth, calendar sync, or external Google requests. |
-| P6 | HUMAN | One generic streaming probe to the configured OpenAI-compatible endpoint returned HTTP 429 after 2,116.2 ms; no content token arrived, so TTFT and app-level fallback remain unmeasured. The application is configured with `AI_PROVIDER=ollama`, and no authenticated assistant request was sent. |
+| P6 | HUMAN | OpenAI `/models` returned HTTP 200 and listed configured chat model `gpt-5.5-pro`; one minimal completion returned HTTP 429 `insufficient_quota` / `credit_balance_exhausted` after 2,193.2 ms. No generated token arrived. `text-embedding-3-small` was not in the returned model list and could not be tested without available API credit. |
 | P7 | HUMAN | P0 did not produce request-frequency/latency evidence; cache remains intentionally absent rather than being added speculatively. |
 | P8 | HUMAN | No mobile Lighthouse/CLS or authenticated main-flow timing is available; no skeleton/motion changes made without layout-shift or feedback measurements. |
 | P9 | DONE | `npm run test:ci` builds and checks the authenticated-home graph (182,251 <= 200,477 gzip bytes), executes a synthetic over-budget failure test, and runs Jest; CI installs client dependencies and uses this command. README documents local reruns. |
@@ -79,6 +79,8 @@ Measurements are from the current worktree on `perf/optimise` and use the produc
 | 11 | Backend after environment reload | Stopped before reload | `/api/health` returned HTTP 200 after module initialization fixes | `Invoke-WebRequest -UseBasicParsing http://localhost:3000/api/health -TimeoutSec 15` |
 | 11 | Full Jest suite with updated `.env` model setting | 1 failure: provider spec expects repository default | PASS: 29 passed, 1 DB-backed suite skipped, with expected model explicitly set for tests | `$env:DATABASE_URL='postgresql://127.0.0.1:1/calassist'; $env:OPENAI_MODEL='gpt-4o'; npm test -- --runInBand` |
 | 11 | Non-mutating lint of startup-fix files | — | PASS; 0 errors, 2 existing `any` warnings in account-deletion service | `.\node_modules\.bin\eslint.cmd --rule 'prettier/prettier: off' src/auth/auth.module.ts src/integrations/calendar-adapters/calendar-adapters.module.ts src/integrations/ai-providers/ai-providers.module.ts src/users/account-deletion.service.ts` |
+| 12 | OpenAI API key/model-list access | Previous model-list state unknown | HTTP 200; two model IDs listed; configured chat model `gpt-5.5-pro` present; configured embedding model not listed | PowerShell inline Node fetch using `.env` bearer key; `GET ${OPENAI_BASE_URL}/models`; output restricted to status and model IDs |
+| 12 | Minimal configured chat completion | HTTP 429 rate-limited on previous probe | HTTP 429 `insufficient_quota` / `credit_balance_exhausted` after 2,193.2 ms; no assistant content | Same PowerShell inline Node test; one `POST /chat/completions`, `max_tokens: 4`, temperature 0, 15s timeout; no retry |
 
 The bundle script reports raw and gzip bytes for every emitted JS/CSS asset and the HTML entry's static JS dependency graph. The API smoke script is deliberately loopback-only, issues GET requests, performs no seeding or writes, and does not call an external LLM.
 
@@ -104,7 +106,8 @@ The bundle script reports raw and gzip bytes for every emitted JS/CSS asset and 
 | 10 | Report only measured browser-bundle numbers; retain HUMAN labels for unavailable DB, Lighthouse, Google, interaction, and LLM measurements. |
 | 11 | A single generic provider probe was rate-limited; no retry was made. The probe bypassed the app because its selected provider is Ollama and there was no authenticated browser session. |
 | 11 | Restart exposed pre-existing Nest module wiring issues in dirty worktree files. With user approval, applied forward references and a Prisma provider needed for startup. These edits remain unstaged because their files contain interleaved pre-existing user changes, which must not be swept into a performance commit. |
+| 12 | OpenAI key authentication/model listing works, but the configured model has no available API credit for generation. Did not retry, switch models, or test embeddings; model-list visibility is not treated as proof of generation access. |
 
 ## Iteration Counter
 
-11 — P0 baseline, P1 route split, P2-P8 HUMAN, P9 regression guard, P10 report, and P6 rate-limit result.
+12 — P0 baseline, P1 route split, P2-P8 HUMAN, P9 regression guard, P10 report, and P6 quota verification.

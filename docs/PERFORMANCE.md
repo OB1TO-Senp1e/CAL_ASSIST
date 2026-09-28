@@ -119,10 +119,14 @@ were not estimated:
 - Production database plan, pooler settings, and connection-pool limits.
 - An authorized test Google Calendar and API-call counter for sync measurements.
 - An isolated test LLM/provider fixture and TTFT measurement; no user content was
-  sent to an external model. After the OpenAI secret update, one generic
-  streaming probe returned HTTP 429 after 2,116.2 ms before any content token;
-  no retry was made. This is not an app-level TTFT: `AI_PROVIDER` is configured
-  as `ollama`, and no authenticated assistant request was made.
+  sent to an external model. After the OpenAI settings update, `GET /models`
+  returned HTTP 200 and listed the configured chat model `gpt-5.5-pro`; the
+  configured embedding model `text-embedding-3-small` was not in the returned
+  list. One minimal completion returned HTTP 429 with
+  `insufficient_quota` / `credit_balance_exhausted` after 2,193.2 ms, before any
+  assistant content. No retry or alternate-model request was made. This is not
+  an app-level TTFT: `AI_PROVIDER` is configured as `ollama`, and no
+  authenticated assistant request was made.
 - Authenticated interaction profiling, request waterfalls, render counts,
   measured hot-endpoint cache hit rates, and main-flow layout-shift timing.
 
