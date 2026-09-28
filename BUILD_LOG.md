@@ -6,16 +6,16 @@
 
 ## Current position
 - **Stage:** 4 — Backend Hardening
-- **Next unit:** Stage 4i is closed (connections token-scrub + per-calendar delta sync, live-verified).
-  Remaining Stage 4 candidates: Luxon serialisation at the calendar boundary (interim `toIso()`),
-  the `calendarId` UUID-vs-CUID latent check, and real-provider answer-quality passes once keys
-  rotate.
-- **Verification of record (2026-09-28, Stage 4i):** `npx tsc --noEmit` 0 · `npx jest --silent`
-  **127/127** (11 suites; the +2 over the 4h baseline are the new
-  `calendar-connection.service.spec.ts` scrub guards) · `scripts/s4i-probe.ps1` → **all PASS** incl.
-  the `s4i-check-db.js` DB-truth step · `scripts/stage3-probe.ps1` → **100 PASS / 0 FAIL / 1 INFO** ·
-  `scripts/s4-gate-probe.ps1` steps 1–10 all OK. Earlier (4h): `audit-live.js` 18/18 with the real
-  Ollama LLM path proposing *and* confirming. Stage 1 ✅, Stage 2 ✅ (13/13), Stage 3 ✅ (13/13).
+- **Next unit:** Stage 4i and 4j are closed (connections token-scrub + per-calendar delta sync, and
+  the calendar JSON/id boundary — both live-verified). Remaining Stage 4 candidates: real-provider
+  answer-quality passes once keys rotate, the permissions/rule-conflict compatibility JSON →
+  dedicated models migration, and notification-preferences follow-ups.
+- **Verification of record (2026-09-28, Stage 4j):** `npx tsc --noEmit` 0 · `npx jest --silent`
+  **135/135** (12 suites; +8 from the new `calendar-boundary.spec.ts`) ·
+  `scripts/s4j-probe.ps1` → **ALL PASS** (10 checks) · backend restarted from current `dist` before
+  probing. Before that (4i): `scripts/s4i-probe.ps1` all PASS incl. `s4i-check-db.js` DB truth ·
+  `scripts/stage3-probe.ps1` → **100 PASS / 0 FAIL / 1 INFO** · `scripts/s4-gate-probe.ps1` steps
+  1–10 all OK. Stage 1 ✅, Stage 2 ✅ (13/13), Stage 3 ✅ (13/13).
 - **Live backend right now:** Nest (`node dist/main.js` of the latest build) on
   `http://localhost:3000/api` (`GET /api/health` → 200), Vite **dev** server on `http://localhost:3001`
   with `/api` + `/auth` proxied to 3000.
@@ -44,7 +44,7 @@
 | 1 — Design Foundation | ✅ DONE (2026-09-27) |
 | 2 — Frontend Screens | ✅ DONE (13/13, 2026-09-27) |
 | 3 — Backend Tie-in | ✅ DONE (13/13 wired and live-verified, 2026-09-27) |
-| 4 — Backend Hardening | 🟨 IN PROGRESS (4f, 4g, 4h, 4i done; remaining items listed under 4i) |
+| 4 — Backend Hardening | 🟨 IN PROGRESS (4f–4j done; remaining items listed under 4j) |
 
 ### Stage 2 screen-groups
 | Unit | Status |
@@ -79,6 +79,39 @@
 | 3k Integrations | ✅ DONE (2026-09-27) — travel-time returns clean 503 without a key; OAuth callback live |
 | 3l Meeting Intelligence | ✅ DONE (2026-09-27) — preparation/post-meeting retrievable, not placeholders |
 | 3m Command Center | ✅ DONE (2026-09-27) — daily/current, morning, briefing, context, health live |
+
+### 2026-09-28 — Stage 4j: calendar boundary closed (Luxon serialisation + id flavour) ✅ (live-verified)
+
+The last two calendar items still listed as open Stage 4 candidates. Both fixes were found **already
+present in source but never tied-in-verified** — the `_utc` shape had been observed live as recently
+as the cal2/cal3 captures — so this unit is verification + regression-pinning, not new behaviour.
+
+**Luxon `DateTime` → bare ISO at every JSON boundary**
+- `src/calendar/domain/calendar-event.ts` `DateTime.toJSON()` returns `toISOString()`; live probe
+  `scripts/s4j-probe.ps1` (A1–A3) confirms **no `_utc`/`_timeZone` key anywhere** in
+  `POST/GET /api/calendar/events` payloads, and `start` round-trips as an exact ISO string.
+- Client `toIso()` (`client/src/lib/datetime.ts`) stays as a harmless defence; the server no longer
+  requires it.
+
+**Id flavour: CUIDs pass the zod boundary**
+- `EntityIdSchema` = `z.string().min(1).max(64)` replaces `z.string().uuid()` on
+  `CreateEventSchema.calendarId` and `BulkEventSchema.eventIds`. Live probe B0/B1: a LOCAL-synced
+  calendar row (cuid `cmuk…`) accepts an id-bearing create through the controller's
+  `ZodValidationPipe`; B2: an empty-string `calendarId` is still refused with 400.
+- Route-collision audit item also verified closed: the adapters module's duplicate `@Get('events')`
+  was removed in Stage 4; `CalendarController` is the sole owner and A2 exercises it live.
+
+**Verified (2026-09-28)**
+- Backend restarted from the current `dist` (08:24 build) before probing — the running server had
+  been two builds behind.
+- `scripts/s4j-probe.ps1` → **ALL PASS** (10 checks: A1×3, A2×2, A3, B0, B1×2, B2).
+- New `src/calendar/domain/calendar-boundary.spec.ts` → **8/8** (toJSON shape/nesting/equality; CUID,
+  external-id, omitted-id accept; empty-id reject; length bound).
+- `npx tsc --noEmit` 0 · `npx jest --silent` **135/135 (12 suites)** · `npm run build` green.
+
+**Files touched**
+- Tests/scripts: `src/calendar/domain/calendar-boundary.spec.ts` (new), `scripts/s4j-probe.ps1` (new)
+- Repo: `BUILD_LOG.md` (3 checklist items closed, entry added)
 
 ### 2026-09-28 — Stage 4i: connections token scrub + per-calendar delta sync ✅ (live-verified)
 
@@ -137,10 +170,11 @@ live in the same two services.
   (`syncToken` removed from the connection DTO/seed)
 - Scripts: `scripts/s4i-probe.ps1`, `scripts/s4i-check-db.js` (new)
 
-**Remaining Stage 4 candidates** (unchanged list from 4h, minus the scrub): Luxon `DateTime`
-serialisation at the calendar boundary (interim `toIso()`), the `calendarId` UUID-vs-CUID zod check,
-proactive-intervention persistence, permissions/rule-conflict real models, notification-preferences
-follow-ups, meeting-result retrieval breadth, real-provider answer quality once keys rotate.
+**Remaining Stage 4 candidates** (now verified/closed by 4j, or key-blocked): Luxon `DateTime`
+serialisation at the calendar boundary and the `calendarId` UUID-vs-CUID zod check — both closed by
+4j; proactive-intervention persistence (closed earlier, `InterventionState`); permissions/rule-conflict
+compatibility JSON → dedicated models; notification-preferences follow-ups; meeting-result retrieval
+breadth; real-provider answer quality once keys rotate.
 
 ### 2026-09-28 — Stage 4h: assistant LLM path repaired + Memory schema drift closed ✅ (live-verified)
 
@@ -737,24 +771,24 @@ implemented this rule, so the fix brings live behaviour in line with what the UI
       `accessToken`/`refreshToken`/`syncToken` at every depth; `getAllConnections()` delegates to
       `getPublicConnections()`. Live-verified by `scripts/s4i-probe.ps1` (incl. DB-truth check that
       tokens are still *stored*, just not returned). See the 4i log entry.
-- [ ] **NEW (3b): Calendar event creation contracts cannot currently succeed.** ~~the service writes
-      `category`/`color` columns absent from Prisma `Event`~~ — **that half is CLOSED 2026-09-27**
-      (migration `20260927110000_add_event_category_color`; live create now round-trips both fields,
-      see the 3b addendum). **Still open:** `CreateEventSchema.calendarId` is `z.string().uuid()` while
-      Prisma calendar ids are CUIDs, so an id-bearing create can still be rejected at the zod boundary.
-- [ ] **NEW (3b): Calendar route collisions.** Both `CalendarModule` and `CalendarAdaptersModule`
-  register `GET /api/calendar/events` with different query parameter contracts; verify route
-  registration and unify the endpoint before relying on date filters.
+- [x] ~~**NEW (3b): Calendar event creation contracts cannot currently succeed.**~~ — **CLOSED 2026-09-28
+      (4j)**: the `category`/`color` half closed 2026-09-27 (migration `20260927110000_add_event_category_color`);
+      the zod half closed with `EntityIdSchema` (`z.string().min(1).max(64)`) replacing `z.string().uuid()`
+      on `calendarId`/`eventIds` — live-verified: CUID create now round-trips through
+      `ZodValidationPipe` (`scripts/s4j-probe.ps1` B1) and pinned by `calendar-boundary.spec.ts`.
+- [x] ~~**NEW (3b): Calendar route collisions.**~~ — **CLOSED**: the adapters controller's
+  `@Get('events')` was removed in Stage 4 (see the NOTE at `calendar.controller.ts:104` of the
+  adapters module); `CalendarController` @ `calendar/events` is the sole owner, and 4j's probe A2
+  exercises it live.
 - [x] ~~**NEW (2f/2l): Commitment person metadata is not in the write/read DTO or Prisma model.**~~ — **CLOSED 2026-09-27 (4f)**, same work as the item above: columns, zod input/output schemas and the client `CommitmentDTO` all carry person/confidence/context/related entity now.
   Meeting extraction includes a person, but creating a commitment currently cannot persist it.
 - [ ] _(further Stage 3 mismatches get appended here)_
-- [ ] **NEW (3b addendum): `start`/`end` serialise as Luxon `DateTime` objects, not ISO strings.**
-      Live response observed 2026-09-27: `{"_utc":"2026-09-27T12:16:49.442Z","_timeZone":"UTC"}`.
-      `CalendarService.toCalendarEvent()` (line ~333 / ~621) returns domain `DateTime` values with no
-      `toJSON`. The client's `toIso()` absorbs it so nothing is broken today, but every consumer of
-      `GET /api/calendar/events` (assistant tools, future sync, third-party clients) has to reimplement
-      that unwrap. Fix at the backend boundary — add `toJSON()` to the domain `DateTime` or serialise
-      with `.toISOString()` in the controller.
+- [x] ~~**NEW (3b addendum): `start`/`end` serialise as Luxon `DateTime` objects, not ISO strings.**~~
+      — **CLOSED 2026-09-28 (4j)**: domain `DateTime.toJSON()` returns `toISOString()`, so
+      `JSON.stringify` emits bare ISO at every boundary (events, views, participants, week/day
+      shapes). Live-verified by `scripts/s4j-probe.ps1` (A1–A3: no `_utc`/`_timeZone` anywhere in
+      raw payloads) and pinned by `src/calendar/domain/calendar-boundary.spec.ts`. The client's
+      `toIso()` remains as a harmless defence for old captures; the server no longer needs it.
 - [ ] **NEW (3c): Assistant event tool uses `startDate`/`endDate` while the calendar API uses
       `start`/`end`.** `CreateEventInputSchema` (`src/ai/assistant/interfaces/tool-schemas.ts`) and
       `CreateEventOutputSchema` are `startDate`/`endDate`; `CreateEventSchema` and the client
