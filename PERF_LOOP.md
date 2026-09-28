@@ -35,7 +35,7 @@ Measurements are from the current worktree on `perf/optimise` and use the produc
 | P1 | DONE | DashboardLayout is lazy; login entry gzip fell from 169,864 to 102,309 bytes (39.8%). Client build and full Jest suite passed; ESLint reported 0 errors on App.tsx (3 existing warnings). |
 | P2 | HUMAN | No React/render profiler or authenticated interaction session is available; no render counts or INP claim is inferred from source inspection. |
 | P3 | HUMAN | No authenticated local seed/session for a representative waterfall; the loopback GET benchmark is ready in `scripts/perf-smoke.mjs` but was not run against the hosted DB. |
-| P4 | TODO | Query plans and local endpoint latency not measured; no DB schema change made. |
+| P4 | HUMAN | `.env` targets the hosted pooler; no local PostgreSQL instance is available for seeded p95s or `EXPLAIN`. No migration or external DB request was made. |
 | P5 | TODO | Google API call count not captured. |
 | P6 | TODO | No assistant time-to-first-token benchmark captured. |
 | P7 | TODO | No cache target established from measured hot traffic. |
@@ -63,6 +63,7 @@ Measurements are from the current worktree on `perf/optimise` and use the produc
 | 1 | App.tsx ESLint rules | — | PASS with 0 errors and 3 existing warnings; repository Prettier check still fails on this CRLF worktree file | `.\node_modules\.bin\eslint.cmd --parser-options '{"project":"client/tsconfig.json"}' --rule 'prettier/prettier: off' client/src/App.tsx` |
 | 2 | Render count / interaction profile | — | HUMAN; profiler and authenticated interaction setup unavailable | No browser performance profiler is installed; interactive routes require a development session |
 | 3 | Request counts and endpoint waterfall | — | HUMAN; no local seeded user session or safe endpoint target available | `node scripts/perf-smoke.mjs` requires `PERF_TOKEN` and is loopback-only |
+| 4 | Local read-endpoint p95 and query plans | — | HUMAN; no local PostgreSQL instance; hosted database intentionally not queried | `node scripts/perf-smoke.mjs` and `EXPLAIN (ANALYZE, BUFFERS)` require a local seeded DB |
 
 The bundle script reports raw and gzip bytes for every emitted JS/CSS asset and the HTML entry's static JS dependency graph. The API smoke script is deliberately loopback-only, issues GET requests, performs no seeding or writes, and does not call an external LLM.
 
@@ -79,7 +80,8 @@ The bundle script reports raw and gzip bytes for every emitted JS/CSS asset and 
 | 1 | Kept the measured split despite the app shell now loading one 6,301-byte gzip chunk after authentication; login avoids that module, and the route fallback covers its asynchronous load. |
 | 2 | Made no render optimization without an interaction profile; memoization and virtualization are not applied speculatively. |
 | 3 | Made no caching, optimistic-update, or cancellation change without a representative authenticated network waterfall; existing Axios behavior remains unchanged. |
+| 4 | Made no query/index change without local query-plan evidence; avoids running seed data, `EXPLAIN ANALYZE`, or migrations against the hosted pooler. |
 
 ## Iteration Counter
 
-3 — P0 baseline, P1 route split, P2 profile limitation, and P3 request-measurement limitation.
+4 — P0 baseline, P1 route split, and P2-P4 measurement limitations.
