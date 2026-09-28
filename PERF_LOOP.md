@@ -43,7 +43,7 @@ Measurements are from the current worktree on `perf/optimise` and use the produc
 | P7 | HUMAN | P0 did not produce request-frequency/latency evidence; cache remains intentionally absent rather than being added speculatively. |
 | P8 | HUMAN | No mobile Lighthouse/CLS or authenticated main-flow timing is available; no skeleton/motion changes made without layout-shift or feedback measurements. |
 | P9 | DONE | `npm run test:ci` builds and checks the authenticated-home graph (182,251 <= 200,477 gzip bytes), executes a synthetic over-budget failure test, and runs Jest; CI installs client dependencies and uses this command. README documents local reruns. |
-| P10 | TODO | Final report remains to be written after iterations. |
+| P10 | DONE | `docs/PERFORMANCE.md` reports the real login/CSS before/after sizes, current authenticated-home measurement, budget, rerun commands, and HUMAN follow-ups. |
 
 ## Measurements Log
 
@@ -74,6 +74,7 @@ Measurements are from the current worktree on `perf/optimise` and use the produc
 | 9 | Budget guard pass/fail behavior | No guard test | PASS; exact ceiling accepted and ceiling + 1 rejected | `npm run test:perf-budget` |
 | 9 | CI test command | `npm test` | PASS; budget build/check, guard tests, and full Jest suite | `$env:DATABASE_URL='postgresql://127.0.0.1:1/calassist'; npm run test:ci` |
 | 9 | Backend production build | — | PASS | `npm run build` |
+| 10 | Performance report | Not written | `docs/PERFORMANCE.md` created with measured values and HUMAN list | Documentation-only; no validation required |
 
 The bundle script reports raw and gzip bytes for every emitted JS/CSS asset and the HTML entry's static JS dependency graph. The API smoke script is deliberately loopback-only, issues GET requests, performs no seeding or writes, and does not call an external LLM.
 
@@ -96,7 +97,8 @@ The bundle script reports raw and gzip bytes for every emitted JS/CSS asset and 
 | 7 | Added no cache: the measured baseline does not identify a hot endpoint, and user-scoped cache invalidation cannot be validated without a local seed. |
 | 8 | Made no perceived-performance UI changes without a mobile CLS/interaction measurement; preserved existing loading and reduced-motion behavior. |
 | 9 | Budget is based on the exact emitted JS graph for the authenticated home route and fixed at 10% above its measured 182,251-byte gzip baseline; CI runs it before unit tests. |
+| 10 | Report only measured browser-bundle numbers; retain HUMAN labels for unavailable DB, Lighthouse, Google, interaction, and LLM measurements. |
 
 ## Iteration Counter
 
-9 — P0 baseline, P1 route split, P2-P8 HUMAN, and P9 regression guard.
+10 — P0 baseline, P1 route split, P2-P8 HUMAN, P9 regression guard, and P10 report.
