@@ -3,10 +3,22 @@ import {
   Catch,
   ArgumentsHost,
   HttpException,
-  InternalServerErrorException,
+  BadRequestException,
   Logger,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
+import { ZodError } from 'zod';
+
+/**
+ * Flattens a ZodError into "path: message" strings so a validation failure reads
+ * as an actionable 400 instead of an opaque 500.
+ */
+function describeZodError(error: ZodError): string[] {
+  return error.issues.map((issue) => {
+    const path = issue.path.length ? issue.path.join('.') : '(root)';
+    return `${path}: ${issue.message}`;
+  });
+}
 
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
@@ -17,10 +29,17 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
 
-    const status = exception instanceof HttpException ? exception.getStatus() : 500;
+    // Domain services validate payloads with zod and let ZodError escape. Without
+    // this branch those become 500s, which hides real client-contract mistakes.
+    let normalised: unknown = exception;
+    if (exception instanceof ZodError) {
+      normalised = new BadRequestException(describeZodError(exception));
+    }
+
+    const status = normalised instanceof HttpException ? normalised.getStatus() : 500;
 
     const message =
-      exception instanceof HttpException ? exception.getResponse() : 'Internal server error';
+      normalised instanceof HttpException ? normalised.getResponse() : 'Internal server error';
 
     if (status === 500) {
       this.logger.error(

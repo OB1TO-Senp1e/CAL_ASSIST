@@ -148,23 +148,23 @@ export const knowledgeService = {
     await latency(300, 520); return knowledgeMock.interventions().filter((row) => row.status === 'ACTIVE' || row.status === 'ACKNOWLEDGED');
   },
   async updateProactivePreferences(patch: Partial<ProactivePreferencesDTO>): Promise<ProactivePreferencesDTO> {
-    if (!USE_MOCK) throw new Error('Proactive preferences are not exposed by the current API.');
+    if (!USE_MOCK) return (await api.post<ProactivePreferencesDTO>('/api/proactive/preferences', patch)).data;
     const next = { ...knowledgeMock.preferences(), ...patch }; knowledgeMock.savePreferences(next); return next;
   },
   async proactivePreferences(): Promise<ProactivePreferencesDTO | null> {
-    if (!USE_MOCK) return null;
+    if (!USE_MOCK) return (await api.get<ProactivePreferencesDTO>('/api/proactive/preferences')).data;
     await latency(80, 180); return knowledgeMock.preferences();
   },
   async acknowledgeIntervention(id: string): Promise<void> {
-    if (!USE_MOCK) throw new Error('Proactive acknowledgement is not implemented by the current API (501).');
+    if (!USE_MOCK) { await api.post(`/api/proactive/interventions/${encodeURIComponent(id)}/acknowledge`, {}); return; }
     knowledgeMock.saveInterventions(knowledgeMock.interventions().map((row) => row.id === id ? { ...row, status: 'ACKNOWLEDGED', acknowledgedAt: knowledgeMock.now() } : row));
   },
   async dismissIntervention(id: string): Promise<void> {
-    if (!USE_MOCK) throw new Error('Proactive dismissal is not implemented by the current API (501).');
+    if (!USE_MOCK) { await api.post(`/api/proactive/interventions/${encodeURIComponent(id)}/dismiss`, {}); return; }
     knowledgeMock.saveInterventions(knowledgeMock.interventions().map((row) => row.id === id ? { ...row, status: 'DISMISSED' } : row));
   },
   async snoozeIntervention(id: string, minutes: number): Promise<void> {
-    if (!USE_MOCK) throw new Error('Proactive snooze is not implemented by the current API (501).');
+    if (!USE_MOCK) { await api.post(`/api/proactive/interventions/${encodeURIComponent(id)}/snooze`, { minutes }); return; }
     const until = new Date(Date.now() + minutes * 60_000).toISOString();
     knowledgeMock.saveInterventions(knowledgeMock.interventions().map((row) => row.id === id ? { ...row, status: 'ACTIVE', expiresAt: until, metadata: { ...row.metadata, snoozedUntil: until } } : row));
   },

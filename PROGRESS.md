@@ -3,12 +3,13 @@
 ## Project Overview
 AI-Powered Personal Time Operating System built with NestJS, Prisma, PostgreSQL
 
-## Current Prisma-backed capability limits (2026-09-26)
+## Current Prisma-backed capability limits (updated 2026-09-28, Stage 4h)
 - The API now builds against the checked-in Prisma schema; Prisma Client generation is required after schema changes.
-- Commitments persist only schema-backed fields (title, description, deadline, status, and source). Person/related-entity metadata and confidence are not persisted; risk assessments are computed on demand, and commitment reminder delivery is unavailable.
-- Proactive interventions are generated for each check but are not persisted. Acknowledge, dismiss, and snooze operations return `501 Not Implemented`.
+- Commitments persist all fields including person/related-entity metadata and confidence; risk assessments are computed from persisted data and commitment reminder delivery runs through the notification service.
+- Proactive interventions persist to `InterventionState`; acknowledge, dismiss, and snooze are implemented (the former `501 Not Implemented` responses were removed). Reality-engine deviation acknowledge/resolve/reopen and recommendation status updates persist to `DeviationState`/`RecommendationState`. Time Compiler proposals persist and `PATCH /api/time-compiler/proposals/:id/apply` writes real TimeBlocks. Calendar visibility persists via `PATCH /api/calendar/calendars/:id/visibility`; `GET /api/calendar/events` accepts both `startDate/endDate` and `timeMin/timeMax` and is served solely by the domain controller.
 - Permission records and permission-service autonomy policies are represented in existing schema JSON/string fields. Rule conflicts are computed on demand and their resolutions are stored with the rule; a future schema migration should replace these compatibility representations with dedicated models.
-- No database migration or schema push was applied for these code-only compatibility changes.
+- Schema migrations through `20260927210000_memory_schema_sync` are applied to the dev database. That migration closed a latent drift in which the `Memory` model (status/scope/tags/metadata/confirmation), `MemoryConflict`, and the modern `MemoryCategory`/`MemorySource` enums existed in schema but had never been deployed — every `/api/memory*` route was 500.
+- The assistant now works end-to-end through a real LLM (Ollama Cloud `gpt-oss:20b`): the orchestrator prompt embeds each tool's actual zod input fields, LLM tool arguments are normalised (`normalize-tool-input.ts`) before zod validation instead of being dropped, and the local fallback classifier extracts clean titles and routes `CREATE_PROJECT` (live-verified: `audit-live.js` 18/18 with a clean `create_task` proposal + confirm).
 
 ---
 

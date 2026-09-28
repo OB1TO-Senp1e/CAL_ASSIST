@@ -53,6 +53,11 @@ model User {
   tasks                    Task[]
   timeBlocks               TimeBlock[]
   travelBuffers            TravelBuffer[]
+  scheduleProposalRecords  ScheduleProposalRecord[]
+  deviationStates          DeviationState[]
+  interventionStates       InterventionState[]
+  meetingArtifacts         MeetingArtifact[]
+  recommendationStates     RecommendationState[]
 
   @@index([email])
   @@index([deletedAt])
@@ -311,6 +316,8 @@ model Event {
   status             EventStatus        @default(CONFIRMED)
   visibility         EventVisibility    @default(PRIVATE)
   source             EventSource        @default(USER)
+  category           EventCategory      @default(PERSONAL)
+  color              String?
   calendarExternalId String?
   externalETag       String?
   createdBy          String?
@@ -328,6 +335,7 @@ model Event {
   @@index([startDate, endDate])
   @@index([recurrenceRule])
   @@index([calendarExternalId])
+  @@index([category])
 }
 
 model EventParticipant {
@@ -381,6 +389,19 @@ model Commitment {
   status            CommitmentStatus @default(PENDING)
   priority          Int              @default(0)
   source            CommitmentSource @default(USER)
+  // Stage 4: meeting extraction already produces `person` / `personEmail` /
+  // `confidence` / `context` (see the client's MeetingCommitment type), but the
+  // model had nowhere to put them, so an extracted commitment could not survive
+  // the write. `confidence` also makes the `LOW_CONFIDENCE` risk factor — which
+  // was declared but unreachable — actually evaluable.
+  person            String?
+  personEmail       String?
+  confidence        Float?
+  context           String?
+  // Links a commitment to the entity it was promised against, so the UI can
+  // show "for <project>" and the risk engine can check for allocated time.
+  relatedEntityType String?
+  relatedEntityId   String?
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
   deletedAt         DateTime?
@@ -392,6 +413,8 @@ model Commitment {
   @@index([userId])
   @@index([deadline])
   @@index([status])
+  @@index([person])
+  @@index([confidence])
 }
 
 model Routine {
@@ -988,6 +1011,145 @@ model AuditLog {
   @@index([success])
 }
 
+// ---------------------------------------------------------------------------
+// Stage 3 persistence (3e proposals, 3g deviations, 3j interventions, 3l meetings)
+// ---------------------------------------------------------------------------
+
+model ScheduleProposalRecord {
+  id            String           @id @default(cuid())
+  userId        String
+  /// Proposal id minted by TimeCompilerService.compileSchedule() and surfaced to clients.
+  externalId    String           @unique
+  status        ProposalStatus   @default(DRAFT)
+  rangeStart    DateTime
+  rangeEnd      DateTime
+  timezone      String           @default("UTC")
+  /// The full ScheduleProposal document as returned by the compiler.
+  payload       Json
+  confidence    Float
+  blockCount    Int              @default(0)
+  scheduledMin  Int              @default(0)
+  appliedAt     DateTime?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  user          User             @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model DeviationState {
+  id             String          @id @default(cuid())
+  userId         String
+  /// Stable "<entityType>:<entityId>" key produced by the Reality Engine.
+  deviationId    String
+  status         DeviationStatus @default(OPEN)
+  entityType     String?
+  entityId       String?
+  acknowledgedAt DateTime?
+  resolvedAt     DateTime?
+  resolution     String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  user           User            @relation(fields: [userId], references: [id])
+
+  @@unique([userId, deviationId])
+  @@index([userId])
+  @@index([status])
+}
+
+model InterventionState {
+  id             String                @id @default(cuid())
+  userId         String
+  /// Deterministic "<type>:<fingerprint>" id so the feed is addressable across requests.
+  interventionId String
+  type           String
+  status         InterventionStatus    @default(PENDING)
+  snoozedUntil   DateTime?
+  acknowledgedAt DateTime?
+  dismissedAt    DateTime?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  user           User                  @relation(fields: [userId], references: [id])
+
+  @@unique([userId, interventionId])
+  @@index([userId])
+  @@index([status])
+  @@index([snoozedUntil])
+}
+
+model MeetingArtifact {
+  id         String               @id @default(cuid())
+  userId     String
+  meetingId  String
+  kind       MeetingArtifactKind
+  meetingTitle String?
+  /// MeetingPreparationResult or PostMeetingResult as returned by the service.
+  payload    Json
+  summary    String?
+  confidence Float?
+  createdAt  DateTime             @default(now())
+  updatedAt  DateTime             @updatedAt
+  user       User                 @relation(fields: [userId], references: [id])
+
+  @@unique([userId, meetingId, kind])
+  @@index([userId])
+  @@index([meetingId])
+  @@index([kind])
+}
+
+enum ProposalStatus {
+  DRAFT
+  READY
+  APPLIED
+  REJECTED
+  EXPIRED
+}
+
+enum DeviationStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+  DISMISSED
+}
+
+enum InterventionStatus {
+  PENDING
+  ACKNOWLEDGED
+  DISMISSED
+  SNOOZED
+}
+
+model RecommendationState {
+  id              String                @id @default(cuid())
+  userId          String
+  /// Deterministic "<deviationId>:<recommendationType>" key.
+  recommendationId String
+  deviationId     String
+  status          RecommendationStateStatus @default(PENDING)
+  acceptedAt      DateTime?
+  rejectedAt      DateTime?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  user            User                  @relation(fields: [userId], references: [id])
+
+  @@unique([userId, recommendationId])
+  @@index([userId])
+  @@index([status])
+}
+
+enum RecommendationStateStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+enum MeetingArtifactKind {
+  PREPARATION
+  POST_MEETING
+}
+
 enum PreferenceCategory {
   WORKING_HOURS
   FOCUS_PREFERENCES
@@ -1077,6 +1239,19 @@ enum EventVisibility {
   PUBLIC
   PRIVATE
   CONFIDENTIAL
+}
+
+enum EventCategory {
+  PERSONAL
+  WORK
+  MEETING
+  APPOINTMENT
+  REMINDER
+  HOLIDAY
+  BIRTHDAY
+  TRAVEL
+  FOCUS_TIME
+  CUSTOM
 }
 
 enum EventSource {

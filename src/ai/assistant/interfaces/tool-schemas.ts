@@ -10,6 +10,21 @@ export const CreateEventInputSchema = z.object({
   timezone: z.string().optional(),
   recurrence: z.string().optional(),
   status: z.enum(['CONFIRMED', 'TENTATIVE', 'CANCELLED', 'NEEDS_ACTION']).optional(),
+  category: z
+    .enum([
+      'PERSONAL',
+      'WORK',
+      'MEETING',
+      'APPOINTMENT',
+      'REMINDER',
+      'HOLIDAY',
+      'BIRTHDAY',
+      'TRAVEL',
+      'FOCUS_TIME',
+      'CUSTOM',
+    ])
+    .optional(),
+  color: z.string().optional(),
   calendarId: z.string().optional(),
   participants: z
     .array(
@@ -40,6 +55,8 @@ export const CreateEventOutputSchema = z.object({
   endDate: z.string().datetime(),
   timezone: z.string(),
   status: z.string(),
+  category: z.string(),
+  color: z.string().nullable(),
 });
 
 export type CreateEventOutput = z.infer<typeof CreateEventOutputSchema>;

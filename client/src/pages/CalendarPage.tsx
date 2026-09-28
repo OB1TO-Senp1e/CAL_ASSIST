@@ -180,7 +180,7 @@ export function CalendarPage() {
 
   const openCreate = useCallback((start: Dayjs, end?: Dayjs) => {
     if (!calendarService.canCreateEvent) {
-      setError('Event creation is unavailable until the backend category/color schema mismatch is fixed.');
+      setError('Event creation is unavailable in the current backend.');
       return;
     }
     setEditing(null);
@@ -328,7 +328,7 @@ export function CalendarPage() {
   const handleAcceptProposal = useCallback(async (event: CalendarEventDTO) => {
     setBusy(true);
     try {
-      const updated = await calendarService.updateEvent(event.id, { status: 'CONFIRMED' });
+      const updated = await calendarService.updateEvent(event.id, { status: 'CONFIRMED', source: 'USER' });
       const accepted = { ...updated, source: 'USER' as const };
       setEvents((prev) => prev.map((e) => (e.id === accepted.id ? accepted : e)));
       setSelected(accepted);

@@ -28,6 +28,24 @@ export class DateTime {
     return this._utc.toISOString();
   }
 
+  /**
+   * Serialises as a bare ISO-8601 string instead of the default enumerable
+   * shape `{ _utc, _timeZone }`.
+   *
+   * Without this, every endpoint that returns a domain entity emits Luxon-like
+   * wrapper objects for `start`/`end` — observed live on
+   * `GET /api/calendar/events`:
+   *   {"start":{"_utc":"2026-09-27T12:16:49.442Z","_timeZone":"UTC"}}
+   * The client absorbed it with a bespoke `toIso()` helper
+   * (`client/src/lib/datetime.ts`), which forced every other consumer — assistant
+   * tools, calendar sync, third-party clients — to reimplement the same unwrap.
+   * `JSON.stringify` honours `toJSON`, so this fixes the boundary for all of them
+   * at once while leaving the in-memory domain type untouched.
+   */
+  toJSON(): string {
+    return this.toISOString();
+  }
+
   toLocalString(): string {
     return this._utc.toLocaleString('en-US', { timeZone: this._timeZone });
   }
@@ -180,6 +198,9 @@ export interface CalendarEvent {
   status: EventStatus;
   category: EventCategory;
   color?: string;
+  /** Provenance of the row; also writable so accepting an AI proposal in the
+   *  calendar UI can flip an event from AI_GENERATED to USER in one PATCH. */
+  source?: 'USER' | 'AI_GENERATED' | 'SYNCED';
   participants: EventParticipant[];
   organizer?: EventParticipant;
   reminders: Reminder[];

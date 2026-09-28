@@ -39,8 +39,6 @@ import type {
   ConversationDTO,
 } from './types';
 
-const API_UNAVAILABLE = 'Assistant message and conversation endpoints are not exposed by the current backend.';
-
 function nowIso(): string {
   return new Date().toISOString();
 }

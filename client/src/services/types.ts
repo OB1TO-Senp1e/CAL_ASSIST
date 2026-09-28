@@ -27,10 +27,9 @@ export interface Profile extends AuthUser {
 }
 
 /* ─────────────────────────── Calendar ───────────────────────────
- * Enums mirror prisma/schema.prisma verbatim. `EventCategory` is NOT on the
- * Prisma `Event` model (it exists only in the zod schema and the calendar
- * domain layer — see BUILD_LOG "backend contract mismatches"), so it is typed
- * as present here and normalised on the way in.
+ * Enums mirror prisma/schema.prisma verbatim. `EventCategory` is a Prisma enum
+ * (`enum EventCategory`) since migration 20260927110000_add_event_category_color;
+ * `normalizeEvent` still defaults it so rows predating that column read cleanly.
  */
 
 /** prisma/schema.prisma `enum EventStatus` */
@@ -42,7 +41,7 @@ export type EventSource = 'USER' | 'AI_GENERATED' | 'SYNCED';
 /** prisma/schema.prisma `enum EventVisibility` */
 export type EventVisibility = 'PRIVATE' | 'PUBLIC' | 'CONFIDENTIAL';
 
-/** src/calendar/domain/calendar-event.ts `EventCategory` */
+/** prisma/schema.prisma `enum EventCategory` (mirrored by src/calendar/domain/calendar-event.ts) */
 export type EventCategory =
   | 'PERSONAL'
   | 'WORK'
@@ -102,7 +101,7 @@ export interface CalendarEventDTO {
   allDay: boolean;
   timeZone: string;
   status: EventStatus;
-  /** Defaults to 'PERSONAL' when the backend omits it (it currently does). */
+  /** Persisted on Prisma Event; normalised to 'PERSONAL' for pre-migration rows. */
   category: EventCategory;
   color?: string | null;
   /** RRULE string; the service returns a parsed object under `recurrence`. */
@@ -180,8 +179,8 @@ export interface CreateEventInput {
   participants?: Pick<EventParticipantDTO, 'email' | 'displayName' | 'status' | 'role'>[];
 }
 
-/** PATCH /api/calendar/events/:id — `UpdateEventSchema` + `status` */
-export type UpdateEventInput = Partial<CreateEventInput> & { status?: EventStatus };
+/** PATCH /api/calendar/events/:id — `UpdateEventSchema` + `status` + `source` */
+export type UpdateEventInput = Partial<CreateEventInput> & { status?: EventStatus; source?: 'USER' | 'AI_GENERATED' | 'SYNCED' };
 
 /** PATCH /api/calendar/events/:id/resize — `ResizeEventSchema` */
 export interface ResizeEventInput {

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { CalendarController } from './calendar.controller';
+import { CalendarOAuthCallbackController } from './calendar-oauth-callback.controller';
 import { CalendarConnectionService } from './calendar-connection.service';
 import { CalendarSyncService } from './calendar-sync.service';
 import { GoogleCalendarAdapter } from './google-calendar.adapter';
@@ -8,10 +9,11 @@ import { LocalCalendarAdapter } from './local-calendar.adapter';
 import { AppleCalendarAdapter } from './apple-calendar.adapter';
 import { PrismaService } from '../../common/services/prisma.service';
 import { ConfigModule } from '@nestjs/config';
+import { AuthModule } from '../../auth/auth.module';
 
 @Module({
-  imports: [ConfigModule],
-  controllers: [CalendarController],
+  imports: [ConfigModule, AuthModule],
+  controllers: [CalendarController, CalendarOAuthCallbackController],
   providers: [
     CalendarConnectionService,
     CalendarSyncService,

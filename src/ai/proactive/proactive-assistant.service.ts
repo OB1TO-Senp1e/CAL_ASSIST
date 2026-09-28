@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotImplementedException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../common/services/prisma.service';
 import { CommitmentEngineService } from '../../commitments/commitment-engine.service';
 import { RealityEngineService } from '../../scheduling/reality-engine/reality-engine.service';
@@ -126,58 +126,71 @@ export class ProactiveAssistantService {
       return { timestamp: now.toISOString(), interventions: [], summary: { total: 0, byPriority: {}, byType: {}, urgentCount: 0, highCount: 0 } };
     }
 
-    const interventions: Intervention[] = [];
-
-    if (!preferences.enabledTypes?.length || preferences.enabledTypes.includes('DEADLINE_AT_RISK')) {
-      interventions.push(...await this.checkDeadlineRisks(userId, timeRange, preferences));
-    }
-
-    if (!preferences.enabledTypes?.length || preferences.enabledTypes.includes('CALENDAR_OVERLOAD')) {
-      interventions.push(...await this.checkCalendarOverload(userId, timeRange, preferences));
-    }
-
-    if (!preferences.enabledTypes?.length || preferences.enabledTypes.includes('UNSCHEDULED_PRIORITY')) {
-      interventions.push(...await this.checkUnscheduledPriorities(userId, timeRange, preferences));
-    }
-
-    if (!preferences.enabledTypes?.length || preferences.enabledTypes.includes('CONFLICT_DETECTED')) {
-      interventions.push(...await this.checkConflicts(userId, timeRange, preferences));
-    }
-
-    if (!preferences.enabledTypes?.length || preferences.enabledTypes.includes('MISSING_PREPARATION')) {
-      interventions.push(...await this.checkMissingPreparation(userId, timeRange, preferences));
-    }
-
-    if (!preferences.enabledTypes?.length || preferences.enabledTypes.includes('TRAVEL_CONSTRAINT')) {
-      interventions.push(...await this.checkTravelConstraints(userId, timeRange, preferences));
-    }
-
-    if (!preferences.enabledTypes?.length || preferences.enabledTypes.includes('UNFINISHED_COMMITMENT')) {
-      interventions.push(...await this.checkUnfinishedCommitments(userId, timeRange, preferences));
-    }
-
-    if (!preferences.enabledTypes?.length || preferences.enabledTypes.includes('GOAL_OFF_TRACK')) {
-      interventions.push(...await this.checkGoalProgress(userId, timeRange, preferences));
-    }
-
-    if (!preferences.enabledTypes?.length || preferences.enabledTypes.includes('REPEATED_POSTPONEMENT')) {
-      interventions.push(...await this.checkRepeatedPostponements(userId, timeRange, preferences));
-    }
-
-    if (!preferences.enabledTypes?.length || preferences.enabledTypes.includes('NO_TIME_ALLOCATED')) {
-      interventions.push(...await this.checkNoTimeAllocated(userId, timeRange, preferences));
-    }
+    const interventions = await this.collectInterventions(userId, timeRange, preferences);
 
     const filtered = this.filterAndRankInterventions(interventions, preferences);
+    const visible = await this.applyInterventionStates(userId, filtered, now);
 
-    const summary = this.generateSummary(filtered);
+    const summary = this.generateSummary(visible);
 
     return {
       timestamp: now.toISOString(),
-      interventions: filtered,
+      interventions: visible,
       summary,
       nextCheckRecommendedAt: new Date(now.getTime() + (preferences.checkIntervalMinutes || 60) * 60000).toISOString(),
     };
+  }
+
+  /**
+   * Runs every enabled detector. Shared by the check endpoint and by
+   * ack/dismiss/snooze, which need the live feed to resolve an intervention id.
+   */
+  private async collectInterventions(
+    userId: string,
+    timeRange: { start: Date; end: Date },
+    preferences: UserProactivePreferences,
+  ): Promise<Intervention[]> {
+    const enabled = (type: InterventionType) =>
+      !preferences.enabledTypes?.length || preferences.enabledTypes.includes(type);
+
+    const interventions: Intervention[] = [];
+
+    if (enabled('DEADLINE_AT_RISK')) {
+      interventions.push(...(await this.checkDeadlineRisks(userId, timeRange, preferences)));
+    }
+    if (enabled('CALENDAR_OVERLOAD')) {
+      interventions.push(...(await this.checkCalendarOverload(userId, timeRange, preferences)));
+    }
+    if (enabled('UNSCHEDULED_PRIORITY')) {
+      interventions.push(
+        ...(await this.checkUnscheduledPriorities(userId, timeRange, preferences)),
+      );
+    }
+    if (enabled('CONFLICT_DETECTED')) {
+      interventions.push(...(await this.checkConflicts(userId, timeRange, preferences)));
+    }
+    if (enabled('MISSING_PREPARATION')) {
+      interventions.push(...(await this.checkMissingPreparation(userId, timeRange, preferences)));
+    }
+    if (enabled('TRAVEL_CONSTRAINT')) {
+      interventions.push(...(await this.checkTravelConstraints(userId, timeRange, preferences)));
+    }
+    if (enabled('UNFINISHED_COMMITMENT')) {
+      interventions.push(
+        ...(await this.checkUnfinishedCommitments(userId, timeRange, preferences)),
+      );
+    }
+    if (enabled('GOAL_OFF_TRACK')) {
+      interventions.push(...(await this.checkGoalProgress(userId, timeRange, preferences)));
+    }
+    if (enabled('REPEATED_POSTPONEMENT')) {
+      interventions.push(...(await this.checkRepeatedPostponements(userId, timeRange, preferences)));
+    }
+    if (enabled('NO_TIME_ALLOCATED')) {
+      interventions.push(...(await this.checkNoTimeAllocated(userId, timeRange, preferences)));
+    }
+
+    return interventions;
   }
 
   private async checkDeadlineRisks(userId: string, timeRange: { start: Date; end: Date }, prefs: UserProactivePreferences): Promise<Intervention[]> {
@@ -635,9 +648,23 @@ export class ProactiveAssistantService {
     });
   }
 
+  /**
+   * Intervention ids must be reproducible across checks. They were previously
+   * `int_${Date.now()}_${random}`, so the id returned by GET /proactive/interventions
+   * could never be posted back to acknowledge/dismiss/snooze on a later request —
+   * the feed regenerated a brand-new id for the same problem every time.
+   *
+   * Fingerprint = type + the sorted set of affected entity ids, which is exactly
+   * what identifies the underlying issue.
+   */
   private createIntervention(userId: string, partial: Partial<Intervention> & { type: InterventionType; priority: InterventionPriority; title: string; description: string; reason: string; affectedEntities: Intervention['affectedEntities']; action: InterventionAction; actionDetails: Record<string, any>; estimatedEffortMinutes: number; confidence: number }): Intervention {
+    const fingerprint = (partial.affectedEntities ?? [])
+      .map((e) => `${e.type}:${e.id}`)
+      .sort()
+      .join('|');
+
     return {
-      id: `int_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      id: `int_${partial.type}_${fingerprint || 'no_entity'}`,
       userId,
       type: partial.type,
       priority: partial.priority,
@@ -653,6 +680,88 @@ export class ProactiveAssistantService {
       createdAt: new Date().toISOString(),
       metadata: {},
     };
+  }
+
+  /** Applies persisted ack/dismiss/snooze state to a freshly computed feed. */
+  private async applyInterventionStates(
+    userId: string,
+    interventions: Intervention[],
+    now: Date,
+  ): Promise<Intervention[]> {
+    if (!interventions.length) return interventions;
+
+    const states = await this.prisma.interventionState.findMany({ where: { userId } });
+    const byId = new Map(states.map((s) => [s.interventionId, s]));
+
+    return interventions
+      .map((i) => {
+        const state = byId.get(i.id);
+        if (!state) return i;
+        return {
+          ...i,
+          status: this.toInterventionStatus(state.status),
+          acknowledgedAt: state.acknowledgedAt?.toISOString() ?? i.acknowledgedAt ?? null,
+          snoozedUntil: state.snoozedUntil?.toISOString(),
+        } as Intervention;
+      })
+      .filter((i) => this.isFeedVisible(i, now));
+  }
+
+  private toInterventionStatus(status: string): Intervention['status'] {
+    switch (status) {
+      case 'ACKNOWLEDGED':
+        return 'ACKNOWLEDGED';
+      case 'DISMISSED':
+        return 'DISMISSED';
+      case 'SNOOZED':
+        return 'ACTIVE';
+      default:
+        return 'ACTIVE';
+    }
+  }
+
+  /** Dismissed items leave the feed; snoozed items return once their window ends. */
+  private isFeedVisible(intervention: Intervention, now: Date): boolean {
+    if (intervention.status === 'DISMISSED') return false;
+    if (intervention.snoozedUntil && new Date(intervention.snoozedUntil) > now) return false;
+    return true;
+  }
+
+  private async upsertInterventionState(
+    userId: string,
+    interventionId: string,
+    type: string,
+    data: Record<string, unknown>,
+  ): Promise<void> {
+    await this.prisma.interventionState.upsert({
+      where: { userId_interventionId: { userId, interventionId } },
+      update: data,
+      create: { userId, interventionId, type, ...data },
+    });
+  }
+
+  /**
+   * Loads the intervention the user is acting on.
+   *
+   * The feed is recomputed on every request rather than stored, so ack/dismiss/
+   * snooze must run a live check to resolve the intervention type and enforce
+   * ownership. An id that no longer matches a real problem returns 404 rather
+   * than silently writing state for an entity the user does not own.
+   */
+  private async findOwnedIntervention(
+    userId: string,
+    interventionId: string,
+  ): Promise<Intervention> {
+    const now = new Date();
+    const timeRange = { start: now, end: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000) };
+    const preferences = await this.getUserPreferences(userId);
+    const interventions = await this.collectInterventions(userId, timeRange, preferences);
+
+    const match = interventions.find((i) => i.id === interventionId);
+    if (!match) {
+      throw new NotFoundException(`Intervention ${interventionId} not found`);
+    }
+    return match;
   }
 
   private generateSummary(interventions: Intervention[]): ProactiveCheckResult['summary'] {
@@ -673,29 +782,8 @@ export class ProactiveAssistantService {
     };
   }
 
-  private async getUserPreferences(userId: string): Promise<UserProactivePreferences> {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      include: { preferences: true },
-    });
-
-    const proactivePref = user?.preferences.find(p => p.key === 'proactive_assistant');
-    if (proactivePref) {
-      const val = proactivePref.valueJson as any;
-      return {
-        userId,
-        enabled: val.enabled ?? true,
-        checkIntervalMinutes: val.checkIntervalMinutes ?? 60,
-        quietHours: val.quietHours,
-        enabledTypes: val.enabledTypes ?? [],
-        minPriority: val.minPriority ?? 'MEDIUM',
-        maxInterventionsPerCheck: val.maxInterventionsPerCheck ?? 5,
-        deliveryChannels: val.deliveryChannels ?? ['IN_APP'],
-        groupSimilar: val.groupSimilar ?? true,
-        snoozeDurationMinutes: val.snoozeDurationMinutes ?? 30,
-      };
-    }
-
+  /** Default preferences, also used as the fallback when stored JSON is unusable. */
+  private defaultPreferences(userId: string): UserProactivePreferences {
     return {
       userId,
       enabled: true,
@@ -709,29 +797,130 @@ export class ProactiveAssistantService {
     };
   }
 
-  async acknowledgeIntervention(userId: string, interventionId: string): Promise<void> {
-    void userId;
-    void interventionId;
-    throw new NotImplementedException(
-      'Intervention acknowledgement is unavailable because interventions are not persisted in the current schema'
-    );
+  private async getUserPreferences(userId: string): Promise<UserProactivePreferences> {
+    const row = await this.prisma.preference.findFirst({
+      where: { userId, key: 'proactive_assistant' },
+    });
+    if (!row) return this.defaultPreferences(userId);
+
+    // Preference.valueJson is a String column, not JSON. The previous code cast
+    // it straight to an object, so every field read back as undefined and stored
+    // proactive preferences were silently ignored.
+    let val: Record<string, any>;
+    try {
+      val = JSON.parse(row.valueJson);
+    } catch (error) {
+      this.logger.warn(`proactive_assistant preference is not valid JSON: ${error}`);
+      return this.defaultPreferences(userId);
+    }
+    if (!val || typeof val !== 'object') return this.defaultPreferences(userId);
+
+    const fallback = this.defaultPreferences(userId);
+    return {
+      userId,
+      enabled: val.enabled ?? fallback.enabled,
+      checkIntervalMinutes: val.checkIntervalMinutes ?? fallback.checkIntervalMinutes,
+      quietHours: val.quietHours,
+      enabledTypes: val.enabledTypes ?? fallback.enabledTypes,
+      minPriority: val.minPriority ?? fallback.minPriority,
+      maxInterventionsPerCheck: val.maxInterventionsPerCheck ?? fallback.maxInterventionsPerCheck,
+      deliveryChannels: val.deliveryChannels ?? fallback.deliveryChannels,
+      groupSimilar: val.groupSimilar ?? fallback.groupSimilar,
+      snoozeDurationMinutes: val.snoozeDurationMinutes ?? fallback.snoozeDurationMinutes,
+    };
   }
 
-  async dismissIntervention(userId: string, interventionId: string): Promise<void> {
-    void userId;
-    void interventionId;
-    throw new NotImplementedException(
-      'Intervention dismissal is unavailable because interventions are not persisted in the current schema'
-    );
+  /** Reads and writes the user's proactive-assistant preferences. */
+  async getProactivePreferences(userId: string): Promise<UserProactivePreferences> {
+    return this.getUserPreferences(userId);
   }
 
-  async snoozeIntervention(userId: string, interventionId: string, minutes: number): Promise<void> {
-    void userId;
-    void interventionId;
-    void minutes;
-    throw new NotImplementedException(
-      'Intervention snoozing is unavailable because interventions are not persisted in the current schema'
-    );
+  async updateProactivePreferences(
+    userId: string,
+    patch: Partial<UserProactivePreferences>,
+  ): Promise<UserProactivePreferences> {
+    const current = await this.getUserPreferences(userId);
+    const next: UserProactivePreferences = {
+      ...current,
+      ...patch,
+      userId,
+    };
+
+    await this.prisma.preference.upsert({
+      where: {
+        userId_category_key: {
+          userId,
+          category: 'NOTIFICATION_SETTINGS',
+          key: 'proactive_assistant',
+        },
+      },
+      update: { valueJson: JSON.stringify(next) },
+      create: {
+        userId,
+        category: 'NOTIFICATION_SETTINGS',
+        key: 'proactive_assistant',
+        valueJson: JSON.stringify(next),
+      },
+    });
+
+    return next;
+  }
+
+  /**
+   * Acknowledge / dismiss / snooze a proactive intervention.
+   *
+   * These previously threw NotImplementedException claiming "interventions are
+   * not persisted in the current schema". They now persist to InterventionState
+   * and the feed filters on that state, so a dismissed item stops coming back.
+   */
+  async acknowledgeIntervention(userId: string, interventionId: string): Promise<Intervention> {
+    const intervention = await this.findOwnedIntervention(userId, interventionId);
+    const now = new Date();
+
+    await this.upsertInterventionState(userId, interventionId, intervention.type, {
+      status: 'ACKNOWLEDGED',
+      acknowledgedAt: now,
+      dismissedAt: null,
+      snoozedUntil: null,
+    });
+
+    return { ...intervention, status: 'ACKNOWLEDGED', acknowledgedAt: now.toISOString() };
+  }
+
+  async dismissIntervention(userId: string, interventionId: string): Promise<Intervention> {
+    const intervention = await this.findOwnedIntervention(userId, interventionId);
+    const now = new Date();
+
+    await this.upsertInterventionState(userId, interventionId, intervention.type, {
+      status: 'DISMISSED',
+      dismissedAt: now,
+      snoozedUntil: null,
+    });
+
+    return { ...intervention, status: 'DISMISSED', acknowledgedAt: now.toISOString() };
+  }
+
+  async snoozeIntervention(
+    userId: string,
+    interventionId: string,
+    minutes: number,
+  ): Promise<Intervention> {
+    const intervention = await this.findOwnedIntervention(userId, interventionId);
+    const preferences = await this.getUserPreferences(userId);
+
+    const duration =
+      Number.isFinite(minutes) && minutes > 0
+        ? Math.min(Math.floor(minutes), 24 * 60)
+        : preferences.snoozeDurationMinutes ?? 30;
+
+    const snoozedUntil = new Date(Date.now() + duration * 60_000);
+
+    await this.upsertInterventionState(userId, interventionId, intervention.type, {
+      status: 'SNOOZED',
+      snoozedUntil,
+    });
+
+    return { ...intervention, snoozedUntil: snoozedUntil.toISOString() } as Intervention;
   }
 
   async getActiveInterventions(userId: string): Promise<Intervention[]> {

@@ -9,3 +9,13 @@ client/.env.*
 *.tsbuildinfo
 coverage/
 .DS_Store
+
+# Throwaway verification captures from scripts/*.ps1 and background servers
+# (BUILD_LOG hygiene: never audit- or commit-worthy).
+*.log
+*.out
+*.err
+drift-*.sql
+prisma-drift.sql
+scripts/*.token
+scripts/*.txt

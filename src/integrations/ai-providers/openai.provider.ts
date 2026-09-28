@@ -40,7 +40,12 @@ export class OpenAIProvider implements AIProviderInterface {
       });
 
       const data: any = await response.json();
-      return data.choices[0]?.message?.content || '';
+      if (!response.ok) {
+        throw new Error(
+          `OpenAI API error ${response.status}: ${data?.error?.message || 'unknown error'}`,
+        );
+      }
+      return data.choices?.[0]?.message?.content || '';
     } catch (error: any) {
       this.logger.error(`OpenAI generation failed: ${error?.message || error}`);
       throw error;

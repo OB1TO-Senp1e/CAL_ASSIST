@@ -16,8 +16,8 @@ function sanitizeConnection(connection: CalendarConnectionWire): CalendarConnect
 }
 
 export const integrationsService = {
-  canConnectCalendar: USE_MOCK,
-  canEstimateTravel: USE_MOCK,
+  canConnectCalendar: true,
+  canEstimateTravel: true,
   async connections(): Promise<CalendarConnectionDTO[]> {
     if (!USE_MOCK) return (await api.get<CalendarConnectionWire[]>('/api/calendar/connections')).data.map(sanitizeConnection);
     await latency(); return integrationMock.connections();
@@ -26,8 +26,20 @@ export const integrationsService = {
     if (!USE_MOCK) return (await api.get<{ authUrl: string }>(`/api/calendar/auth-url/${provider.toLowerCase()}`, { params: { state } })).data.authUrl;
     return `mock://${provider.toLowerCase()}/authorize?state=${encodeURIComponent(state)}`;
   },
-  async connect(provider: Exclude<CalendarProvider, 'LOCAL' | 'APPLE'>): Promise<CalendarConnectionDTO> {
-    if (!USE_MOCK) throw new Error('OAuth callback wiring is incompatible with the current backend route.');
+  /**
+   * Starts the provider OAuth round trip.
+   *
+   * In live mode this hands the browser to the provider; the provider then
+   * redirects to GET /api/calendar/callback/:provider, which stores the tokens
+   * and sends the browser back to /integrations?connected=<provider>. Because a
+   * full page navigation is initiated, no connection row is returned yet.
+   */
+  async connect(provider: Exclude<CalendarProvider, 'LOCAL' | 'APPLE'>): Promise<CalendarConnectionDTO | null> {
+    if (!USE_MOCK) {
+      const authUrl = await this.getAuthUrl(provider, '');
+      window.location.assign(authUrl);
+      return null;
+    }
     await latency(340, 580); const rows = integrationMock.connections(); const index = rows.findIndex((row) => row.provider === provider);
     const time = integrationMock.now();
     if (index < 0) throw new Error('Unsupported calendar provider');
@@ -85,11 +97,19 @@ export const integrationsService = {
     await latency(140, 300); const next = { ...integrationMock.notificationPreferences(), ...patch }; integrationMock.saveNotificationPreferences(next); return next;
   },
   async estimateTravel(request: TravelRequestDTO): Promise<TravelResultDTO> {
-    if (!USE_MOCK) throw new Error('No travel-time HTTP controller is available in the current API.');
+    if (!USE_MOCK) return (await api.post<TravelResultDTO>('/api/travel/estimate', request)).data;
     await latency(360, 600); if (!request.origin.address?.trim() || !request.destination.address?.trim()) throw new Error('Enter both an origin and destination.'); return estimateTravel(request);
   },
   async preparation(meetingId: string): Promise<MeetingPreparationDTO | null> {
-    if (!USE_MOCK) return null;
+    if (!USE_MOCK) {
+      // 404 simply means no pack has been generated for this meeting yet.
+      try {
+        return (await api.get<MeetingPreparationDTO>(`/api/meetings/${encodeURIComponent(meetingId)}/preparation`)).data;
+      } catch (error: any) {
+        if (error?.response?.status === 404) return null;
+        throw error;
+      }
+    }
     await latency(80, 180); return integrationMock.preparations()[meetingId] ?? null;
   },
   async prepareMeeting(event: CalendarEventDTO, meetingType: MeetingType, tasks: TaskDTO[], commitments: CommitmentDTO[]): Promise<MeetingPreparationDTO> {

@@ -7,9 +7,11 @@
  * src/integrations/calendar-adapters/calendar.controller.ts.
  *
  * Divergence from the raw backend response is confined to `normalizeEvent()`:
- * the service currently returns `DateTime` class instances (no `toJSON`), so
- * dates arrive as `{_utc,_timeZone}` and `category`/`source` are absent from the
- * Prisma model. Normalising here means Stage 3 does not break either way.
+ * the service still returns Luxon `DateTime` instances for `start`/`end` (no
+ * `toJSON`), so dates arrive as `{_utc,_timeZone}` rather than ISO strings.
+ * `category`/`color` are real Prisma Event columns as of migration
+ * 20260927110000_add_event_category_color, but are defaulted here so rows
+ * created before that migration still read cleanly.
  */
 import dayjs, { type Dayjs } from 'dayjs';
 import api from './api';
@@ -62,7 +64,7 @@ export function normalizeEvent(raw: Record<string, unknown>): CalendarEventDTO {
     allDay: Boolean(raw.allDay),
     timeZone: event.timezone ?? event.timeZone ?? 'UTC',
     status: (raw.status as EventStatus) ?? 'CONFIRMED',
-    // Not on the Prisma Event model today; default rather than crash the grid.
+    // Prisma Event.column; defaults to PERSONAL for rows created before it existed.
     category: (raw.category as CalendarEventDTO['category']) ?? 'PERSONAL',
     color: (raw.color as string | null) ?? null,
     recurrenceRule,
@@ -171,10 +173,16 @@ async function mockAgenda(start: Dayjs, end: Dayjs): Promise<CalendarEventDTO[]>
 /* ───────────── Public API ───────────── */
 
 export const calendarService = {
-  canToggleCalendarVisibility: USE_MOCK,
-  canPersistCategory: USE_MOCK,
-  canCreateEvent: USE_MOCK,
-  canAcceptProposal: USE_MOCK,
+  // PATCH /api/calendar/calendars/:id/visibility (adapter controller) persists
+  // Calendar.isVisible as of Stage 4, so the toggle is no longer mock-only.
+  canToggleCalendarVisibility: true,
+  // category/color persist on the Prisma Event model as of migration
+  // 20260927110000_add_event_category_color, so these are no longer mock-only.
+  canPersistCategory: true,
+  canCreateEvent: true,
+  // PATCH /api/calendar/events/:id accepts status + source since Stage 4, so
+  // accepting an AI_GENERATED event (CONFIRMED + USER) is a single live call.
+  canAcceptProposal: true,
 
   async listCalendars(): Promise<CalendarDTO[]> {
     if (USE_MOCK) {
@@ -191,17 +199,18 @@ export const calendarService = {
       saveCalendars(next);
       return next;
     }
-    void id; void isVisible;
-    throw new Error('Calendar visibility updates are not exposed by the current API.');
+    await api.patch(`/api/calendar/calendars/${encodeURIComponent(id)}/visibility`, { isVisible });
+    const { data } = await api.get<CalendarDTO[]>('/api/calendar/calendars');
+    return data;
   },
 
   /** GET /api/calendar/events?startDate&endDate */
   async listEvents(start: Dayjs, end: Dayjs): Promise<CalendarEventDTO[]> {
     if (USE_MOCK) return mockList(start, end);
     const { data } = await api.get<Record<string, unknown>[]>('/api/calendar/events', {
-      // The calendar-adapter controller uses timeMin/timeMax while the calendar
-      // engine controller uses startDate/endDate on this same route.
-      params: { startDate: start.toISOString(), endDate: end.toISOString(), timeMin: start.toISOString(), timeMax: end.toISOString() },
+      // The domain controller owns this route and accepts both startDate/endDate
+      // and the Google-style timeMin/timeMax aliases; we send the canonical pair.
+      params: { startDate: start.toISOString(), endDate: end.toISOString() },
     });
     return data.map(normalizeEvent).filter((event) => dayjs(event.start).isBefore(end) && dayjs(event.end).isAfter(start));
   },
@@ -274,10 +283,18 @@ export const calendarService = {
       saveEvents([...loadEvents(), event]);
       return event;
     }
-    // CalendarService writes category/color into Prisma Event even though those
-    // columns do not exist, so live create cannot succeed until that contract is fixed.
-    void input;
-    throw new Error('Event creation is unavailable until the backend category/color schema mismatch is fixed.');
+    // `category`/`color` now exist on the Prisma Event model (migration
+    // 20260927110000_add_event_category_color), so live create persists them.
+    // The engine's CreateEventRequest takes start/end/timeZone, not startDate/endDate.
+    const { category, color, recurrenceRule, ...rest } = input;
+    const body = {
+      ...rest,
+      ...(category ? { category } : {}),
+      ...(color ? { color } : {}),
+      ...(recurrenceRule ? { recurrence: recurrenceRule } : {}),
+    };
+    const { data } = await api.post<Record<string, unknown>>('/api/calendar/events', body);
+    return normalizeEvent(data);
   },
 
   /** PATCH /api/calendar/events/:id */

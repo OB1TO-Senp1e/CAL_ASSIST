@@ -2,6 +2,7 @@ import type { CalendarDTO, CalendarProvider, CalendarEventDTO } from './types';
 
 export type CommitmentStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'OVERDUE' | 'CANCELLED';
 export type CommitmentSource = 'USER_INPUT' | 'AI_INFERRED' | 'EMAIL_EXTRACTED';
+export type CommitmentRelatedEntityType = 'TASK' | 'PROJECT' | 'MEETING' | 'GOAL' | 'EVENT';
 export type RiskLevel = 'NONE' | 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 
 /** The serialized shape returned by CommitmentEngineService.mapToCommitment. */
@@ -13,6 +14,15 @@ export interface CommitmentDTO {
   deadline: string;
   status: CommitmentStatus;
   source: CommitmentSource;
+  /** Who the promise was made to, when it came out of a meeting or email. */
+  person?: string;
+  personEmail?: string;
+  /** Extraction confidence, 0..1; absent for hand-entered commitments. */
+  confidence?: number;
+  /** Verbatim snippet the commitment was extracted from. */
+  context?: string;
+  relatedEntityType?: CommitmentRelatedEntityType;
+  relatedEntityId?: string;
   createdAt: string;
   updatedAt: string;
 }

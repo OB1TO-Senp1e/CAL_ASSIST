@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   TravelTimeProvider,
@@ -32,7 +32,24 @@ export class GoogleMapsTravelTimeProvider implements TravelTimeProvider {
     }
   }
 
+  get isConfigured(): boolean {
+    return Boolean(this.apiKey);
+  }
+
+  /**
+   * A missing key is a deployment condition, not a server bug. Without this the
+   * provider calls Google with an empty key and surfaces a raw 500.
+   */
+  private assertConfigured(): void {
+    if (!this.apiKey) {
+      throw new ServiceUnavailableException(
+        'Travel time is unavailable: GOOGLE_MAPS_API_KEY is not configured',
+      );
+    }
+  }
+
   async getTravelTime(request: TravelTimeRequest): Promise<TravelTimeResult> {
+    this.assertConfigured();
     const origin = this.formatLocation(request.origin);
     const destination = this.formatLocation(request.destination);
     const mode = this.mapTravelMode(request.mode);
@@ -95,6 +112,7 @@ export class GoogleMapsTravelTimeProvider implements TravelTimeProvider {
   }
 
   async getRouteMatrix(request: RouteMatrixRequest): Promise<any> {
+    this.assertConfigured();
     const origins = request.origins.map(o => this.formatLocation(o)).join('|');
     const destinations = request.destinations.map(d => this.formatLocation(d)).join('|');
     const mode = this.mapTravelMode(request.mode);
@@ -129,6 +147,7 @@ export class GoogleMapsTravelTimeProvider implements TravelTimeProvider {
   }
 
   async geocode(request: GeocodeRequest): Promise<GeocodeResult> {
+    this.assertConfigured();
     let address = '';
     if (request.address) {
       address = request.address;
@@ -190,6 +209,7 @@ export class GoogleMapsTravelTimeProvider implements TravelTimeProvider {
   }
 
   async searchPlaces(request: PlaceSearchRequest): Promise<PlaceSearchResult> {
+    this.assertConfigured();
     const params = new URLSearchParams({ key: this.apiKey });
 
     if (request.query) params.append('query', request.query);
@@ -237,6 +257,7 @@ export class GoogleMapsTravelTimeProvider implements TravelTimeProvider {
   }
 
   async getPlaceDetails(placeId: string): Promise<PlaceDetails> {
+    this.assertConfigured();
     const params = new URLSearchParams({
       place_id: placeId,
       fields: 'name,formatted_address,geometry,types,formatted_phone_number,website,opening_hours,rating,photos',

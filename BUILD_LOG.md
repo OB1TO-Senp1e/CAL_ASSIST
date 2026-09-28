@@ -5,11 +5,30 @@
 > created from the loop prompt's stage definitions.)
 
 ## Current position
-- **Stage:** 3 — Backend Tie-in (real data)
-- **Next unit:** 3e — Time Compiler / Planning
-- **Runtime:** `.env` now exists (copied from `.env.example`, local Postgres, migrations up to date),
+- **Stage:** 4 — Backend Hardening
+- **Next unit:** Stage 4h is closed (assistant LLM path + Memory schema sync, live-verified).
+  Remaining Stage 4 candidates: `connections` token-field scrub beyond what 4g shipped,
+  Luxon serialisation at the calendar boundary (interim `toIso()`), the `calendarId`
+  UUID-vs-CUID latent check, and real-provider answer-quality passes once keys rotate.
+- **Verification of record (2026-09-28, Stage 4h):** `npx tsc --noEmit` 0 · `npx jest --silent`
+  **125/125** · `scripts/stage3-probe.ps1` → **100 PASS / 0 FAIL / 0 WARN / 1 INFO** ·
+  `scripts/audit-live.js` → **18/18** (assistant proposes *and confirms* through the real
+  Ollama LLM path with a clean extracted title) · `scripts/s4-gate-probe.ps1` all steps OK incl.
+  new 7/7b compile→apply with a first-task user. Stage 1 ✅, Stage 2 ✅ (13/13), Stage 3 ✅ (13/13).
+- **Live backend right now:** Nest (`node dist/main.js` of the latest build) on
+  `http://localhost:3000/api` (`GET /api/health` → 200), Vite **dev** server on `http://localhost:3001`
+  with `/api` + `/auth` proxied to 3000.
+  _Note: auth routes are excluded from the `api` prefix (`main.ts` `setGlobalPrefix` exclude list), so
+  `/api/auth/login` is a genuine 404 — the client calls `/auth/login`. If the backend ever looks
+  "fixed but still wrong", check whether a pre-rebuild process owns :3000 — a stale non-watch
+  `node dist/main` plus an idle `nest start --watch` sat on that port through the 4h fixes._
+  `npx prisma migrate deploy` → 7 migrations applied, "All migrations have been successfully applied."
+  Both `npm run build` (nest) and `cd client && npm run build` (vite) are green.
+- **Runtime:** `.env` now exists (Supabase Postgres pooler + `DIRECT_URL`, Ollama Cloud provider),
   so the API boots on `http://localhost:3000/api` and live smoke tests are runnable. `.env` is
   git-ignored; recreate it locally from `.env.example` on a fresh clone.
+  `AI_PROVIDER="ollama"` with `OLLAMA_BASE_URL=https://ollama.com/v1` + `OLLAMA_MODEL=gpt-oss:20b`;
+  the OpenAI key is still a placeholder, so use the Ollama route for real-LLM verification.
 - **Frontend build:** `cd client && npm run build` → green (2026-09-27; Vite chunk-size warning only)
 - **Auth:** live API by default in Stage 3; `VITE_AUTH_USE_MOCK=1` restores offline demo login, and
   `VITE_AUTH_BYPASS=1` bypasses the sign-in route in dev.
@@ -23,8 +42,8 @@
 |---|---|
 | 1 — Design Foundation | ✅ DONE (2026-09-27) |
 | 2 — Frontend Screens | ✅ DONE (13/13, 2026-09-27) |
-| 3 — Backend Tie-in | ⏳ IN PROGRESS (1/13) |
-| 4 — Backend Hardening | ⬜ NOT STARTED |
+| 3 — Backend Tie-in | ✅ DONE (13/13 wired and live-verified, 2026-09-27) |
+| 4 — Backend Hardening | 🟨 IN PROGRESS (4f, 4g, 4h done; remaining items listed under 4h) |
 
 ### Stage 2 screen-groups
 | Unit | Status |
@@ -47,18 +66,388 @@
 | Unit | Status |
 |---|---|
 | 3a App shell + routing + nav + auth | ✅ DONE (2026-09-27) |
-| 3b Calendar | ✅ DONE (2026-09-27) — live create blocked by backend schema gap, see 3b notes |
+| 3b Calendar | ✅ DONE (2026-09-27) — create blocker CLOSED same day, see "3b addendum" |
 | 3c AI Assistant | ✅ DONE (2026-09-27) |
 | 3d Goals / Projects / Tasks | ✅ DONE (2026-09-27) — live CRUD + status transitions verified |
-| 3e Time Compiler / Planning | ⬜ NEXT |
-| 3f Commitments | ⬜ |
-| 3g Reality Engine / Replanning | ⬜ |
-| 3h Memory Center | ⬜ |
-| 3i Rules UI | ⬜ |
-| 3j Proactive feed + Permissions/autonomy | ⬜ |
-| 3k Integrations | ⬜ |
-| 3l Meeting Intelligence | ⬜ |
-| 3m Command Center | ⬜ |
+| 3e Time Compiler / Planning | ✅ DONE (2026-09-27) — compile produces blocks, apply persists TimeBlocks, re-apply refused |
+| 3f Commitments | ✅ DONE (2026-09-27) — live CRUD + `/risks` + reminders (person metadata still Stage 4) |
+| 3g Reality Engine / Replanning | ✅ DONE (2026-09-27) — stable deviation ids; ack/resolve/reopen persist |
+| 3h Memory Center | ✅ DONE (2026-09-27) — live `/api/memory` CRUD + conflicts; bad payload → 400 |
+| 3i Rules UI | ✅ DONE (2026-09-27) — live `/api/rules`, NL rule without LLM key; bad payload → 400 |
+| 3j Proactive feed + Permissions/autonomy | ✅ DONE (2026-09-27) — interventions + preferences round-trip live |
+| 3k Integrations | ✅ DONE (2026-09-27) — travel-time returns clean 503 without a key; OAuth callback live |
+| 3l Meeting Intelligence | ✅ DONE (2026-09-27) — preparation/post-meeting retrievable, not placeholders |
+| 3m Command Center | ✅ DONE (2026-09-27) — daily/current, morning, briefing, context, health live |
+
+### 2026-09-28 — Stage 4h: assistant LLM path repaired + Memory schema drift closed ✅ (live-verified)
+
+The two live assistant bugs (prompt-as-title, dropped LLM proposals) plus a latent schema drift
+the Memory Center probes exposed. All fixes verified against a rebuilt, freshly started backend.
+
+**Assistant: why LLM proposals were silently dropped (`Executed 0 action(s): 0 succeeded`)**
+- Root cause found with `scripts/repro-actions.js` + `scripts/check-zod.js`: `gpt-oss:20b` answered
+  a create-task intent with `{ durationMinutes, dueDate: "", endDate … }`, which violated
+  `CreateTaskInputSchema` (`estimatedDurationMinutes` required; `dueDate` must be ISO), so
+  `safeParse` failed and `validateAndPrepareActions` skipped the proposal.
+- New `src/ai/assistant/interfaces/normalize-tool-input.ts`: `normalizeToolInput()` (datetime
+  coercion + blank-optional removal + duration-alias mapping + enum/int clamping),
+  `applyRequiredDurationDefault()` (60-minute fallback mirroring the local mapper), and
+  `describeToolInputSchema()` (embeds each tool's real field names in the orchestrator prompt so
+  the model stops guessing). Wired into both the LLM path (`extractIntentActions`) and the
+  validation path (`validateAndPrepareActions`); covered by `normalize-tool-input.spec.ts`.
+- Prompt now lists per-tool `inputFields`; the orchestrator logs dropped proposals with the zod
+  issues instead of discarding silently.
+
+**Intent: title extraction + `CREATE_PROJECT` (Stage 4 audit items 1–2 now truly closed)**
+- New `src/ai/intent/local-intent.classifier.ts` (`classifyLocally`, `extractTitle`) and
+  `src/ai/intent/date-time.parser.ts` (chrono-based relative/explicit date, duration, priority,
+  read-only query routing). `IntentType` gained `CREATE_PROJECT`; `intent-parser.service.ts` falls
+  back to the local classifier when no provider answers (the only path available locally, since
+  `OPENAI_API_KEY` is still a placeholder — `.env` routes to Ollama Cloud meanwhile).
+- Live proof: `audit-live.js` "Assistant produced an actionable proposal" now shows
+  `create_task:review Q4 budget` (clean title, not the whole prompt) through the **real LLM**, and
+  confirm persists the Task row. 18/18.
+
+**Tests: cross-midnight flake fixed**
+- `date-time.parser.spec.ts` failed after the wall clock crossed local midnight: `classifyLocally`
+  parsed "tomorrow" against `new Date()` while the assertion used the spec's fixed reference.
+  `classifyLocally(text, reference = new Date())` now threads the reference into
+  `parseDateTimePhrase`, so the spec pins time and the production default is unchanged.
+
+**Schema drift: every `/api/memory*` route returned 500**
+- `The column 'Memory.description' does not exist` — the checked-in schema/migrations (init +
+  stage3 + commitment-metadata) were ahead of what had ever been applied: `Memory` status/scope/
+  tags/metadata/confirmation columns, `MemoryStatus`/`MemoryScope` enums, the modern
+  `MemoryCategory`/`MemorySource` values, and the whole `MemoryConflict` table had no migration.
+- Generated the exact diff with `npx prisma migrate diff --from-config-datasource
+  --to-schema prisma/schema.prisma --script` (via `DIRECT_URL`; the :6543 pooler times out on DDL
+  sessions) and checked it was additive on an empty table (0 Memory rows; enum casts safe) before
+  committing it as `prisma/migrations/20260927210000_memory_schema_sync/`. `migrate deploy` →
+  "All migrations have been successfully applied." (7 migrations). `prisma generate` re-run.
+- stage3-probe 3h afterwards: all six memory routes PASS.
+
+**Probe honesty fix**
+- `s4-gate-probe.ps1` step 7 compiled for a brand-new user and tripped the *correct* 400
+  "No tasks to schedule"; the probe now seeds one task, compiles with `taskIds`, and gained step
+  7b asserting `PATCH /proposals/:id/apply → APPLIED`. All steps green.
+
+**Environment hygiene**
+- Killed the stale pre-rebuild `node dist/main.js` (and an idle `nest start --watch`) that owned
+  :3000, and restarted Nest from the new `dist` — the running server was two builds behind when
+  this unit started, which masked whether fixes were live.
+- `.gitignore` now covers the throwaway `*.log` / `*.out` / `*.err` captures the BUILD_LOG audit
+  flagged; generated diff SQL was deleted.
+
+**Verified (2026-09-28)**
+- `npx tsc --noEmit` (backend + client): exit 0 · `npm run build` + `cd client && npm run build`: green
+- `npx jest --silent`: **10 suites / 125 tests passed**
+- `scripts/audit-live.js`: **18/18** incl. real-LLM proposal + confirm + persisted Task
+- `scripts/stage3-probe.ps1`: **100 PASS / 0 FAIL / 0 WARN / 1 INFO** (3f reminder INFO is
+  by-design: 0 notifications due)
+- `scripts/s4-gate-probe.ps1`: steps 1–10 all OK (7 now compiles + applies real TimeBlocks)
+
+**Files touched**
+- Backend: `src/ai/assistant/interfaces/normalize-tool-input.ts` (new, + spec),
+  `src/ai/assistant/assistant-orchestrator.service.ts`,
+  `src/ai/intent/local-intent.classifier.ts` (new, + spec), `src/ai/intent/date-time.parser.ts`
+  (new, + spec), `src/ai/intent/intent-parser.service.ts`,
+  `src/ai/intent/interfaces/intent.interface.ts` (`CREATE_PROJECT`), `prisma/schema.prisma` (drift
+  recorded by the new migration), `prisma/migrations/20260927210000_memory_schema_sync/` (new)
+- Scripts: `scripts/repro-actions.js`, `scripts/check-zod.js`, `scripts/audit-live.js`,
+  `scripts/audit-diag.js` (diagnostics kept for reuse), `scripts/s4-gate-probe.ps1` (steps 7/7b)
+- Repo: `.gitignore`
+
+
+### 2026-09-27 — Stage 3 closed: 3e–3m wired and live-verified ✅ (100 PASS / 0 FAIL / 0 WARN)
+
+
+
+Finishes Stage 3. `scripts/stage3-probe.ps1` was rewritten as a stage-aware probe (3a–3m) that uses the
+payloads the real client sends and asserts response **shape**, not just HTTP status. Final run against
+the live Nest server on `:3000`: **100 PASS, 0 FAIL, 0 WARN, exit 0**. Backend and client builds green,
+`npx jest src/scheduling/time-compiler src/scheduling/reality-engine` → 25/25.
+
+**Backend defects found by the probe and fixed**
+1. **Meetings `500`** — `meeting-intelligence.service.ts` used an invalid Prisma relation/field set, so
+   `POST /api/meetings/prepare` and every `GET /api/meetings/:id/*` threw. Preparation and post-meeting
+   results now persist and are retrievable (`action-items` / `commitments` / `follow-ups` included), and
+   an unknown meeting id returns `404` instead of `500`.
+2. **Rules `500`** — `rules-engine.service.ts` parsed `conditions` *after* the schema check, so a
+   malformed payload reached Prisma. Validation now happens first: bad payload → `400`.
+3. **Time Compiler produced zero blocks** for a user with no `AvailabilityRule` rows (the common case).
+   `buildAvailableSlots()` now falls back to `preferences.workingHoursStart/End` as a derived DAILY rule
+   instead of yielding no slots.
+4. **`GET /api/reality/check` ignored `?includeResolved`** — the handler hard-coded `includeResolved:
+   false`, so acknowledged/resolved deviations could never be reviewed; and since query strings are
+   strings, the naive `||` form would have made `"false"` truthy. It now coerces explicitly (`=== 'true'`)
+   and also honours `?entityTypes=`.
+5. **Travel-time failed opaque `500` with no API key.** `google-maps.provider.ts` gained an
+   `isConfigured` getter and `assertConfigured()`, now called at the top of every public method
+   (`getTravelTime`, `getRouteMatrix`, `geocode`, `searchPlaces`, `getPlaceDetails`; `reverseGeocode`
+   inherits it via `geocode`). Missing `GOOGLE_MAPS_API_KEY` is a deployment-config problem, so it
+   surfaces as **`503 Service Unavailable`** with an actionable message. `GET /api/travel/status` reports
+   `configured` from the provider getter rather than re-reading `process.env`.
+
+**Calendar OAuth return leg** — `calendar-oauth-callback.controller.ts` is deliberately *not* JWT-guarded:
+provider redirects carry no `Authorization` header, so the callback lives outside
+`calendar.controller.ts`. Verified live: `GET /api/calendar/auth-url/google` returns an authUrl whose
+`state` decodes to `connectionId:signedJwt`, and `GET /api/calendar/callback/google?code=bad&state=bad`
+with no auth header → `302` to `/integrations?error=...`.
+
+**Probe bugs fixed (it was reporting false failures)**
+- `Hit()` treated every 4xx/5xx as a failure, so its own negative-path checks could never pass. It takes
+  an `$expect` list now; `-> 400`, `-> 404` and the no-key `503` are PASSes.
+- **PowerShell unrolls a single-element array on assignment.** `$devs = if ($x) { @($x.deviations) }`
+  loses `.Count` when exactly one deviation exists, so `deviations detected` read as empty. The `@()`
+  wrap must surround the whole `if` expression: `@(if ($x) { $x.deviations })`.
+- The probe compiled "today". **On a weekend `allowWeekendScheduling=false` makes zero blocks correct**,
+  so scheduling assertions now target `NextWeekday`, and task `dueDate` sits after the compile window
+  (a same-day deadline clipped every slot). Tasks are created with `goalId` so the `goalId`-scope
+  compile has rows to find.
+- `state=eyJ` never matched because the query value is percent-encoded (`%3A`); it is URL-decoded first.
+- 3g now seeds 5 past `MISSED` blocks — `SCHEDULE_DRIFT` only fires above 3 — giving ack/resolve/reopen
+  real state to act on, and reopen calls `/reopen` (it previously re-called `/acknowledge`).
+- `re-apply must be idempotent` asserted the wrong contract: the store refuses a second apply with `400`,
+  which is the correct guard against duplicate TimeBlocks.
+
+**Still open (Stage 4, not Stage 3)**
+- Real Google travel estimates need a valid `GOOGLE_MAPS_API_KEY` (`503` is the designed no-key path).
+- Assistant answer quality is unverified: `OPENAI_API_KEY` is still the literal placeholder, so only the
+  rule-based fallback routes. The two title/intent bugs in the audit entry below remain live.
+- External OAuth completion needs real provider credentials and a registered redirect URI; only the
+  return leg is verified.
+- Audit lines the probe did not close: commitment person/confidence persistence,
+  `IntentType.CREATE_PROJECT`, `connections` token leak, `calendarId` UUID-vs-CUID, client-side
+  command-center search.
+
+### 2026-09-27 — Stage audit: which Stages are actually completed
+
+This is a verification-of-record, not a build unit. Every claim was re-checked against source, git
+history, or a live request — never against BUILD_LOG/PROGRESS prose alone.
+
+**Stage 1 — Design Foundation: ✅ DONE (verified)**
+`DESIGN_SYSTEM.md` present (9,983 B); tokens are real Tailwind v4 theme config rather than prose;
+reference app shell + nav + week-grid built from it; `cd client && npm run build` green.
+
+**Stage 2 — Frontend Screens: ✅ DONE 13/13 (verified)**
+All routes in `client/src/App.tsx` resolve to real components (`TodayPage`, `CalendarPage`,
+`TasksPage`, `AssistantPage`, `GoalsPage`, `ProjectsPage`, `CommitmentsPage`, `CompilerPage`,
+`RealityPage`, `InsightsPage`, `MemoryPage`, `RulesPage`, `PermissionsPage`, `ProactivePage`,
+`MeetingsPage`, `IntegrationsPage`, `SettingsPage`, `SearchPage`) plus the `Ctrl/⌘K` palette.
+No `PlannedPage` placeholders remain.
+
+**Stage 3 — Backend Tie-in: ⏳ 4/13 verified DONE, 9/13 wired-but-unverified**
+_(Superseded the same day by "Stage 3 closed: 3e–3m wired and live-verified" above — 13/13 now.)_
+- **3a ✅ 3b ✅ (create blocker now closed) 3c ✅ 3d ✅** — each has its own verified entry.
+- **The table was wrong about 3e–3m, in both directions.** Commit `7080f70` ("Stage 3 (in progress)")
+  bulk-rewrote `operations.ts`, `knowledge.ts`, `integrations.ts`, `calendar.ts`, `work.ts` and
+  `time-blocks.ts` to call the live API in one shot, while the table kept saying "⬜". The code is
+  further along than logged, but **no unit was individually tied-in-verified**, which is what DONE
+  means in this loop. They are now marked `⚠️ WIRED, UNVERIFIED` rather than `⬜`.
+- Backends genuinely missing underneath that wired code (grep of live `throw`s; `NotImplementedException`
+  at `src/ai/proactive/proactive-assistant.service.ts:715,723,732`): Time Compiler apply, reality
+  ack/resolve, recommendation status updates, proactive preferences + ack/dismiss/snooze,
+  travel-time (no controller at all), OAuth callback wiring, meeting-result retrieval.
+
+**Stage 4 — Backend Hardening: ⬜ NOT STARTED — but 4 of the 17 list items are already fixed**
+- ✅ "no HTTP controller exposes the orchestrator" → `src/ai/assistant/assistant.controller.ts`
+  (`@Controller('assistant')`, JWT-guarded, user-scoped).
+- ✅ "`getPendingAction()` hard-coded `null`" → orchestrator now uses `prisma.assistantAction`
+  (`assistant-orchestrator.service.ts:102,143,157,180`). Live-verified in `assistant-focus2.ps1`:
+  confirm succeeds and a **re-confirm returns "Action not found or expired." with no duplicate row**
+  (tasks 0→1 then holds; goals 0→1; events 0→1).
+- ✅ "service writes `category`/`color` columns absent from Prisma `Event`" → 3b addendum below.
+- ✅ (partial) "apply the pending migration / schema push" → 3 migrations applied, DB in sync.
+- ❌ `IntentType` still lacks `CREATE_PROJECT`:
+  `src/ai/intent/interfaces/intent.interface.ts` has exactly 9 members
+  (`CREATE_GOAL, CREATE_TASK, CREATE_EVENT, SCHEDULE_TASK, RESCHEDULE_EVENT, CANCEL_EVENT,
+  QUERY_AVAILABILITY, CHECK_CONFLICTS, GET_RECOMMENDATIONS`) while `create_project` is registered.
+- ❌ commitment person/confidence persistence; proactive intervention persistence; permissions and
+  rule-conflict JSON/string compat models; calendar route collision; `calendarId` UUID-vs-CUID;
+  `connections` token leak; notification-preferences contract; meeting-result persistence
+  (`GET /:meetingId/{preparation,post-meeting,action-items,commitments,deadlines,follow-ups}` all
+  return `{ message: 'Retrieve …' }` stubs); Time Compiler ignoring `taskIds`/`goalId`/`projectId`
+  (`src/scheduling/time-compiler/time-compiler.controller.ts:94` is still `tasks: []`).
+
+**Two live assistant bugs confirmed by `scripts/assistant-focus2.ps1` (highest-value next work)**
+1. **Title extraction is broken.** The whole prompt becomes the title — `"Create task buy milk"` →
+   `{title: "Create task buy milk"}`, `"Create goal learn spanish"` → `{title: "Create goal learn spanish"}`.
+   The mock responder strips the command prefix by regex (`client/src/lib/mock/assistant.ts:439,457,531`);
+   the real orchestrator/tool path takes `title` verbatim.
+2. **Intent routing misfires.** `"Create project redesign website"` → `create_task`, not a project,
+   because `CREATE_PROJECT` doesn't exist and `IntentParserService` uses substring/date-first keyword
+   matching. **No real AI provider is reachable:** `.env` sets `AI_PROVIDER="openai"` but
+   `OPENAI_API_KEY` is still the literal placeholder `"your-openai-api-key"`, so the LLM path fails and
+   the rule-based fallback is the *only* routing in effect locally — both bugs are user-visible, not
+   theoretical.
+
+**Hygiene at audit time**
+Uncommitted: 8 modified files + untracked `scripts/` and the new migration dir. `live.out`, `live.err`,
+`vite.out`, `vite.err` and `scripts/*.out|*.err|*.log` are throwaway captures from the background Nest
+(:3000) and Vite (:3001) servers. A stale git worktree sits at `.kilo/worktrees/flame-situation/` with
+older sources and an older BUILD_LOG — do not audit against it.
+
+### 2026-09-27 — Stage 4g: workflow/calendar contract cleanup + stale client gating removed ✅ (live-verified)
+
+Audit of the remaining Stage 4 surfaces (workflow, reality, calendar, time-compiler) followed by
+the fixes that audit proved safe.
+
+**Calendar contract canonicalization**
+- The adapter `CalendarController` (`@Controller('calendar')`) had a dead `@Get('events')` route:
+  the domain controller at `calendar/events` always wins `/api/calendar/events`, and the adapter
+  version reached into `connectionService['prisma']` to return raw rows. **Removed** (with a
+  comment explaining why).
+- The domain `GET /api/calendar/events` now **accepts both query shapes**: `startDate/endDate`
+  (canonical) and `timeMin/timeMax` (Google-style aliases). Aliases only fill in missing values.
+  The client sends the canonical pair again.
+- **New route: `PATCH /api/calendar/calendars/:id/visibility`** (adapter controller →
+  `CalendarConnectionService.setCalendarVisibility`) persists `Calendar.isVisible`. Verified live:
+  unknown id returns our 400 (`Calendar ... not found`), non-boolean body returns 400.
+- `UpdateEventSchema` / `UpdateEventRequest` / domain `CalendarEvent` now carry `source`
+  (`USER | AI_GENERATED | SYNCED`), and `updateEvent` writes it. Accepting an AI-generated event
+  is now one live PATCH (`status: CONFIRMED, source: USER`); the response includes `source` via
+  `toCalendarEvent`.
+- **Route-order bug fixed:** `POST calendar/sync/:provider` was declared before `POST sync/all`,
+  so `sync/all` matched as provider `ALL` and 500'd inside Prisma (`Invalid value for argument
+  provider`). Static route now comes first; `sync/all` returns 200 `{}` for a user with no
+  connections.
+
+**Daily experience**
+- `generateScheduleAdjustments()` was a `// Placeholder` returning `[]` — and its result was
+  computed but never sent (the response hard-coded `scheduleAdjustments: []`). It now derives
+  real suggestions from data already loaded in `generateEveningWrapup`: carried-over high-priority
+  tasks, overdue commitments, back-to-back tomorrow meetings (<15 min gap), and tomorrow overload
+  (>70% of an 8h day). Wired into the response. `GET /api/daily/evening` verified live.
+
+**Client stale-gating cleanup (all verified against backend routes before enabling)**
+- Proactive page: Acknowledge / Snooze / Dismiss no longer disabled; the "Backend returns 501"
+  copy is gone (routes persist to `InterventionState` since earlier Stage 4 work).
+- Reality page: deviation Acknowledge / Resolve no longer disabled; "not exposed by the current
+  reality API" replaced with accurate persistence copy.
+- Time Compiler: Apply now calls `PATCH /api/time-compiler/proposals/:id/apply` (new
+  `operationsService.applyProposal`) which really writes TimeBlocks; Discard uses `:id/status`.
+  Both un-disabled. The false "backend compiler currently receives no task records" warning
+  (fixed by `scheduling-input-loader` earlier) was replaced with a generic empty-blocks note.
+  Apply confirmation dialog text now differs between mock and live.
+- `calendar.ts`: `canToggleCalendarVisibility` and `canAcceptProposal` flipped to `true`;
+  `setCalendarVisible` calls the new visibility route and refetches instead of throwing.
+- Removed a dead `API_UNAVAILABLE` constant in `assistant.ts` whose message was false (all
+  assistant endpoints exist and pass in stage3-probe).
+
+**Verified (2026-09-27)**
+- `npx tsc --noEmit` (backend + client): exit 0 · `npm run build` (backend + client): exit 0
+- `npx jest --silent`: 5 suites / 96 tests passed
+- `scripts/stage3-probe.ps1`: 100 PASS / 0 FAIL (after rebuild + restart of the dist server)
+- `scripts/s4f-commitment-probe.ps1`: all PASS
+- `scripts/proxy-smoke.ps1` (through the :3001 Vite proxy): all 11 steps green
+- `scripts/s4-gate-probe.ps1` (new): events accept both query shapes; PATCH status+source
+  round-trips (`source=USER` read back); compile→apply writes `status=APPLIED`; daily evening
+  emits adjustments. Calendar visibility PATCH confirmed wired (400 from handler, not 404).
+- ESLint: no new non-prettier findings on edited files (the repo-wide CRLF prettier noise is
+  pre-existing and untouched).
+
+**Files touched**
+- Backend: `src/calendar/calendar.controller.ts`, `src/calendar/interfaces/calendar.interface.ts`,
+  `src/calendar/services/calendar.service.ts`, `src/calendar/domain/calendar-event.ts`,
+  `src/integrations/calendar-adapters/calendar.controller.ts`,
+  `src/integrations/calendar-adapters/calendar-connection.service.ts`,
+  `src/daily-experience/daily-experience.service.ts`
+- Client: `client/src/services/calendar.ts`, `client/src/services/operations.ts`,
+  `client/src/services/types.ts`, `client/src/services/assistant.ts`,
+  `client/src/pages/WorkflowPages.tsx`, `client/src/pages/CalendarPage.tsx`
+- New script: `scripts/s4-gate-probe.ps1`
+
+
+### 2026-09-27 — Stage 3b addendum: calendar category/color blocker CLOSED ✅ (live-verified)
+
+3b's "Blocked (backend contract)" item — *"Live event creation throws by design"* — is fixed and
+verified against a running backend. This closes the `(3b)` Stage 4 line inside Stage 3, because it
+is a genuine backend contract bug, which the stage rules permit repairing.
+
+**Backend (schema-level)**
+- `prisma/schema.prisma`: added `Event.category EventCategory @default(PERSONAL)`,
+  `Event.color String?`, `@@index([category])`, and `enum EventCategory`
+  (`PERSONAL WORK MEETING APPOINTMENT REMINDER HOLIDAY BIRTHDAY TRAVEL FOCUS_TIME CUSTOM`).
+  Values copied verbatim from the existing zod `CreateEventSchema.category` and
+  `src/calendar/domain/calendar-event.ts` — nothing invented.
+- Migration `20260927110000_add_event_category_color` applied; `npx prisma migrate status` →
+  "Database schema is up to date!" (3 migrations). Prisma client regenerated.
+- `src/ai/assistant/interfaces/tool-schemas.ts`: `CreateEventInputSchema` gained `category`
+  (same 10-value enum) + `color`; `CreateEventOutputSchema` gained `category` + `color`.
+- `src/ai/assistant/tools/create-event.tool.ts`: forwards `category` (default `PERSONAL`) and
+  `color` into `CalendarService.createEvent` and returns both.
+
+**Real backend bug found and fixed (this was NOT a schema problem)**
+- `CalendarService.getEvents` assumed `options.status`/`options.category` were arrays, but Express
+  gives a **bare string** for a single query value. `?category=MEETING` passed `.length > 0` on a
+  string and produced a wrong/empty `IN` filter.
+- Added `toArrayOption()` (normalises `undefined | string | string[]`, splits comma lists) and
+  routed both filters through it. Single- and multi-value filters verified.
+
+**Client**
+- `client/src/services/calendar.ts`: `createEvent()` now does a real `POST /api/calendar/events`
+  (maps `recurrenceRule` → `recurrence`, sends `category`/`color`) and returns `normalizeEvent(data)`.
+  The hard `throw` is gone.
+- `canCreateEvent` and `canPersistCategory` are now `true` (previously `USE_MOCK`-only).
+  `canToggleCalendarVisibility` and `canAcceptProposal` stay `USE_MOCK` — still no route behind them.
+- `CalendarPage.tsx`, `services/types.ts`, `lib/design-tokens.ts` comments/strings updated.
+
+**Live verification — `scripts/calendar-check.ps1`**
+```
+A GET /api/calendar/events     HTTP OK count=0
+B POST /api/calendar/events    HTTP OK id=cmujq49z3001ewguoa2ry2s3t
+   category persisted          MEETING
+   color persisted             #6366f1
+C read after POST              count=1
+   category on read            MEETING
+   color on read               #6366f1
+```
+
+**Live verification — `scripts/calendar-check2.ps1` (assistant → calendar)**
+```
+1 proposed tool                create_event  action_...
+1 confirm message              ✓ Create "…" completed successfully.
+1 events visible to client     1
+2 raw category                 PERSONAL      (default path works)
+4 other user event count       0 (expect 0)  ← user scoping holds
+```
+
+**`ValidationPipe` check (why no DTO decorator change was needed)**
+`CreateEventRequest` is a plain interface, so `whitelist`/`forbidNonWhitelisted` have no
+class-validator metadata to strip against — `category`/`color` survive the pipe. Zod validation
+runs inside `CalendarService` via `CreateEventSchema`.
+
+**Resolved, was suspected:** the assistant `id` / `messageId` mismatch was a false alarm — the
+orchestrator returns `messageId`, the controller maps it to `id`, the client reads `raw.id`.
+
+**Still open after this addendum (carried to Stage 4, NOT fixed)**
+- `calendarId: z.string().uuid()` in `CreateEventSchema` vs CUID ids in Prisma — latent contract bug.
+- Two controllers register `GET /api/calendar/events` (`CalendarController` @ `calendar/events`,
+  `CalendarAdaptersModule` @ `calendar`) — route collision unresolved.
+- `GET /api/calendar/connections` still returns token fields to the browser.
+- Luxon `DateTime` serialises as `{_utc,_timeZone}`, not ISO — confirmed live:
+  `raw start type = PSCustomObject`, `{"_utc":"2026-09-27T12:16:49.442Z","_timeZone":"UTC"}`.
+  Client `toIso()` absorbs it; the backend boundary is the correct place to fix it.
+- No HTTP route exposes calendar `isVisible` — 3b's blocked visibility path is unchanged.
+
+**Build + environment status at addendum time (re-run 2026-09-27)**
+- `cd client && npm run build` → green, 2.31s, no type errors (known 500 kB entry-chunk warning only).
+- `npm run build` (nest) → green.
+- Nest serving on `http://localhost:3000/api` — `GET /api/health` → 200 `{"status":"ok","service":"CalAssist"}`.
+- Vite preview on `http://localhost:3001` proxying `/api` + `/auth` to :3000 — the `scripts/*.ps1`
+  harnesses use that base URL, so they exercise the real client proxy path, not just the raw API.
+- `npx prisma migrate status` → "Database schema is up to date!" (3 migrations).
+
+**Files touched**
+- Modified: `prisma/schema.prisma`, `src/calendar/services/calendar.service.ts`,
+  `src/ai/assistant/interfaces/tool-schemas.ts`, `src/ai/assistant/tools/create-event.tool.ts`,
+  `client/src/services/calendar.ts`, `client/src/services/types.ts`,
+  `client/src/pages/CalendarPage.tsx`, `client/src/lib/design-tokens.ts`
+- New: `prisma/migrations/20260927110000_add_event_category_color/`, and `scripts/`
+  (`calendar-check.ps1`, `calendar-check2.ps1`, `assistant-focus.ps1`, `assistant-focus2.ps1`,
+  `proxy-smoke.ps1`) — verification harnesses, plus throwaway `*.out`/`*.err` capture files
+  that should be deleted or git-ignored.
+
 
 ### 2026-09-27 — Stage 3, unit 3c: AI Assistant ✅
 
@@ -213,6 +602,8 @@ implemented this rule, so the fix brings live behaviour in line with what the UI
 **Verified**
 - `cd client && npm run build` → green (2026-09-27); calendar routes smoke-checked against the
   controller source; no live DB was reachable during this turn.
+  _(Superseded the same day — live DB later reachable and create/read/filter verified; see the
+  "Stage 3b addendum" entry above. The original turn genuinely had no live DB.)_
 
 **Files touched**
 - Modified: `client/src/services/calendar.ts`, `client/src/services/types.ts`,
@@ -240,18 +631,29 @@ implemented this rule, so the fix brings live behaviour in line with what the UI
 - Modified: `client/src/services/auth.ts`, `client/src/components/auth/LoginForm.tsx`, `client/src/components/auth/RegisterForm.tsx`, `client/src/contexts/AuthContext.tsx`, `client/src/vite-env.d.ts`, `BUILD_LOG.md`
 
 ### Stage 4 hardening items (known from PROGRESS.md)
-- [ ] Persist commitment person/related-entity metadata + confidence
+
+> Status re-checked 2026-09-27 against source + a live backend (see "Stage audit" entry above).
+> Four items below are now CLOSED by Stage 3 work; the rest remain open.
+
+- [x] ~~Persist commitment person/related-entity metadata + confidence~~ — **CLOSED 2026-09-27 (4f)**:
+      `Commitment` now stores `person`/`personEmail`/`confidence`/`context`/`relatedEntityType`/
+      `relatedEntityId`; migration `20260927190000_commitment_person_metadata` applied. `LOW_CONFIDENCE`
+      is now reachable for the first time. See the Stage 4f log entry.
 - [ ] Proactive intervention persistence + ack/dismiss/snooze (currently 501)
 - [ ] Replace JSON/string compat fields for permissions + rule conflicts with real models
-- [ ] Apply pending migration / schema push
-- [ ] **NEW (2c): no HTTP controller exposes `AssistantOrchestratorService`.** `processMessage()` /
-      `confirmAction()` exist as service methods only; the sole AI route is `POST /api/ai/intent/parse`.
-      Stage 3 must add `POST /api/assistant/message` + `/confirm` (client already calls those paths).
+- [x] ~~Apply pending migration / schema push~~ — **CLOSED 2026-09-27**: `npx prisma migrate status`
+      → "Database schema is up to date!" (3 migrations, incl. `20260927110000_add_event_category_color`).
+- [x] ~~**NEW (2c): no HTTP controller exposes `AssistantOrchestratorService`.**~~ — **CLOSED in 3c**:
+      `src/ai/assistant/assistant.controller.ts` (`@Controller('assistant')`) exposes `POST /message`
+      and `POST /confirm`, JWT-guarded and user-scoped.
 - [ ] **NEW (2c): `IntentType` has no `CREATE_PROJECT` member** although a `create_project` tool is
       registered — "create a project" parses to no intent. Add the member or map it to `CREATE_GOAL`.
-- [ ] **NEW (2c): `getPendingAction()` returns a hard-coded `null`**, so `confirmAction` can never
-      succeed today — every confirm returns "Action not found or expired." Proposed actions need
-      persistence (the `AssistantAction` model exists and is unused).
+      **Still open and live-confirmed 2026-09-27**: `"Create project redesign website"` routes to
+      `create_task`. `src/ai/intent/interfaces/intent.interface.ts` still has exactly 9 members.
+- [x] ~~**NEW (2c): `getPendingAction()` returns a hard-coded `null`**~~ — **CLOSED in 3c**: the
+      orchestrator persists proposals to `prisma.assistantAction`
+      (`assistant-orchestrator.service.ts:102,143,157,180`). Live-verified 2026-09-27: confirm applies
+      exactly one row, re-confirm returns "Action not found or expired." without duplicating.
 - [ ] **NEW (2e): Time Compiler ignores its requested work.** `TimeCompilerController.buildSchedulingInput()`
   currently supplies `tasks: []` and empty fixed events/availability; `taskIds`, `goalId`, and
   `projectId` do not populate the input. Proposal list/get/apply endpoints are placeholders, and
@@ -270,15 +672,38 @@ implemented this rule, so the fix brings live behaviour in line with what the UI
   `CalendarConnectionService.getAllConnections()` includes Prisma access/refresh tokens.
   The client strips them before exposing connection rows, but the server must stop returning
   secrets to browsers.
-- [ ] **NEW (3b): Calendar event creation contracts cannot currently succeed.** `CreateEventSchema`
-  requires `calendarId` to be a UUID although Prisma calendar IDs are CUIDs, and the service
-  writes `category`/`color` columns absent from Prisma `Event`. Live create is disabled.
+- [ ] **NEW (3b): Calendar event creation contracts cannot currently succeed.** ~~the service writes
+      `category`/`color` columns absent from Prisma `Event`~~ — **that half is CLOSED 2026-09-27**
+      (migration `20260927110000_add_event_category_color`; live create now round-trips both fields,
+      see the 3b addendum). **Still open:** `CreateEventSchema.calendarId` is `z.string().uuid()` while
+      Prisma calendar ids are CUIDs, so an id-bearing create can still be rejected at the zod boundary.
 - [ ] **NEW (3b): Calendar route collisions.** Both `CalendarModule` and `CalendarAdaptersModule`
   register `GET /api/calendar/events` with different query parameter contracts; verify route
   registration and unify the endpoint before relying on date filters.
-- [ ] **NEW (2f/2l): Commitment person metadata is not in the write/read DTO or Prisma model.**
+- [x] ~~**NEW (2f/2l): Commitment person metadata is not in the write/read DTO or Prisma model.**~~ — **CLOSED 2026-09-27 (4f)**, same work as the item above: columns, zod input/output schemas and the client `CommitmentDTO` all carry person/confidence/context/related entity now.
   Meeting extraction includes a person, but creating a commitment currently cannot persist it.
 - [ ] _(further Stage 3 mismatches get appended here)_
+- [ ] **NEW (3b addendum): `start`/`end` serialise as Luxon `DateTime` objects, not ISO strings.**
+      Live response observed 2026-09-27: `{"_utc":"2026-09-27T12:16:49.442Z","_timeZone":"UTC"}`.
+      `CalendarService.toCalendarEvent()` (line ~333 / ~621) returns domain `DateTime` values with no
+      `toJSON`. The client's `toIso()` absorbs it so nothing is broken today, but every consumer of
+      `GET /api/calendar/events` (assistant tools, future sync, third-party clients) has to reimplement
+      that unwrap. Fix at the backend boundary — add `toJSON()` to the domain `DateTime` or serialise
+      with `.toISOString()` in the controller.
+- [ ] **NEW (3c): Assistant event tool uses `startDate`/`endDate` while the calendar API uses
+      `start`/`end`.** `CreateEventInputSchema` (`src/ai/assistant/interfaces/tool-schemas.ts`) and
+      `CreateEventOutputSchema` are `startDate`/`endDate`; `CreateEventSchema` and the client
+      `CalendarEventDTO` are `start`/`end`. `create-event.tool.ts` translates, so it works, but the
+      two vocabularies will keep tripping people up — pick one.
+- [ ] **NEW (3c): Tool argument extraction copies the whole prompt into `title`.** Observed live:
+      `"Create task buy milk"` → `{"title":"Create task buy milk"}`, `"Create goal learn spanish"` →
+      `{"title":"Create goal learn spanish"}`, `"Create event design review"` →
+      `{"title":"Create event design review"}`. The mock responder strips the command prefix with a
+      regex (`client/src/lib/mock/assistant.ts:439,457,531`); the real path does not.
+- [ ] **NEW (3c): `IntentParserService` misroutes with substring/date-first matching.** Observed live:
+      `"Create project redesign website"` → `create_task`. Needs word-boundary/explicit command
+      triggers and priority ordering for `Create goal|project|task|event`. Compounded by there being
+      no AI provider keys configured, so the rule-based fallback is the only routing in effect.
 
 ---
 

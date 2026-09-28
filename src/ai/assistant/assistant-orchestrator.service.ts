@@ -1,8 +1,13 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../common/services/prisma.service';
 import { AiProviderService } from '../../integrations/ai-providers/ai-provider.service';
 import { IntentParserService } from '../../ai/intent/intent-parser.service';
 import { ToolRegistry } from './tool-registry.service';
+import {
+  applyRequiredDurationDefault,
+  describeToolInputSchema,
+  normalizeToolInput,
+} from './interfaces/normalize-tool-input';
 import {
   ToolExecutionContext,
   ToolResult,
@@ -17,6 +22,8 @@ import { ParsedIntent } from '../../ai/intent/interfaces/intent.interface';
 
 @Injectable()
 export class AssistantOrchestratorService {
+  private readonly logger = new Logger(AssistantOrchestratorService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly aiProvider: AiProviderService,
@@ -175,7 +182,16 @@ export class AssistantOrchestratorService {
     };
 
     const input = modifiedInput || proposedAction.input;
-    const result = await this.toolRegistry.executeTool(proposedAction.toolName, input, context);
+    // `input` may come from a legacy row or a client-side edit, so run it
+    // through the same normaliser + required-default pass used when proposing.
+    const result = await this.toolRegistry.executeTool(
+      proposedAction.toolName,
+      applyRequiredDurationDefault(
+        proposedAction.toolName,
+        normalizeToolInput(proposedAction.toolName, input)
+      ),
+      context
+    );
 
     await this.prisma.assistantAction.updateMany({
       where: { userId, id: actionId, wasApplied: false },
@@ -277,6 +293,12 @@ export class AssistantOrchestratorService {
     intent: ParsedIntent,
     context: ToolExecutionContext & { context: Context }
   ): Promise<IntentAction[]> {
+    // Read-only questions must never become writes because the action model
+    // over-interpreted the intent.
+    if (intent.entities?.isQuery) {
+      return this.mapIntentToActionsLocally(intent);
+    }
+
     try {
       const toolDefinitions = this.toolRegistry.getToolDefinitionsForLLM();
 
@@ -284,7 +306,18 @@ export class AssistantOrchestratorService {
 You are CalAssist's assistant orchestrator. Based on the user's intent and available tools, determine which tools to call.
 
 User Intent: ${JSON.stringify(intent)}
-Available Tools: ${JSON.stringify(toolDefinitions.map((t) => ({ name: t.name, description: t.description, category: t.category, confirmationLevel: t.confirmationLevel })))}
+Available Tools: ${JSON.stringify(
+        toolDefinitions.map((t) => ({
+          name: t.name,
+          description: t.description,
+          category: t.category,
+          confirmationLevel: t.confirmationLevel,
+          // Spell out the schema's own field names so the model cannot invent
+          // aliases such as `durationMinutes` for `create_task` (which made
+          // every proposal fail zod validation and vanish from the response).
+          inputFields: describeToolInputSchema(t.inputSchema),
+        }))
+      )}
 
 Context:
 - Timezone: ${context.timezone}
@@ -305,6 +338,12 @@ Respond with valid JSON array of actions:
     "confirmationLevel": "NONE|LOW|MEDIUM|HIGH|CRITICAL"
   }
 ]
+
+Rules for "input":
+- Use ONLY the listed inputFields for the chosen tool, and only the fields you actually know.
+- Dates must be full ISO-8601 strings in UTC, e.g. "2026-09-28T15:00:00.000Z".
+- OMIT any field you do not have a value for. Never send an empty string ("") or null for a date.
+- Durations are numbers of minutes, not strings.
 `;
 
       const aiResponse = await this.aiProvider.generateStructured(prompt, {
@@ -312,14 +351,55 @@ Respond with valid JSON array of actions:
         maxTokens: 3000,
       });
 
-      if (Array.isArray(aiResponse.actions) && aiResponse.actions.length > 0) {
-        return aiResponse.actions;
+      // The prompt asks the model for a bare JSON array; some models (and the
+      // OpenAI wrapper) may return { actions: [...] } instead. Accept both.
+      const actions = Array.isArray(aiResponse) ? aiResponse : aiResponse?.actions;
+      if (Array.isArray(actions) && actions.length > 0) {
+        return this.enrichActionsWithParsedEntities(intent, actions);
       }
     } catch (error: any) {
       // No LLM reachable; fall through to the deterministic mapper below.
+      this.logger.warn(
+        `Action extraction via AI provider failed, using local mapper: ${error?.message ?? error}`
+      );
     }
 
     return this.mapIntentToActionsLocally(intent);
+  }
+
+  private enrichActionsWithParsedEntities(
+    intent: ParsedIntent,
+    actions: IntentAction[]
+  ): IntentAction[] {
+    const entities = intent.entities ?? {};
+    return actions.map((action) => {
+      const input = { ...action.input };
+      const title = String(entities.title ?? intent.originalText ?? 'Untitled');
+      if (intent.type === 'CREATE_EVENT' && action.toolName === 'create_event') {
+        input.title = title;
+        if (entities.startDate) input.startDate = String(entities.startDate);
+        if (entities.endDate) input.endDate = String(entities.endDate);
+      } else if (intent.type === 'CREATE_TASK' && action.toolName === 'create_task') {
+        input.title = title;
+        if (typeof entities.priority === 'number') input.priority = entities.priority;
+        if (typeof entities.durationMinutes === 'number') {
+          input.estimatedDurationMinutes = entities.durationMinutes;
+        }
+        if (entities.startDate) input.startDate = String(entities.startDate);
+        if (entities.dueDate) input.dueDate = String(entities.dueDate);
+      } else if (intent.type === 'CREATE_GOAL' && action.toolName === 'create_goal') {
+        input.title = title;
+        if (typeof entities.priority === 'number') input.priority = entities.priority;
+        if (entities.startDate) input.startDate = String(entities.startDate);
+        if (entities.dueDate) input.targetDate = String(entities.dueDate);
+      } else if (intent.type === 'CREATE_PROJECT' && action.toolName === 'create_project') {
+        input.title = title;
+        if (typeof entities.priority === 'number') input.priority = entities.priority;
+        if (entities.startDate) input.startDate = String(entities.startDate);
+        if (entities.dueDate) input.dueDate = String(entities.dueDate);
+      }
+      return { ...action, input };
+    });
   }
 
   /**
@@ -392,9 +472,32 @@ Respond with valid JSON array of actions:
               title,
               description,
               ...(startDate ? { startDate: String(startDate) } : {}),
-              ...(intent.entities?.targetDate ? { targetDate: String(intent.entities.targetDate) } : {}),
+              ...(intent.entities?.dueDate
+                ? { targetDate: String(intent.entities.dueDate) }
+                : intent.entities?.targetDate
+                  ? { targetDate: String(intent.entities.targetDate) }
+                  : {}),
+              ...(typeof priority === 'number' ? { priority } : {}),
             },
             `Create goal "${title}"`
+          ),
+        ];
+      // Stage 4: `create_project` has been a registered tool since Phase 8, but
+      // this mapper had no case for it, so any project intent fell through to
+      // `default:` and proposed `explain_schedule` instead of creating anything.
+      case 'CREATE_PROJECT':
+        return [
+          withReasoning(
+            'create_project',
+            {
+              title,
+              description,
+              priority: typeof priority === 'number' ? priority : 3,
+              ...(intent.entities?.goalId ? { goalId: String(intent.entities.goalId) } : {}),
+              ...(startDate ? { startDate: String(startDate) } : {}),
+              ...(intent.entities?.dueDate ? { dueDate: String(intent.entities.dueDate) } : {}),
+            },
+            `Create project "${title}"`
           ),
         ];
       case 'SCHEDULE_TASK':
@@ -482,16 +585,39 @@ Respond with valid JSON array of actions:
       const tool = this.toolRegistry.getTool(action.toolName);
       if (!tool) continue;
 
-      const parseResult = tool.inputSchema.safeParse(action.input);
-      if (!parseResult.success) continue;
+      // LLM output is untrusted: repair field aliases, blank-string dates and
+      // stringified numbers before validating, then restore schema-required
+      // defaults. Without this a single `dueDate: ""` (exactly what
+      // gpt-oss:20b emits for "no due date") made safeParse fail and the
+      // proposal disappeared from the response entirely.
+      const normalizedInput = applyRequiredDurationDefault(
+        action.toolName,
+        normalizeToolInput(action.toolName, action.input)
+      );
+
+      const parseResult = tool.inputSchema.safeParse(normalizedInput);
+      if (!parseResult.success) {
+        // Log instead of silently dropping: a failing proposal used to surface
+        // only as "Executed 0 action(s)", which is undebuggable from the client.
+        this.logger.warn(
+          `Dropped invalid ${action.toolName} proposal: ${parseResult.error.issues
+            .map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`)
+            .join('; ')} | input=${JSON.stringify(normalizedInput)}`
+        );
+        continue;
+      }
+
+      const parsedInput = parseResult.data as Record<string, any>;
 
       proposedActions.push({
         id: `action_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         toolName: action.toolName,
         description: action.reasoning,
-        input: action.input,
+        // Persist the validated payload so confirmAction re-executes exactly
+        // what was shown to the user rather than the raw LLM guess.
+        input: parsedInput,
         confirmationLevel: action.confirmationLevel || tool.confirmationLevel,
-        estimatedImpact: this.estimateImpact(action.toolName, action.input),
+        estimatedImpact: this.estimateImpact(action.toolName, parsedInput),
         reversible: this.isReversible(action.toolName),
       });
     }

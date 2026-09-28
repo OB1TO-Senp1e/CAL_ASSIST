@@ -65,6 +65,7 @@ export const InterventionSchema = z.object({
   expiresAt: z.string().datetime().optional().nullable(),
   acknowledgedAt: z.string().datetime().optional().nullable(),
   actedUponAt: z.string().datetime().optional().nullable(),
+  snoozedUntil: z.string().datetime().optional().nullable(),
   metadata: z.record(z.any()).default({}),
 });
 

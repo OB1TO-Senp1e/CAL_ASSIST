@@ -8,6 +8,7 @@ import {
   NotificationProvider,
   NotificationPayload,
   NotificationPreferences,
+  NotificationPreferencesUpdate,
   NotificationResult,
 } from './notification.interface';
 
@@ -204,7 +205,30 @@ export class NotificationService {
     });
   }
 
-  async updatePreferences(userId: string, preferences: Partial<NotificationPreferences>) {
+  /**
+   * Notification preferences for the current user, defaults included.
+   *
+   * Stage 4: `GET /api/notifications/preferences` returned
+   * `{ message: 'Use context/preferences endpoint' }` — a stub that pointed at a
+   * route which does not exist. The resolved preferences were already computed
+   * internally for every send; this simply exposes the same value as a read
+   * contract so the client can render and edit real state.
+   */
+  async preferencesFor(userId: string): Promise<NotificationPreferences> {
+    return this.getUserPreferences(userId);
+  }
+
+  /**
+   * Merges a partial update onto the stored preferences.
+   *
+   * Previously this wrote the incoming object verbatim, so `PATCH`ing
+   * `{ push: { enabled: true } }` wiped the user's email/sms/workingHours
+   * settings stored in the same blob.
+   */
+  async updatePreferences(userId: string, preferences: NotificationPreferencesUpdate) {
+    const current = await this.getRawPreferences(userId);
+    const merged = mergePreferences(current, normalisePreferencesUpdate(preferences));
+    const valueJson = JSON.stringify(merged);
     return this.prisma.preference.upsert({
       where: {
         userId_category_key: {
@@ -213,14 +237,34 @@ export class NotificationService {
           key: 'preferences',
         },
       },
-      update: { valueJson: JSON.stringify(preferences) },
+      update: { valueJson },
       create: {
         userId,
         category: 'NOTIFICATION_SETTINGS',
         key: 'preferences',
-        valueJson: JSON.stringify(preferences),
+        valueJson,
       },
     });
+  }
+
+  /** The stored blob on its own, without defaults applied. */
+  private async getRawPreferences(userId: string): Promise<Record<string, any>> {
+    const pref = await this.prisma.preference.findUnique({
+      where: {
+        userId_category_key: {
+          userId,
+          category: 'NOTIFICATION_SETTINGS',
+          key: 'preferences',
+        },
+      },
+    });
+    if (!pref?.valueJson) return {};
+    try {
+      const parsed = JSON.parse(pref.valueJson);
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch (e) {
+      return {};
+    }
   }
 
   private async getUserPreferences(userId: string): Promise<NotificationPreferences> {
@@ -258,6 +302,15 @@ export class NotificationService {
       } catch (e) {
         // Ignore parse errors
       }
+    }
+
+    // `muteUntil` is stored as an ISO string inside the JSON blob but typed as
+    // `Date`, and `sendNotification` compares it with `> new Date()`. A raw
+    // string would be compared lexicographically against Date's string form,
+    // so mute windows silently stopped working.
+    if (preferences.muteUntil) {
+      const parsed = new Date(preferences.muteUntil as unknown as string | number);
+      preferences.muteUntil = Number.isNaN(parsed.getTime()) ? undefined : parsed;
     }
 
     return preferences;
@@ -339,3 +392,52 @@ export class NotificationService {
     return next;
   }
 }
+
+/**
+ * Deep-merges notification preference objects channel-by-channel.
+ *
+ * Exported so the behaviour can be tested without Prisma or Nest. `null`
+ * values delete a key; nested channel objects merge their own fields so that
+ * `{ email: { enabled: true } }` does not wipe a stored `address`.
+ */
+export function mergePreferences(
+  base: Record<string, any>,
+  patch: Record<string, any>,
+): Record<string, any> {
+  const result: Record<string, any> = { ...base };
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === null) {
+      delete result[key];
+      continue;
+    }
+    if (
+      typeof value === 'object' &&
+      !Array.isArray(value) &&
+      !(value instanceof Date) &&
+      typeof result[key] === 'object' &&
+      result[key] !== null &&
+      !Array.isArray(result[key])
+    ) {
+      result[key] = mergePreferences(result[key], value);
+    } else {
+      result[key] = value;
+    }
+  }
+  return result;
+}
+
+/**
+ * Converts an ISO-string or epoch-millisecond `muteUntil` into the ISO-string
+ * form the stored blob uses, so round-tripping through JSON is stable.
+ */
+export function normalisePreferencesUpdate(
+  patch: Record<string, any>,
+): Record<string, any> {
+  const out: Record<string, any> = { ...patch };
+  if (out.muteUntil !== undefined && out.muteUntil !== null) {
+    const date = new Date(out.muteUntil as string | number);
+    out.muteUntil = Number.isNaN(date.getTime()) ? null : date.toISOString();
+  }
+  return out;
+}
+

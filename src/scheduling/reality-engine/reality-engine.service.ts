@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { DeviationState, RecommendationState } from '@prisma/client';
 import { PrismaService } from '../../common/services/prisma.service';
 import { AiProviderService } from '../../integrations/ai-providers/ai-provider.service';
 import { TimeCompilerService } from '../time-compiler/time-compiler.service';
@@ -84,15 +85,83 @@ export class RealityEngineService {
     const impactAnalyses = await this.analyzeImpacts(userId, deviations);
     const recommendations = await this.generateRecommendations(userId, deviations, impactAnalyses);
 
-    const summary = this.generateSummary(deviations, recommendations);
+    // Overlay persisted acknowledgement/resolution so ack/resolve actually stick.
+    const states = await this.prisma.deviationState.findMany({ where: { userId } });
+    const stateById = new Map(states.map((s) => [s.deviationId, s]));
+
+    let visible = deviations.map((d) => this.applyState(d, stateById.get(d.id)));
+
+    // includeResolved defaults to false: acknowledged/resolved rows stay hidden
+    // so the panel does not keep showing problems the user already handled.
+    if (!input.includeResolved) {
+      visible = visible.filter((d) => !d.acknowledgedAt && !d.resolvedAt);
+    }
+
+    const summary = this.generateSummary(visible, recommendations);
 
     return {
       timestamp: now.toISOString(),
-      deviations,
+      deviations: visible,
       impactAnalyses,
       recommendations,
       summary,
     };
+  }
+
+  private applyState(deviation: Deviation, state?: { acknowledgedAt: Date | null; resolvedAt: Date | null }): Deviation {
+    if (!state) return deviation;
+    return {
+      ...deviation,
+      acknowledgedAt: state.acknowledgedAt?.toISOString() ?? null,
+      resolvedAt: state.resolvedAt?.toISOString() ?? null,
+    };
+  }
+
+  /** Records that the user has seen a deviation, without dismissing it. */
+  async acknowledgeDeviation(userId: string, deviationId: string): Promise<DeviationState> {
+    const parts = deviationId.split('_');
+    const state = await this.prisma.deviationState.upsert({
+      where: { userId_deviationId: { userId, deviationId } },
+      update: { acknowledgedAt: new Date(), status: 'ACKNOWLEDGED' },
+      create: {
+        userId,
+        deviationId,
+        status: 'ACKNOWLEDGED',
+        acknowledgedAt: new Date(),
+        entityType: parts.length >= 3 ? parts[1] : null,
+        entityId: parts.length >= 3 ? parts[2] : null,
+      },
+    });
+    this.logger.log(`Deviation ${deviationId} acknowledged for user ${userId}`);
+    return state;
+  }
+
+  /** Marks a deviation handled, with an optional free-text resolution. */
+  async resolveDeviation(
+    userId: string,
+    deviationId: string,
+    resolution?: string,
+  ): Promise<DeviationState> {
+    const parts = deviationId.split('_');
+    const now = new Date();
+    return this.prisma.deviationState.upsert({
+      where: { userId_deviationId: { userId, deviationId } },
+      update: { resolvedAt: now, status: 'RESOLVED', resolution: resolution ?? null },
+      create: {
+        userId,
+        deviationId,
+        status: 'RESOLVED',
+        resolvedAt: now,
+        resolution: resolution ?? null,
+        entityType: parts.length >= 3 ? parts[1] : null,
+        entityId: parts.length >= 3 ? parts[2] : null,
+      },
+    });
+  }
+
+  /** Clears ack/resolve state so a deviation reappears in the panel. */
+  async reopenDeviation(userId: string, deviationId: string): Promise<void> {
+    await this.prisma.deviationState.deleteMany({ where: { userId, deviationId } });
   }
 
   private async detectTaskDeviations(
@@ -441,6 +510,12 @@ export class RealityEngineService {
     return deviations;
   }
 
+  /**
+   * Deviation ids must be reproducible. They were previously
+   * `dev_${Date.now()}_${random}`, so a client could never acknowledge or
+   * resolve a deviation it had been shown: every /reality/check minted fresh ids
+   * for the same underlying problem, and any persisted state was unreachable.
+   */
   private createDeviation(params: {
     userId: string;
     type: DeviationType;
@@ -454,7 +529,7 @@ export class RealityEngineService {
     unit: 'MINUTES' | 'HOURS' | 'DAYS' | 'COUNT' | 'PERCENTAGE';
     metadata: Record<string, any>;
   }): Deviation {
-    const id = `dev_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const id = `dev_${params.entityType}_${params.entityId}_${params.type}`;
     return {
       id,
       userId: params.userId,
@@ -751,7 +826,7 @@ export class RealityEngineService {
   private async generateRecommendations(
     userId: string,
     deviations: Deviation[],
-    impactAnalyses: ImpactAnalysis[]
+    impactAnalyses: ImpactAnalysis[],
   ): Promise<Recommendation[]> {
     const recommendations: Recommendation[] = [];
 
@@ -761,7 +836,71 @@ export class RealityEngineService {
       recommendations.push(...recs);
     }
 
-    return recommendations;
+    // Replace the random per-call ids with deterministic ones so a recommendation
+    // shown in the panel can be accepted or rejected on a later request.
+    // Colon-delimited because deviation ids themselves contain underscores.
+    const seen = new Map<string, number>();
+    const stable = recommendations.map((rec) => {
+      const base = `rec:${rec.deviationId}:${rec.type}`;
+      const count = seen.get(base) ?? 0;
+      seen.set(base, count + 1);
+      return { ...rec, id: count === 0 ? base : `${base}#${count}` };
+    });
+
+    return this.applyRecommendationStates(userId, stable);
+  }
+
+  /** Overlays persisted accept/reject status onto freshly generated recommendations. */
+  private async applyRecommendationStates(
+    userId: string,
+    recommendations: Recommendation[],
+  ): Promise<Recommendation[]> {
+    if (!recommendations.length) return recommendations;
+
+    const states = await this.prisma.recommendationState.findMany({ where: { userId } });
+    if (!states.length) return recommendations;
+
+    const byId = new Map(states.map((s) => [s.recommendationId, s]));
+    return recommendations.map((rec) => {
+      const state = byId.get(rec.id);
+      if (!state) return rec;
+      return {
+        ...rec,
+        status: state.status as Recommendation['status'],
+        acceptedAt: state.acceptedAt?.toISOString() ?? rec.acceptedAt ?? null,
+      };
+    });
+  }
+
+  /** Records the user's decision on a recommendation. */
+  async setRecommendationStatus(
+    userId: string,
+    recommendationId: string,
+    status: 'ACCEPTED' | 'REJECTED',
+  ): Promise<RecommendationState> {
+    // Ids are `rec:<deviationId>:<TYPE>[#n]`; recover the deviation for lookup.
+    const parts = recommendationId.split(':');
+    const deviationId = parts.length >= 3 ? parts[1] : recommendationId;
+    const now = new Date();
+
+    return this.prisma.recommendationState.upsert({
+      where: {
+        userId_recommendationId: { userId, recommendationId },
+      },
+      update: {
+        status,
+        acceptedAt: status === 'ACCEPTED' ? now : null,
+        rejectedAt: status === 'REJECTED' ? now : null,
+      },
+      create: {
+        userId,
+        recommendationId,
+        deviationId,
+        status,
+        acceptedAt: status === 'ACCEPTED' ? now : null,
+        rejectedAt: status === 'REJECTED' ? now : null,
+      },
+    });
   }
 
   private async generateRecommendationsForDeviation(

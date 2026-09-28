@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../common/services/prisma.service';
-import { ParsedIntent } from './interfaces/intent.interface';
+import { INTENT_TYPES, ParsedIntent } from './interfaces/intent.interface';
 import { AiProviderService } from '../../integrations/ai-providers/ai-provider.service';
+import { classifyLocally, extractTitle, MAX_TITLE_LENGTH } from './local-intent.classifier';
+import { mergeDateTimeIntoEntities, readOnlyIntentForQuery } from './date-time.parser';
 
 @Injectable()
 export class IntentParserService {
@@ -20,11 +22,19 @@ export class IntentParserService {
         temperature: 0.3,
         maxTokens: 2000,
       });
+      if (!aiResponse || !INTENT_TYPES.includes(aiResponse.type)) {
+        throw new Error('AI provider returned an invalid intent type');
+      }
+
+      const { entities, parsed } = mergeDateTimeIntoEntities(
+        this.sanitizeEntities(aiResponse.entities, text),
+        text
+      );
 
       const intent: ParsedIntent = {
-        type: aiResponse.type,
+        type: parsed.isQuery ? readOnlyIntentForQuery(text) : aiResponse.type,
         confidence: aiResponse.confidence,
-        entities: aiResponse.entities,
+        entities,
         constraints: aiResponse.constraints,
         originalText: text,
       };
@@ -41,9 +51,10 @@ export class IntentParserService {
       return intent;
     } catch (error: any) {
       // Neither LLM provider is reachable (no OPENAI_API_KEY / OLLAMA_URL).
-      // Fall back to a deterministic classification so the assistant thread
-      // still answers instead of 500-ing. Kept simple: intent + entities only.
-      const fallback = this.classifyLocally(text);
+      // Fall back to the deterministic classifier so the assistant thread still
+      // answers instead of 500-ing. See local-intent.classifier.ts for the
+      // routing rules and why they are the ones that actually run locally.
+      const fallback = this.localFallback(text);
       await this.prisma.intent.create({
         data: {
           userId,
@@ -58,33 +69,46 @@ export class IntentParserService {
   }
 
   /**
-   * Local classifier used when no AI provider is reachable. Uses the same
-   * nine IntentType members the LLM prompt does; crude keyword buckets are
-   * enough to keep proposals flowing in a live-but-LLM-less environment.
+   * Runs the pure local classifier and widens it into a `ParsedIntent`.
+   * Kept as a one-line adapter so the classifier stays unit-testable without
+   * Nest, Prisma or an AI provider.
    */
-  private classifyLocally(text: string): ParsedIntent {
-    const lower = text.toLowerCase().trim();
+  private localFallback(text: string): ParsedIntent {
+    const local = classifyLocally(text);
+    return {
+      type: local.type,
+      confidence: local.confidence,
+      entities: {
+        title: local.title,
+        ...(local.durationMinutes ? { durationMinutes: local.durationMinutes } : {}),
+        ...(local.startDate ? { startDate: local.startDate } : {}),
+        ...(local.endDate ? { endDate: local.endDate } : {}),
+        ...(local.dueDate ? { dueDate: local.dueDate } : {}),
+        ...(local.priority !== undefined ? { priority: local.priority } : {}),
+        ...(isQueryIntent(local.type) ? { isQuery: true } : {}),
+      },
+      constraints: local.constraints,
+      originalText: local.originalText,
+    };
+  }
 
-    const includes = (...tokens: string[]) => tokens.some((t) => lower.includes(t));
-
-    const maybeDate = /\b(tomorrow|today|monday|tuesday|wednesday|thursday|friday|at \d|march|april|\d{1,2}[:/.]\d{1,2})\b/;
-
-    if (includes('create', 'make')) {
-      if (includes('event', 'meeting', 'appointment', 'lunch', 'call', 'dr')) return { type: 'CREATE_EVENT', confidence: 0.9, entities: { title: text }, originalText: text, constraints: [] };
-      if (includes('task', 'todo', 'to-do', 'follow up', 'email')) return { type: 'CREATE_TASK', confidence: 0.9, entities: { title: text }, originalText: text, constraints: [] };
-      if (includes('goal', 'objective', 'aim', 'target')) return { type: 'CREATE_GOAL', confidence: 0.9, entities: { title: text }, originalText: text, constraints: [] };
-      if (includes('proposal', 'plan', 'schedule')) return { type: 'SCHEDULE_TASK', confidence: 0.8, entities: { title: text }, originalText: text, constraints: [] };
-      return { type: 'CREATE_TASK', confidence: 0.75, entities: { title: text }, originalText: text, constraints: [] };
+  /**
+   * Normalises entities coming back from an LLM. The local classifier already
+   * emits clean titles; provider output must not bypass the same guarantees.
+   */
+  private sanitizeEntities(entities: any, originalText: string): Record<string, any> {
+    const safe = entities && typeof entities === 'object' ? { ...entities } : {};
+    const raw = typeof safe.title === 'string' ? safe.title.trim() : '';
+    // Prefer the model's own wording, but strip the command prefix if the model
+    // simply echoed the request back, and never allow an empty title.
+    let title = raw;
+    if (!title || title.toLowerCase() === originalText.toLowerCase().trim()) {
+      title = extractTitle(originalText).title || title || 'Untitled';
+    } else {
+      title = extractTitle(title).title || title;
     }
-
-    if (includes('move', 'reschedule', 'postpone', 'push')) return { type: 'RESCHEDULE_EVENT', confidence: 0.85, entities: { title: text }, originalText: text, constraints: [] };
-    if (includes('cancel', 'delete', 'remove', 'drop')) return { type: 'CANCEL_EVENT', confidence: 0.85, entities: { title: text }, originalText: text, constraints: [] };
-    if (includes('schedule', 'plan', 'block', 'time for', 'find time')) return { type: 'SCHEDULE_TASK', confidence: 0.85, entities: { title: text }, originalText: text, constraints: [] };
-    if (includes('conflict', 'double-book', 'overlap')) return { type: 'CHECK_CONFLICTS', confidence: 0.9, entities: { title: text }, originalText: text, constraints: [] };
-    if (includes('available', 'availability', 'free', 'when', 'slot')) return { type: 'QUERY_AVAILABILITY', confidence: 0.9, entities: { title: text }, originalText: text, constraints: [] };
-    if (includes('recommend', 'priority', 'suggest') || maybeDate.test(lower)) return { type: 'GET_RECOMMENDATIONS', confidence: 0.7, entities: { title: text }, originalText: text, constraints: [] };
-
-    return { type: 'CREATE_TASK', confidence: 0.5, entities: { title: text }, originalText: text, constraints: [] };
+    safe.title = title.slice(0, MAX_TITLE_LENGTH);
+    return mergeDateTimeIntoEntities(safe, originalText).entities;
   }
 
   private buildIntentParsingPrompt(text: string, context: any): string {
@@ -100,15 +124,16 @@ User Context:
 
 Please analyze the request and respond with valid JSON in this exact format:
 {
-  "type": "<one of CREATE_GOAL, CREATE_TASK, CREATE_EVENT, SCHEDULE_TASK, RESCHEDULE_EVENT, CANCEL_EVENT, QUERY_AVAILABILITY, CHECK_CONFLICTS, GET_RECOMMENDATIONS>",
+  "type": "<one of ${INTENT_TYPES.join(', ')}>",
   "confidence": <0.0-1.0 confidence score>,
   "entities": {
-    "title": "<extracted title>",
+    "title": "<the thing to create, WITHOUT the command words — for 'Create task buy milk' the title is 'buy milk'>",
     "description": "<extracted description, if any>",
     "startDate": "<ISO date string if mentioned>",
     "endDate": "<ISO date string if mentioned>",
-    "duration": "<duration in minutes if mentioned>",
-    "priority": "<priority level if implied>"
+    "durationMinutes": "<number of minutes if mentioned>",
+    "priority": "<integer from 0 to 10 if stated or implied>",
+    "dueDate": "<ISO datetime if a deadline is mentioned>"
   },
   "constraints": ["<list of constraint strings>"]
 }
@@ -135,4 +160,10 @@ Please analyze the request and respond with valid JSON in this exact format:
       currentDate: new Date().toISOString(),
     };
   }
+}
+
+function isQueryIntent(type: string): boolean {
+  return (
+    type === 'QUERY_AVAILABILITY' || type === 'CHECK_CONFLICTS' || type === 'GET_RECOMMENDATIONS'
+  );
 }

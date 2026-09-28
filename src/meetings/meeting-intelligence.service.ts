@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../common/services/prisma.service';
 import { AiProviderService } from '../integrations/ai-providers/ai-provider.service';
+import { MeetingArtifactStore } from './meeting-artifact.store';
 import {
   MeetingPreparationInput,
   MeetingPreparationResult,
@@ -25,6 +26,7 @@ export class MeetingIntelligenceService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly aiProvider: AiProviderService,
+    private readonly artifacts: MeetingArtifactStore,
   ) {}
 
   async generatePreMeetingPreparation(
@@ -60,7 +62,7 @@ export class MeetingIntelligenceService {
       relevantTasks,
     );
 
-    return {
+    const result: MeetingPreparationResult = {
       meetingId: input.meetingId,
       checklist,
       previousContext,
@@ -71,6 +73,11 @@ export class MeetingIntelligenceService {
       confidence,
       summary,
     };
+
+    // Persist so GET /api/meetings/:id/preparation can return it later.
+    await this.artifacts.savePreparation(userId, input.meetingId, input.meetingTitle, result);
+
+    return result;
   }
 
   private async generateChecklist(
@@ -163,14 +170,17 @@ export class MeetingIntelligenceService {
     // Get previous meetings with same attendees or same project
     const attendeeEmails = input.attendees?.map(a => a.email) || [];
     
+    // The Prisma relation is `eventParticipants`, not `participants`, and Event
+    // has no `projectId` column. The previous shape threw
+    // "Unknown argument `participants`", making every POST /api/meetings/prepare 500.
     const previousMeetings = await this.prisma.event.findMany({
       where: {
         userId,
+        deletedAt: null,
         endDate: { lt: new Date(input.startTime) },
         ...(attendeeEmails.length > 0 && {
-          participants: { some: { email: { in: attendeeEmails } } },
+          eventParticipants: { some: { email: { in: attendeeEmails } } },
         }),
-        ...(input.relatedProjectId && { projectId: input.relatedProjectId }),
       },
       orderBy: { endDate: 'desc' },
       take: 5,
@@ -204,6 +214,9 @@ export class MeetingIntelligenceService {
     return commitments.map(c => ({
       commitmentId: c.id,
       object: c.title,
+      // `person` is declared on OutstandingCommitment but could never be filled
+      // while the Commitment row had nowhere to keep it.
+      person: c.person ?? undefined,
       deadline: c.deadline.toISOString(),
       status: (c.deadline < new Date() ? 'OVERDUE' : c.status) as 'PENDING' | 'IN_PROGRESS' | 'OVERDUE',
       riskLevel: c.deadline < new Date() ? 'CRITICAL' : 'MEDIUM',
@@ -394,7 +407,7 @@ export class MeetingIntelligenceService {
       followUps,
     );
 
-    return {
+    const result: PostMeetingResult = {
       meetingId: input.meetingId,
       actionItems,
       commitments,
@@ -408,6 +421,11 @@ export class MeetingIntelligenceService {
       confidence: this.calculatePostMeetingConfidence(extracted),
       requiresConfirmation,
     };
+
+    // Persist so the per-meeting GET routes can serve the extraction later.
+    await this.artifacts.savePostMeeting(userId, input.meetingId, input.title, result);
+
+    return result;
   }
 
   private async extractFromMeeting(input: MeetingTranscriptInput): Promise<{

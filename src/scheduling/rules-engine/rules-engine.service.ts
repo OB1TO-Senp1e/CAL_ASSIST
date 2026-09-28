@@ -14,6 +14,7 @@ import {
   RuleAction,
   RuleCondition,
   CreateRuleInput,
+  CreateRuleInputSchema,
   UpdateRuleInput,
   RuleConflict,
   RuleValidationResult,
@@ -34,7 +35,10 @@ export class RulesEngineService {
   ) {}
 
   async createRule(userId: string, input: CreateRuleInput): Promise<Rule> {
-    const validation = await this.validateRule(input);
+    // Parse first so malformed payloads become a 400 with field names rather
+    // than a TypeError inside validateRule (which assumes a shaped input).
+    const validated = CreateRuleInputSchema.parse(input);
+    const validation = await this.validateRule(validated);
     if (!validation.valid) {
       throw new BadRequestException(
         `Invalid rule: ${validation.errors.map((e) => e.message).join(', ')}`
@@ -44,23 +48,23 @@ export class RulesEngineService {
     const rule = await this.prisma.autonomyRule.create({
       data: {
         userId,
-        name: input.name,
-        description: input.description,
-        scope: input.scope,
+        name: validated.name,
+        description: validated.description,
+        scope: validated.scope,
         triggerType: 'MANUAL',
         actionType: 'ADJUST_PREFERENCE',
         conditions: {
-          ruleType: input.type,
-          scope: input.scope,
-          triggers: input.triggers,
-          conditions: input.conditions,
-          action: input.action,
-          actionConfig: input.actionConfig,
-          priority: input.priority,
+          ruleType: validated.type,
+          scope: validated.scope,
+          triggers: validated.triggers,
+          conditions: validated.conditions,
+          action: validated.action,
+          actionConfig: validated.actionConfig,
+          priority: validated.priority,
         },
-        actionConfig: input.actionConfig,
+        actionConfig: validated.actionConfig,
         isActive: true,
-        priority: input.priority,
+        priority: validated.priority,
       },
     });
 
@@ -211,7 +215,7 @@ export class RulesEngineService {
       }
     }
 
-    for (const condition of input.conditions) {
+    for (const condition of input.conditions ?? []) {
       if (condition.operator === 'IN_RANGE' || condition.operator === 'OUT_OF_RANGE') {
         if (condition.value2 === undefined) {
           errors.push({
@@ -732,15 +736,104 @@ Examples:
         maxTokens: 3000,
       });
 
-      return response as NaturalLanguageParseResult;
+      const parsed = response as NaturalLanguageParseResult;
+      // A provider that answers with an empty rule set and no explanation is
+      // indistinguishable from a failure for the caller, so treat it as one.
+      if (!parsed.rules?.length && !parsed.ambiguous?.length && !parsed.errors?.length) {
+        return this.parseLocally(input.text, 'LLM returned no rules');
+      }
+      if (parsed.errors?.length && !parsed.rules?.length) {
+        return this.parseLocally(input.text, parsed.errors.join('; '));
+      }
+      return parsed;
     } catch (error) {
-      this.logger.error(`Natural language parsing failed: ${error}`);
-      return {
-        rules: [],
-        ambiguous: [],
-        errors: [String(error)],
-      };
+      // No usable LLM (OPENAI_API_KEY is a placeholder in this environment), so
+      // fall back to deterministic parsing instead of failing the request. This
+      // mirrors what IntentParserService.classifyLocally() already does for chat.
+      this.logger.warn(`Natural language parsing failed, using local parser: ${error}`);
+      return this.parseLocally(input.text, String(error));
     }
+  }
+
+  /**
+   * Deterministic rule parser used when no LLM is reachable. Mirrors the
+   * heuristics the client previously applied locally in
+   * `knowledgeService.createRuleFromNaturalLanguage`, so live mode and mock mode
+   * now agree on the interpretation of the same sentence.
+   */
+  private parseLocally(text: string, reason: string): NaturalLanguageParseResult {
+    const normalized = text.trim();
+    if (!normalized) {
+      return { rules: [], ambiguous: [], errors: ['Enter a scheduling rule first'] };
+    }
+
+    const lower = normalized.toLowerCase();
+    const time = normalized.match(/\b(?:before|after)\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i);
+    const minute = time?.[2] ?? '00';
+    let hour = time ? Number(time[1]) : 0;
+    if (time?.[3]?.toLowerCase() === 'pm' && hour < 12) hour += 12;
+    if (time?.[3]?.toLowerCase() === 'am' && hour === 12) hour = 0;
+
+    const type: RuleType = /travel|commute/i.test(lower)
+      ? 'TRAVEL_RULE'
+      : /buffer|between/i.test(lower)
+        ? 'BUFFER_RULE'
+        : /consecutiv|more than \d+ meetings/i.test(lower)
+          ? 'CONSECUTIVE_LIMIT'
+          : /friday|keep .* free|protect|never/i.test(lower)
+            ? 'PROTECTION_RULE'
+            : time
+              ? 'TIME_RESTRICTION'
+              : 'PREFERENCE_RULE';
+
+    const scope: RuleScope = /meeting/i.test(lower)
+      ? 'MEETINGS'
+      : /task/i.test(lower)
+        ? 'TASKS'
+        : /focus/i.test(lower)
+          ? 'FOCUS_TIME'
+          : 'GLOBAL';
+
+    const action: RuleAction = /never|don'?t|do not|keep .* free|avoid|block/i.test(lower)
+      ? 'BLOCK'
+      : 'WARN';
+
+    const conditions: RuleCondition[] = time
+      ? [
+          {
+            field: 'startTime',
+            operator: lower.includes('after') ? 'AFTER_TIME' : 'BEFORE_TIME',
+            value: `${String(hour).padStart(2, '0')}:${minute}`,
+          },
+        ]
+      : [{ field: 'title', operator: 'CONTAINS', value: normalized }];
+
+    const buffer = normalized.match(/(\d+)\s*(?:min|minute)/i);
+    const actionConfig: Record<string, any> =
+      type === 'BUFFER_RULE' ? { bufferMinutes: Number(buffer?.[1] ?? 15) } : {};
+
+    return {
+      rules: [
+        {
+          name: normalized.length > 80 ? `${normalized.slice(0, 77)}...` : normalized,
+          description: `Interpreted from: "${normalized}"`,
+          type,
+          scope,
+          triggers: ['SCHEDULE_EVENT', 'SCHEDULE_TASK', 'GENERATE_SCHEDULE'],
+          conditions,
+          action,
+          actionConfig,
+          priority: 50,
+          confidence: /before|after|friday|buffer|never|protect/i.test(lower) ? 0.88 : 0.6,
+          originalText: normalized,
+        },
+      ],
+      ambiguous: [],
+      // The caller aborts on a non-empty errors array. Since the local parser
+      // produced a usable rule above, keep errors empty and just record why the
+      // LLM path was not used.
+      errors: [],
+    };
   }
 
   async createRuleFromNaturalLanguage(userId: string, text: string): Promise<Rule> {

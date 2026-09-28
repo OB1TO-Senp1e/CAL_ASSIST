@@ -3,7 +3,7 @@ import { operationsMock } from '@/lib/mock/operations';
 import api from './api';
 import { USE_MOCK } from './auth';
 import type { TaskDTO } from './types';
-import type { CommitmentDTO, CommitmentRiskDTO, CommitmentSource, CommitmentStatus, CompilePreferencesDTO, RealityCheckDTO, ReplanOptionsDTO, ReplanSuggestionDTO, ScheduleBlockType, ScheduleProposalDTO, ScheduledBlockDTO } from './workflow-types';
+import type { CommitmentDTO, CommitmentRelatedEntityType, CommitmentRiskDTO, CommitmentSource, CommitmentStatus, CompilePreferencesDTO, RealityCheckDTO, ReplanOptionsDTO, ReplanSuggestionDTO, ScheduleBlockType, ScheduleProposalDTO, ScheduledBlockDTO } from './workflow-types';
 
 function assess(commitment: CommitmentDTO): CommitmentRiskDTO {
   const hours = (new Date(commitment.deadline).getTime() - Date.now()) / 3_600_000;
@@ -14,7 +14,13 @@ function assess(commitment: CommitmentDTO): CommitmentRiskDTO {
     else if (hours <= 24) { riskFactors.push('DEADLINE_APPROACHING'); riskLevel = 'HIGH'; }
     else if (hours <= 72) { riskFactors.push('DEADLINE_APPROACHING'); riskLevel = 'MEDIUM'; }
   }
-  if (commitment.source === 'AI_INFERRED' && commitment.status === 'PENDING') {
+  // The backend flags this from the stored extraction `confidence`; the mock
+  // has no extractor, so it falls back to the old source heuristic.
+  const lowConfidence =
+    commitment.confidence !== undefined
+      ? commitment.confidence < 0.5
+      : commitment.source === 'AI_INFERRED' && commitment.status === 'PENDING';
+  if (lowConfidence) {
     riskFactors.push('LOW_CONFIDENCE');
     if (riskLevel === 'NONE') riskLevel = 'LOW';
   }
@@ -41,7 +47,7 @@ export const operationsService = {
     if (!USE_MOCK) return (await api.get<CommitmentRiskDTO[]>('/api/commitments/risks')).data;
     await latency(100, 240); return operationsMock.commitments().map(assess);
   },
-  async createCommitment(input: { object: string; description?: string; deadline: string; source: CommitmentSource }): Promise<CommitmentDTO> {
+  async createCommitment(input: { object: string; description?: string; deadline: string; source: CommitmentSource; person?: string; personEmail?: string; confidence?: number; context?: string; relatedEntityType?: CommitmentRelatedEntityType; relatedEntityId?: string }): Promise<CommitmentDTO> {
     if (!USE_MOCK) return (await api.post<CommitmentDTO>('/api/commitments', input)).data;
     await latency();
     const now = operationsMock.now();
@@ -49,7 +55,7 @@ export const operationsService = {
     operationsMock.saveCommitments([row, ...operationsMock.commitments()]);
     return row;
   },
-  async updateCommitment(id: string, input: { object?: string; description?: string; deadline?: string; status?: CommitmentStatus }): Promise<CommitmentDTO> {
+  async updateCommitment(id: string, input: { object?: string; description?: string; deadline?: string; status?: CommitmentStatus; person?: string }): Promise<CommitmentDTO> {
     if (!USE_MOCK) return (await api.put<CommitmentDTO>(`/api/commitments/${id}`, input)).data;
     await latency();
     const rows = operationsMock.commitments(); const index = rows.findIndex((row) => row.id === id);
@@ -112,22 +118,33 @@ export const operationsService = {
     return proposal;
   },
   async setProposalStatus(id: string, status: 'APPLIED' | 'REJECTED'): Promise<void> {
-    if (!USE_MOCK) throw new Error('The backend does not persist or apply Time Compiler proposals yet.');
+    if (!USE_MOCK) { await api.patch(`/api/time-compiler/proposals/${encodeURIComponent(id)}/status`, { status }); return; }
     const proposals = operationsMock.proposals();
     operationsMock.saveProposals(proposals.map((proposal) => proposal.id === id ? { ...proposal, status, updatedAt: operationsMock.now() } : proposal));
+  },
+  /** PATCH /api/time-compiler/proposals/:id/apply — really writes TimeBlocks. */
+  async applyProposal(id: string): Promise<ScheduleProposalDTO> {
+    if (!USE_MOCK) return (await api.patch<ScheduleProposalDTO>(`/api/time-compiler/proposals/${encodeURIComponent(id)}/apply`)).data;
+    const proposals = operationsMock.proposals();
+    const applied = proposals.map((proposal) => proposal.id === id ? { ...proposal, status: 'APPLIED' as const, updatedAt: operationsMock.now() } : proposal);
+    operationsMock.saveProposals(applied);
+    return applied.find((proposal) => proposal.id === id)!;
   },
   async realityCheck(): Promise<RealityCheckDTO> {
     if (!USE_MOCK) return (await api.get<RealityCheckDTO>('/api/reality/check')).data;
     await latency(260, 440); const result = operationsMock.reality(); result.timestamp = operationsMock.now(); operationsMock.saveReality(result); return result;
   },
   async updateDeviation(id: string, action: 'acknowledge' | 'resolve'): Promise<void> {
-    if (!USE_MOCK) throw new Error('The reality API does not expose deviation acknowledge/resolve actions.');
+    if (!USE_MOCK) {
+      await api.post(`/api/reality/deviations/${encodeURIComponent(id)}/${action}`, action === 'resolve' ? { resolution: 'Resolved from the assistant panel' } : {});
+      return;
+    }
     const result = operationsMock.reality();
     result.deviations = result.deviations.map((deviation) => deviation.id === id ? { ...deviation, acknowledgedAt: operationsMock.now(), resolvedAt: action === 'resolve' ? operationsMock.now() : deviation.resolvedAt } : deviation);
     operationsMock.saveReality(result);
   },
   async updateRecommendation(id: string, status: 'ACCEPTED' | 'REJECTED'): Promise<void> {
-    if (!USE_MOCK) throw new Error('The reality API does not expose recommendation status updates.');
+    if (!USE_MOCK) { await api.post(`/api/reality/recommendations/${encodeURIComponent(id)}/status`, { status }); return; }
     const result = operationsMock.reality();
     result.recommendations = result.recommendations.map((recommendation) => recommendation.id === id ? { ...recommendation, status, acceptedAt: status === 'ACCEPTED' ? operationsMock.now() : null } : recommendation);
     operationsMock.saveReality(result);

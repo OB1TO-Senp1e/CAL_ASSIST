@@ -517,7 +517,12 @@ export class DailyExperienceService {
       this.prisma.task.findMany({ where: { dueDate: { gte: tomorrowStart, lte: tomorrowEnd }, status: { in: ['PENDING', 'IN_PROGRESS'] } }, orderBy: { priority: 'desc' }, take: 5 }),
     ]);
 
-    const scheduleAdjustments = await this.generateScheduleAdjustments(userId, date);
+    const scheduleAdjustments = await this.generateScheduleAdjustments(userId, date, {
+      unfinishedTasks,
+      overdueCommitments: commitments_due,
+      tomorrowEvents,
+      tomorrowTasks,
+    });
 
     return {
       date: date.toISOString(),
@@ -559,7 +564,7 @@ export class DailyExperienceService {
         },
         risks: [],
       },
-      scheduleAdjustments: [],
+      scheduleAdjustments,
       reflection: undefined,
     };
   }
@@ -571,8 +576,84 @@ export class DailyExperienceService {
     return 'RESCHEDULE_TOMORROW';
   }
 
-  private async generateScheduleAdjustments(userId: string, date: Date) {
-    // Placeholder for schedule adjustments
-    return [];
+  private async generateScheduleAdjustments(userId: string, date: Date, context?: {
+    unfinishedTasks?: any[];
+    overdueCommitments?: any[];
+    tomorrowEvents?: any[];
+    tomorrowTasks?: any[];
+  }): Promise<Array<{
+    id: string;
+    description: string;
+    reason: string;
+    impact: 'LOW' | 'MEDIUM' | 'HIGH';
+    requiresConfirmation: boolean;
+  }>> {
+    const adjustments: Array<{
+      id: string;
+      description: string;
+      reason: string;
+      impact: 'LOW' | 'MEDIUM' | 'HIGH';
+      requiresConfirmation: boolean;
+    }> = [];
+
+    // 1) Unfinished high-priority work carries into tomorrow and needs room.
+    const carried = (context?.unfinishedTasks ?? []).filter((t) => t.priority >= 7);
+    if (carried.length > 0) {
+      const minutes = carried.reduce((sum, t) => sum + ((t.estimatedDurationMin ?? 60) - (t.actualDurationMin ?? 0)), 0);
+      adjustments.push({
+        id: `adj_carry_${date.toISOString().slice(0, 10)}`,
+        description: `Reserve ${Math.max(30, Math.round(minutes / 60) * 60)} minutes tomorrow for ${carried.length} high-priority task${carried.length > 1 ? 's' : ''} carried over from today`,
+        reason: 'Carried-over high-priority work needs protected time before new commitments fill the day.',
+        impact: minutes >= 120 ? 'HIGH' : 'MEDIUM',
+        requiresConfirmation: true,
+      });
+    }
+
+    // 2) Overdue commitments: guard the next free morning block.
+    const overdue = (context?.overdueCommitments ?? []).filter((c) => new Date(c.deadline) < new Date());
+    if (overdue.length > 0) {
+      adjustments.push({
+        id: `adj_overdue_${date.toISOString().slice(0, 10)}`,
+        description: `Hold a focus block tomorrow for ${overdue.length} overdue commitment${overdue.length > 1 ? 's' : ''}`,
+        reason: 'Commitments past their deadline are the highest-risk items in the daily view.',
+        impact: 'HIGH',
+        requiresConfirmation: true,
+      });
+    }
+
+    // 3) Back-to-back tomorrow morning: suggest a buffer.
+    const tomorrow = (context?.tomorrowEvents ?? []).slice().sort(
+      (a, b) => a.startDate.getTime() - b.startDate.getTime(),
+    );
+    for (let i = 1; i < tomorrow.length; i += 1) {
+      const gapMinutes = (tomorrow[i].startDate.getTime() - tomorrow[i - 1].endDate.getTime()) / 60000;
+      if (gapMinutes >= 0 && gapMinutes < 15) {
+        adjustments.push({
+          id: `adj_buffer_${tomorrow[i].id}`,
+          description: `Add a ${Math.max(5, Math.round(15 - gapMinutes))}-minute buffer before "${tomorrow[i].title}"`,
+          reason: 'Meetings starting with under 15 minutes of gap leave no travel or prep time.',
+          impact: 'LOW',
+          requiresConfirmation: false,
+        });
+        break; // one buffer suggestion per wrap-up is enough
+      }
+    }
+
+    // 4) Tomorrow overloaded (>70% of working hours committed): warn.
+    const tomorrowLoad =
+      (context?.tomorrowEvents ?? []).reduce((sum, e) => sum + (e.endDate.getTime() - e.startDate.getTime()) / 60000, 0) +
+      (context?.tomorrowTasks ?? []).reduce((sum, t) => sum + (t.estimatedDurationMin ?? 60), 0);
+    if (tomorrowLoad > 0.7 * 8 * 60) {
+      adjustments.push({
+        id: `adj_overload_${(context?.tomorrowEvents?.[0]?.startDate ?? date).toISOString().slice(0, 10)}`,
+        description: 'Tomorrow is over 70% committed; consider deferring a lower-priority task',
+        reason: `Scheduled events plus task estimates total ${Math.round(tomorrowLoad / 60 * 10) / 10}h against an 8h working day.`,
+        impact: 'MEDIUM',
+        requiresConfirmation: true,
+      });
+    }
+
+    void userId;
+    return adjustments;
   }
 }
