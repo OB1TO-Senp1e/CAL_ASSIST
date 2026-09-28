@@ -1,6 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { BaseCalendarAdapter } from './base-calendar.adapter';
-import { CalendarEvent, WebhookConfig, WebhookEvent } from './calendar-adapter.interface';
+import {
+  CalendarCallbackResult,
+  CalendarEvent,
+  WebhookConfig,
+  WebhookEvent,
+} from './calendar-adapter.interface';
 
 @Injectable()
 export class LocalCalendarAdapter extends BaseCalendarAdapter {
@@ -12,17 +17,13 @@ export class LocalCalendarAdapter extends BaseCalendarAdapter {
     return `/calendar/local/connect?userId=${userId}&state=${state}`;
   }
 
-  async handleCallback(code: string): Promise<{
-    accessToken: string;
-    refreshToken: string;
-    expiresAt: Date;
-    externalUserId: string;
-  }> {
+  async handleCallback(code: string): Promise<CalendarCallbackResult> {
     return {
       accessToken: `local_token_${Date.now()}`,
       refreshToken: `local_refresh_${Date.now()}`,
       expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
       externalUserId: code,
+      scopes: ['local'],
     };
   }
 
@@ -100,9 +101,8 @@ export class LocalCalendarAdapter extends BaseCalendarAdapter {
     // No-op for local
   }
 
-  verifyWebhookSignature(payload: string, signature: string, secret: string): boolean {
-    return true;
-  }
+  // C8: removed the old verifyWebhookSignature() stub (it returned true for
+  // everything). No signature scheme applies to local calendars.
 
   async processWebhookEvent(payload: any, signature: string): Promise<any[]> {
     return [];

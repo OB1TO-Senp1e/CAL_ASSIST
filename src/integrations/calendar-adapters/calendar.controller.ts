@@ -44,7 +44,7 @@ export class CalendarController {
    */
   @Get('auth-url/:provider')
   async getAuthUrl(@Request() req, @Param('provider') provider: string) {
-    const authUrl = this.connectionService.getAuthUrl(req.user.id, provider);
+    const authUrl = await this.connectionService.getAuthUrl(req.user.id, provider);
     return { authUrl };
   }
 
@@ -54,7 +54,7 @@ export class CalendarController {
     @Param('provider') provider: string,
     @Body() body: { code: string; state: string }
   ) {
-    await this.connectionService.handleCallback(req.user.id, provider, body.code);
+    await this.connectionService.handleCallback(req.user.id, provider, body.code, body.state);
     return { success: true, message: `${provider} calendar connected successfully` };
   }
 

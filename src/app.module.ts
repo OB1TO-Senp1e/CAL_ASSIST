@@ -38,8 +38,10 @@ import { DailyExperienceModule } from './daily-experience/daily-experience.modul
 import { PermissionModule } from './permissions/permission.module';
 import { SimulationEngineModule } from './scheduling/simulation-engine/simulation-engine.module';
 import { LoggingModule } from './common/logging/logging.module';
+import { AiConsentModule } from './ai/consent/ai-consent.module';
 import { PrismaService } from './common/services/prisma.service';
 import { HealthController } from './health/health.controller';
+import { ProductionConfigValidator } from './config/production-config.validator';
 
 @Module({
   imports: [
@@ -99,6 +101,7 @@ import { HealthController } from './health/health.controller';
 
     // Proactive Assistant
     ProactiveAssistantModule,
+    AiConsentModule,
     PermissionModule,
     TravelTimeModule,
     MeetingIntelligenceModule,
@@ -134,6 +137,9 @@ import { HealthController } from './health/health.controller';
   providers: [
     AppService,
     PrismaService,
+    // C9: fails fast at boot in production when OAuth redirect URIs are
+    // missing or non-HTTPS.
+    ProductionConfigValidator,
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,

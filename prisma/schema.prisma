@@ -279,6 +279,41 @@ model Calendar {
   @@index([externalId])
 }
 
+// C7: server-side PKCE store for the hand-rolled calendar OAuth flows.
+// Keyed by SHA-256 of the signed state JWT (no bearer material in the DB).
+// Holds the code_verifier for exactly one callback: consumed (deleted) on use
+// and ignored once expiresAt has passed. The verifier never appears in any
+// URL, the state JWT, or logs.
+model CalendarOAuthPkce {
+  id           String           @id
+  codeVerifier String
+  userId       String
+  provider     CalendarProvider
+  createdAt    DateTime         @default(now())
+  expiresAt    DateTime
+  consumedAt   DateTime?
+
+  @@index([expiresAt])
+}
+
+// C8: Google Calendar push-notification channels. Created at watch time; a
+// notification is only trusted when its channel token + channel id + resource
+// id all match a live row (Google does NOT sign push payloads with HMAC).
+model CalendarPushChannel {
+  id           String           @id @default(cuid())
+  userId       String
+  provider     CalendarProvider
+  channelId    String
+  resourceUri  String
+  channelToken String
+  expiration   DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@unique([provider, channelId])
+  @@index([userId])
+}
+
 model CalendarConnection {
   id             String           @id @default(cuid())
   userId         String

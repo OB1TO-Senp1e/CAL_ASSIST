@@ -1,5 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { CalendarAdapter, CalendarEvent, RetryConfig, RateLimitConfig, WebhookConfig, WebhookEvent } from './calendar-adapter.interface';
+import {
+  CalendarAdapter,
+  CalendarAuthUrlOptions,
+  CalendarCallbackResult,
+  CalendarEvent,
+  RetryConfig,
+  RateLimitConfig,
+  WebhookConfig,
+  WebhookEvent,
+} from './calendar-adapter.interface';
 
 @Injectable()
 export abstract class BaseCalendarAdapter implements CalendarAdapter {
@@ -89,9 +98,9 @@ export abstract class BaseCalendarAdapter implements CalendarAdapter {
     throw new Error('Webhook unregistration not implemented for this provider');
   }
 
-  verifyWebhookSignature(payload: string, signature: string, secret: string): boolean {
-    throw new Error('Webhook verification not implemented for this provider');
-  }
+  // C8: no generic HMAC verification exists on this interface — Google push
+  // notifications are not payload-signed; they are authenticated by the
+  // X-Goog-Channel-Token plus channel/resource ids (CalendarWebhookService).
 
   async processWebhookEvent(payload: any, signature: string): Promise<any[]> {
     throw new Error('Webhook processing not implemented for this provider');
@@ -114,13 +123,8 @@ export abstract class BaseCalendarAdapter implements CalendarAdapter {
   }
 
   // Abstract methods to be implemented by subclasses
-  abstract getAuthUrl(userId: string, state: string): string;
-  abstract handleCallback(code: string): Promise<{
-    accessToken: string;
-    refreshToken: string;
-    expiresAt: Date;
-    externalUserId: string;
-  }>;
+  abstract getAuthUrl(userId: string, state: string, options?: CalendarAuthUrlOptions): string;
+  abstract handleCallback(code: string, codeVerifier?: string): Promise<CalendarCallbackResult>;
   abstract refreshAccessToken(refreshToken: string): Promise<{ accessToken: string; expiresAt: Date }>;
   abstract createEvent(accessToken: string, event: CalendarEvent): Promise<{ externalId: string; externalETag: string }>;
   abstract updateEvent(accessToken: string, externalId: string, event: Partial<CalendarEvent>): Promise<{ externalETag: string }>;

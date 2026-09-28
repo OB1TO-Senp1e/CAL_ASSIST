@@ -560,7 +560,7 @@ export class MemoryEngineService {
     });
 
     for (const existing of existingMemories) {
-      const conflict = await this.detectConflict(newMemory, existing);
+      const conflict = await this.detectConflict(userId, newMemory, existing);
       if (conflict) {
         await this.prisma.memoryConflict
           .create({
@@ -579,14 +579,18 @@ export class MemoryEngineService {
   }
 
   private async detectConflict(
+    userId: string,
     newMem: any,
     existing: any
   ): Promise<{ type: string; description: string; severity: string } | null> {
+    // C6 payload minimization: the comparison only needs the memory text and
+    // tags — never whole rows with ids, user ids, timestamps or metadata.
+    const slice = (m: any) => ({ content: m.content, category: m.category, tags: m.tags ?? [] });
     const prompt = `
 Compare these two memories for conflicts:
 
-Memory 1 (new): ${JSON.stringify(newMem)}
-Memory 2 (existing): ${JSON.stringify(existing)}
+Memory 1 (new): ${JSON.stringify(slice(newMem))}
+Memory 2 (existing): ${JSON.stringify(slice(existing))}
 
 Identify if they conflict. Types:
 - CONTRADICTION: Directly contradictory information
@@ -606,6 +610,9 @@ Return JSON:
       const response = await this.aiProvider.generateStructured(prompt, {
         temperature: 0.2,
         maxTokens: 500,
+        // C6: stored memories can derive from calendar content.
+        userId,
+        includesGoogleData: true,
       });
 
       if (response.hasConflict && response.type) {

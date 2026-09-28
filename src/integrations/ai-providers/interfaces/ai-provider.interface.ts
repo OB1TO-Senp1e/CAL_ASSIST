@@ -9,6 +9,18 @@ export interface GenerateOptions {
   timeoutMs?: number;
   /** Stage 5a: overrides the retry budget (extra attempts after the first). */
   maxRetries?: number;
+  /**
+   * C6: owning user, required when includesGoogleData is set so the consent
+   * gate can check their grant before anything leaves the server.
+   */
+  userId?: string;
+  /**
+   * C6: true when the prompt may contain Google-sourced (calendar) content.
+   * AiProviderService then refuses the call unless that user granted AI
+   * processing consent. Calls that set this are blocked fail-closed when no
+   * consent gate is wired.
+   */
+  includesGoogleData?: boolean;
 }
 
 /** A single turn of a real conversation, as the Stage 5b agent loop needs it. */

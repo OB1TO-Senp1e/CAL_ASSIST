@@ -40,7 +40,7 @@ export class CalendarOAuthCallbackController {
         throw new Error('code and state are both required');
       }
       const { userId } = this.connectionService.verifyOAuthState(state);
-      await this.connectionService.handleCallback(userId, provider, code);
+      await this.connectionService.handleCallback(userId, provider, code, state);
 
       // Prime the connection so the user is not looking at an empty calendar
       // until the next scheduled sync. Failure here must not lose the tokens.

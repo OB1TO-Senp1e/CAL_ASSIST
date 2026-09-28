@@ -369,6 +369,10 @@ Rules for "input":
       const aiResponse = await this.aiProvider.generateStructured(prompt, {
         temperature: 0.3,
         maxTokens: 3000,
+        // C6: this prompt carries Google-calendar-derived context (event
+        // counts + working hours), so the consent gate must approve it first.
+        userId: context.userId,
+        includesGoogleData: true,
       });
 
       // The prompt asks the model for a bare JSON array; some models (and the

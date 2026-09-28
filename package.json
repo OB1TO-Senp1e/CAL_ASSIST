@@ -65,6 +65,7 @@
     "dayjs": "^1.11.15",
     "express-session": "^1.19.0",
     "joi": "^18.2.9",
+    "openai": "^7.23.0",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
     "passport-jwt": "^4.0.1",

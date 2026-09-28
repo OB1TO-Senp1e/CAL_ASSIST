@@ -19,7 +19,7 @@ function calendar(id: string, name: string, provider: CalendarProvider, color: s
 function seedConnections(): CalendarConnectionDTO[] {
   return [
     { id: 'connection_local', userId: 'usr_demo', provider: 'LOCAL', externalUserId: 'usr_demo', scopes: [], isActive: true, lastSync: now(), syncError: null, createdAt: now(), updatedAt: now(), calendars: [calendar('cal_local_primary', 'Primary', 'LOCAL', '#3b82f6')] },
-    { id: 'connection_google', userId: 'usr_demo', provider: 'GOOGLE', externalUserId: 'demo@gmail.com', scopes: ['calendar.readonly', 'calendar.events'], isActive: true, lastSync: new Date(Date.now() - 18 * 60_000).toISOString(), syncError: null, createdAt: now(), updatedAt: now(), calendars: [calendar('cal_google_work', 'Work', 'GOOGLE', '#34a853'), calendar('cal_google_personal', 'Personal', 'GOOGLE', '#4285f4')] },
+    { id: 'connection_google', userId: 'usr_demo', provider: 'GOOGLE', externalUserId: 'demo@gmail.com', scopes: ['https://www.googleapis.com/auth/calendar.events', 'openid', 'email'], isActive: true, lastSync: new Date(Date.now() - 18 * 60_000).toISOString(), syncError: null, createdAt: now(), updatedAt: now(), calendars: [calendar('cal_google_work', 'Work', 'GOOGLE', '#34a853'), calendar('cal_google_personal', 'Personal', 'GOOGLE', '#4285f4')] },
     { id: 'connection_outlook', userId: 'usr_demo', provider: 'OUTLOOK', externalUserId: null, scopes: [], isActive: false, lastSync: null, syncError: null, createdAt: now(), updatedAt: now(), calendars: [] },
   ];
 }

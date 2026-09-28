@@ -90,6 +90,20 @@ export const authService = {
     }
   },
 
+  /**
+   * C4 — permanent account deletion. The backend requires the caller to echo
+   * back their own email as an explicit confirmation step. Clears the local
+   * session either way; a failure leaves the account intact.
+   */
+  async deleteAccount(confirmEmail: string): Promise<void> {
+    if (USE_AUTH_MOCK) {
+      clearSession();
+      return;
+    }
+    await api.delete('/api/users/me', { data: { confirm: confirmEmail } });
+    localStorage.removeItem('token');
+  },
+
   /** Restore the session on boot. Returns null when there is none. */
   async me(): Promise<AuthUser | null> {
     if (IS_DEV_BYPASS) return toAuthUser(DEV_BYPASS_USER);

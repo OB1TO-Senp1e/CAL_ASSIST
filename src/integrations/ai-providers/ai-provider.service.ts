@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleInit, Optional } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, Optional, Inject } from '@nestjs/common';
 import {
   AIProviderInterface,
   AiChatResult,
@@ -34,6 +34,18 @@ export interface ProviderHealthView {
   circuit: CircuitSnapshot;
 }
 
+/**
+ * C6: consent gate contract. Implemented by AiConsentService; kept as a local
+ * interface so the providers module does not depend on the AI feature module
+ * (and specs can inject a stub). Bound via the string token below because the
+ * interface is erased at runtime.
+ */
+export interface AiConsentGate {
+  hasConsent(userId: string): Promise<boolean>;
+}
+
+export const AI_CONSENT_GATE = 'AI_CONSENT_GATE';
+
 @Injectable()
 export class AiProviderService implements AIProviderInterface, OnModuleInit {
   private readonly logger = new Logger(AiProviderService.name);
@@ -46,17 +58,51 @@ export class AiProviderService implements AIProviderInterface, OnModuleInit {
   // a metrics problem must never take the AI path down with it.
   private readonly metrics: MetricsService | null;
 
+  // C6: consent gate. Optional so specs/scripts keep constructing this with
+  // three args; when absent, gated calls fail CLOSED (see assertConsent).
+  private readonly consentGate: AiConsentGate | null;
+
   constructor(
     private readonly openAIProvider: OpenAIProvider,
     private readonly ollamaProvider: OllamaProvider,
     private readonly nemotronNimProvider: NemotronNimProvider,
     @Optional() metrics?: MetricsService,
-    @Optional() breakers?: CircuitBreakerRegistry
+    @Optional() breakers?: CircuitBreakerRegistry,
+    @Optional() @Inject(AI_CONSENT_GATE) consentGate?: AiConsentGate
   ) {
     this.defaultProvider = openAIProvider;
     this.fallbackProvider = ollamaProvider;
     this.metrics = metrics ?? null;
     this.breakers = breakers ?? defaultCircuitBreakerRegistry;
+    this.consentGate = consentGate ?? null;
+  }
+
+  /**
+   * C6: refuse to send Google-sourced content to an external AI provider
+   * before the user explicitly consented. Fail-closed: a gated call without a
+   * userId, or with no gate wired, is blocked.
+   */
+  private async assertConsent(options: GenerateOptions | undefined, operation: string): Promise<void> {
+    if (!options?.includesGoogleData) return;
+    const userId = options.userId;
+    if (!userId) {
+      throw new AiProviderError(
+        `AI ${operation} blocked: includesGoogleData requires a userId for the consent check`,
+        { provider: 'consent-gate', kind: 'consent_required', retryable: false }
+      );
+    }
+    if (!this.consentGate) {
+      throw new AiProviderError(
+        `AI ${operation} blocked: consent gate is not configured`,
+        { provider: 'consent-gate', kind: 'consent_required', retryable: false }
+      );
+    }
+    if (!(await this.consentGate.hasConsent(userId))) {
+      throw new AiProviderError(
+        'AI processing of your calendar data requires your explicit consent. Grant it in Settings → AI processing consent.',
+        { provider: 'consent-gate', kind: 'consent_required', retryable: false }
+      );
+    }
   }
 
   async onModuleInit(): Promise<void> {
@@ -229,11 +275,13 @@ export class AiProviderService implements AIProviderInterface, OnModuleInit {
   }
 
   async generate(prompt: string, options?: GenerateOptions): Promise<string> {
+    await this.assertConsent(options, 'generate');
     const outcome = await this.invoke('generate', (provider) => provider.generate(prompt, options));
     return outcome.value;
   }
 
   async generateStructured(prompt: string, options?: GenerateOptions): Promise<any> {
+    await this.assertConsent(options, 'structured');
     const outcome = await this.invoke('structured', (provider) =>
       provider.generateStructured(prompt, options)
     );
@@ -246,6 +294,7 @@ export class AiProviderService implements AIProviderInterface, OnModuleInit {
    * misconfigured runtime fails loudly at the call site that can repair it.
    */
   async chat(options: ChatOptions): Promise<AiChatResult> {
+    await this.assertConsent(options, 'chat');
     const outcome = await this.invoke('chat', (provider) => {
       if (!provider.chat) {
         throw new AiProviderError(`${provider.providerName} does not implement chat`, {

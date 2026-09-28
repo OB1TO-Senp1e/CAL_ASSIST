@@ -29,7 +29,9 @@ export type AiProviderErrorKind =
   /** The provider's circuit is open; the request was never attempted. */
   | 'circuit_open'
   /** The provider does not support the requested capability. */
-  | 'unsupported';
+  | 'unsupported'
+  /** C6: the call carries Google-sourced content and the user has not consented. */
+  | 'consent_required';
 
 export interface AiProviderErrorDetails {
   provider: string;

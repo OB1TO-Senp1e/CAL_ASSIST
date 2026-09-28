@@ -386,7 +386,7 @@ export class MeetingIntelligenceService {
     userId: string,
     input: MeetingTranscriptInput,
   ): Promise<PostMeetingResult> {
-    const extracted = await this.extractFromMeeting(input);
+    const extracted = await this.extractFromMeeting(userId, input);
 
     const actionItems = await this.processActionItems(userId, extracted.actionItems);
     const commitments = await this.processCommitments(userId, extracted.commitments);
@@ -428,7 +428,7 @@ export class MeetingIntelligenceService {
     return result;
   }
 
-  private async extractFromMeeting(input: MeetingTranscriptInput): Promise<{
+  private async extractFromMeeting(userId: string, input: MeetingTranscriptInput): Promise<{
     actionItems: ExtractedActionItem[];
     commitments: ExtractedCommitment[];
     deadlines: ExtractedDeadline[];
@@ -452,7 +452,7 @@ Extract structured information from this meeting:
 
 Meeting: ${input.title}
 Duration: ${input.startTime} to ${input.endTime}
-Attendees: ${input.attendees?.map(a => a.name || a.email).join(', ') || 'Unknown'}
+Attendees: ${input.attendees?.map((a, i) => a.name || `Attendee ${i + 1}`).join(', ') || 'Unknown'}
 Content: ${content || 'No transcript/notes provided'}
 
 ${input.extractedContent ? `Pre-extracted content: ${JSON.stringify(input.extractedContent)}` : ''}
@@ -476,6 +476,9 @@ Only extract information explicitly mentioned. Use confidence < 0.7 for uncertai
       const response = await this.aiProvider.generateStructured(prompt, {
         temperature: 0.2,
         maxTokens: 3000,
+        // C6: meeting data comes from the connected Google calendar.
+        userId,
+        includesGoogleData: true,
       });
 
       return {

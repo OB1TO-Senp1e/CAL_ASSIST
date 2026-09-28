@@ -1,7 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { BaseCalendarAdapter } from './base-calendar.adapter';
-import { CalendarEvent, WebhookConfig, WebhookEvent } from './calendar-adapter.interface';
+import {
+  CalendarCallbackResult,
+  CalendarEvent,
+  WebhookConfig,
+  WebhookEvent,
+} from './calendar-adapter.interface';
 
 @Injectable()
 export class AppleCalendarAdapter extends BaseCalendarAdapter {
@@ -44,12 +49,7 @@ export class AppleCalendarAdapter extends BaseCalendarAdapter {
     return `https://appleid.apple.com/auth/authorize?${params.toString()}`;
   }
 
-  async handleCallback(code: string): Promise<{
-    accessToken: string;
-    refreshToken: string;
-    expiresAt: Date;
-    externalUserId: string;
-  }> {
+  async handleCallback(code: string): Promise<CalendarCallbackResult> {
     return this.executeWithRetry(async () => {
       const clientSecret = this.generateClientSecret();
 
@@ -78,6 +78,9 @@ export class AppleCalendarAdapter extends BaseCalendarAdapter {
         refreshToken: tokens.refresh_token,
         expiresAt: new Date(Date.now() + (tokens.expires_in || 3600) * 1000),
         externalUserId: tokens.sub || 'apple_user',
+        scopes: String(tokens.scope || '')
+          .split(' ')
+          .filter(Boolean),
       };
     }, 'Apple OAuth callback');
   }
@@ -289,14 +292,7 @@ export class AppleCalendarAdapter extends BaseCalendarAdapter {
     throw new Error('Webhook unregistration not implemented yet for Apple Calendar');
   }
 
-  verifyWebhookSignature(payload: string, signature: string, secret: string): boolean {
-    const crypto = require('crypto');
-    const expectedSignature = crypto
-      .createHmac('sha256', secret)
-      .update(payload)
-      .digest('base64');
-    return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature));
-  }
+  // C8: misleading verifyWebhookSignature() HMAC helper removed (see base).
 
   async processWebhookEvent(payload: any, signature: string): Promise<any[]> {
     return [];

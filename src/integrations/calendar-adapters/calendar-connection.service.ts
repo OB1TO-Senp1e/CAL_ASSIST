@@ -5,6 +5,8 @@ import { GoogleCalendarAdapter } from './google-calendar.adapter';
 import { OutlookCalendarAdapter } from './outlook-calendar.adapter';
 import { LocalCalendarAdapter } from './local-calendar.adapter';
 import { CalendarAdapter } from './calendar-adapter.interface';
+import { OAuthTokenCryptoService } from './oauth-token-crypto.service';
+import { PkceService } from './pkce.service';
 
 export interface CalendarConnectionData {
   provider: string;
@@ -69,7 +71,16 @@ export class CalendarConnectionService {
     private readonly googleAdapter: GoogleCalendarAdapter,
     private readonly outlookAdapter: OutlookCalendarAdapter,
     private readonly localAdapter: LocalCalendarAdapter,
-    private readonly jwt: JwtService
+    private readonly jwt: JwtService,
+    // C2: this service is the single repository layer for the accessToken /
+    // refreshToken columns. Everything persisted here is encrypted, everything
+    // read back out is decrypted, so no other code ever sees raw ciphertext
+    // and no other code may touch those columns.
+    private readonly tokenCrypto: OAuthTokenCryptoService,
+    // C7: PKCE store for the Google calendar flow. Optional so existing specs
+    // keep constructing the service; when absent, Google auth is refused
+    // rather than run without PKCE (see getAuthUrl/handleCallback guards).
+    private readonly pkce?: PkceService
   ) {
     this.adapters.set('GOOGLE', this.googleAdapter);
     this.adapters.set('OUTLOOK', this.outlookAdapter);
@@ -107,21 +118,63 @@ export class CalendarConnectionService {
     return { userId: payload.sub, provider: String(payload.calProvider ?? '') };
   }
 
-  getAuthUrl(userId: string, provider: string, state?: string): string {
+  /**
+   * Builds the provider authorization URL.
+   *
+   * C1: `prompt=consent` (which is what makes Google reissue a refresh token)
+   * is only requested when we have no stored refresh token for this user —
+   * i.e. first connect or a re-auth after the token was lost. Otherwise the
+   * user would see the full consent screen on every reconnect.
+   */
+  async getAuthUrl(userId: string, provider: string, state?: string): Promise<string> {
     const adapter = this.getAdapter(provider);
     if (!adapter) {
       throw new Error(`Unsupported calendar provider: ${provider}`);
     }
-    return adapter.getAuthUrl(userId, state || this.createOAuthState(userId, provider));
+    const existing = await this.getConnection(userId, provider);
+    const requestConsentPrompt = !existing?.refreshToken;
+    const oauthState = state || this.createOAuthState(userId, provider);
+
+    // C7: PKCE for the Google flow. The verifier is minted and stored here
+    // (server-side, single-use, 10-minute TTL) and only the S256 challenge
+    // goes into the URL. Fail-closed: if the store is unavailable we do not
+    // start an auth that cannot be completed safely.
+    let pkce: { challenge: string; method: 'S256' } | null = null;
+    if (provider.toUpperCase() === 'GOOGLE') {
+      if (!this.pkce) {
+        throw new BadRequestException(
+          'Google calendar sign-in is unavailable: PKCE store is not configured.'
+        );
+      }
+      const challenge = await this.pkce.create(oauthState, userId, provider);
+      pkce = { challenge: challenge.challenge, method: 'S256' };
+    }
+
+    return adapter.getAuthUrl(userId, oauthState, {
+      requestConsentPrompt,
+      ...(pkce ? { codeChallenge: pkce.challenge, codeChallengeMethod: pkce.method } : {}),
+    });
   }
 
-  async handleCallback(userId: string, provider: string, code: string): Promise<void> {
+  async handleCallback(userId: string, provider: string, code: string, state?: string): Promise<void> {
     const adapter = this.getAdapter(provider);
     if (!adapter) {
       throw new Error(`Unsupported calendar provider: ${provider}`);
     }
 
-    const tokenData = await adapter.handleCallback(code);
+    // C7: redeem the single-use verifier for Google callbacks. Missing/expired/
+    // reused state is rejected here before any token exchange happens.
+    let codeVerifier: string | undefined;
+    if (provider.toUpperCase() === 'GOOGLE') {
+      if (!state || !this.pkce) {
+        throw new BadRequestException(
+          'Calendar sign-in is missing its security state. Please start the connection again.'
+        );
+      }
+      codeVerifier = await this.pkce.consume(state);
+    }
+
+    const tokenData = await adapter.handleCallback(code, codeVerifier);
 
     await this.prisma.calendarConnection.upsert({
       where: {
@@ -132,10 +185,13 @@ export class CalendarConnectionService {
       },
       update: {
         externalUserId: tokenData.externalUserId,
-        accessToken: tokenData.accessToken,
-        refreshToken: tokenData.refreshToken,
+        // C2: only ciphertext ever reaches the database.
+        accessToken: this.tokenCrypto.encrypt(tokenData.accessToken),
+        refreshToken: this.tokenCrypto.encrypt(tokenData.refreshToken),
         tokenExpiresAt: tokenData.expiresAt,
-        scopes: adapter.scopes,
+        // C1: store what the provider actually granted (validated in the
+        // adapter), not what we asked for, so scope checks are truthful.
+        scopes: tokenData.scopes,
         isActive: true,
         syncError: null,
         lastSync: new Date(),
@@ -144,10 +200,10 @@ export class CalendarConnectionService {
         userId,
         provider: provider.toUpperCase() as any,
         externalUserId: tokenData.externalUserId,
-        accessToken: tokenData.accessToken,
-        refreshToken: tokenData.refreshToken,
+        accessToken: this.tokenCrypto.encrypt(tokenData.accessToken),
+        refreshToken: this.tokenCrypto.encrypt(tokenData.refreshToken),
         tokenExpiresAt: tokenData.expiresAt,
-        scopes: adapter.scopes,
+        scopes: tokenData.scopes,
         isActive: true,
       },
     });
@@ -162,7 +218,33 @@ export class CalendarConnectionService {
     });
   }
 
+  /**
+   * C3: revoke the provider grant first, then remove local rows. A revoke
+   * failure is logged (never with token material) and does NOT block the
+   * deletion — leaving the row behind would be worse for the user than an
+   * orphaned grant we could not cancel.
+   */
   async disconnect(userId: string, provider: string): Promise<void> {
+    const adapter = this.getAdapter(provider);
+    if (adapter) {
+      const connection = await this.getConnection(userId, provider);
+      if (connection?.accessToken || connection?.refreshToken) {
+        try {
+          await adapter.disconnect(connection.accessToken ?? '', connection.refreshToken ?? '');
+        } catch (error: any) {
+          // Belt-and-braces: a provider error could echo token material, so
+          // scrub every known token value from the message before logging.
+          let message = String(error?.message ?? error);
+          for (const token of [connection.accessToken, connection.refreshToken]) {
+            if (token) message = message.split(token).join('[redacted]');
+          }
+          this.logger.warn(
+            `Provider token revocation failed for ${provider} (user ${userId}); continuing with local disconnect: ${message}`
+          );
+        }
+      }
+    }
+
     await this.prisma.calendarConnection.deleteMany({
       where: {
         userId,
@@ -187,14 +269,25 @@ export class CalendarConnectionService {
     });
   }
 
+  /**
+   * Raw connection row for server-side use with **decrypted** tokens (C2).
+   * Public HTTP shapes use getPublicConnection(s), which never select token
+   * columns at all.
+   */
   async getConnection(userId: string, provider: string) {
-    return this.prisma.calendarConnection.findFirst({
+    const connection = await this.prisma.calendarConnection.findFirst({
       where: {
         userId,
         provider: provider.toUpperCase() as any,
         isActive: true,
       },
     });
+    if (!connection) return connection;
+    return {
+      ...connection,
+      accessToken: this.tokenCrypto.decrypt(connection.accessToken),
+      refreshToken: this.tokenCrypto.decrypt(connection.refreshToken),
+    };
   }
 
   /** Token-free single connection for HTTP responses. */
@@ -254,7 +347,8 @@ export class CalendarConnectionService {
     await this.prisma.calendarConnection.update({
       where: { id: connection.id },
       data: {
-        accessToken: tokens.accessToken,
+        // C2: fresh access token is encrypted before it hits the column.
+        accessToken: this.tokenCrypto.encrypt(tokens.accessToken),
         tokenExpiresAt: tokens.expiresAt,
       },
     });

@@ -6,6 +6,8 @@ import { CalendarConnectionService } from './calendar-connection.service';
  * (GET /api/calendar/connections, GET /api/calendar/connections/:provider).
  */
 describe('CalendarConnectionService public shape', () => {
+  // Passthrough crypto stub: these tests audit the *select shape*, not the
+  // cipher. The cipher itself is covered in oauth-token-crypto.service.spec.ts.
   const makeService = (prisma: any) =>
     new CalendarConnectionService(
       prisma,
@@ -13,6 +15,7 @@ describe('CalendarConnectionService public shape', () => {
       {} as any,
       {} as any,
       { sign: () => 'jwt', verify: () => ({}) } as any,
+      { encrypt: (v: any) => v, decrypt: (v: any) => v } as any,
     );
 
   const collectKeys = (node: any): Set<string> => {

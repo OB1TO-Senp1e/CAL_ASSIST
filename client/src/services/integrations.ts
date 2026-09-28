@@ -43,7 +43,7 @@ export const integrationsService = {
     await latency(340, 580); const rows = integrationMock.connections(); const index = rows.findIndex((row) => row.provider === provider);
     const time = integrationMock.now();
     if (index < 0) throw new Error('Unsupported calendar provider');
-    rows[index] = { ...rows[index], externalUserId: provider === 'GOOGLE' ? 'demo@gmail.com' : 'demo@outlook.test', scopes: provider === 'GOOGLE' ? ['calendar.readonly', 'calendar.events'] : ['Calendars.ReadWrite'], isActive: true, syncError: null, lastSync: time, updatedAt: time, calendars: [integrationMock.calendar(`${provider.toLowerCase()}_primary`, 'Primary', provider, provider === 'GOOGLE' ? '#34a853' : '#0078d4')] };
+    rows[index] = { ...rows[index], externalUserId: provider === 'GOOGLE' ? 'demo@gmail.com' : 'demo@outlook.test', scopes: provider === 'GOOGLE' ? ['https://www.googleapis.com/auth/calendar.events', 'openid', 'email'] : ['Calendars.ReadWrite'], isActive: true, syncError: null, lastSync: time, updatedAt: time, calendars: [integrationMock.calendar(`${provider.toLowerCase()}_primary`, 'Primary', provider, provider === 'GOOGLE' ? '#34a853' : '#0078d4')] };
     integrationMock.saveConnections(rows); return rows[index];
   },
   async disconnect(provider: CalendarProvider): Promise<void> {

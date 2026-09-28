@@ -37,6 +37,10 @@ export function LoginPage() {
           <Link to="/register" className="font-medium text-primary hover:underline">
             Create one
           </Link>
+          <span className="mx-2 text-muted-foreground" aria-hidden>·</span>
+          <Link to="/privacy" className="text-muted-foreground hover:underline">Privacy</Link>
+          <span className="mx-1 text-muted-foreground" aria-hidden>·</span>
+          <Link to="/terms" className="text-muted-foreground hover:underline">Terms</Link>
         </>
       }
     >
