@@ -38,7 +38,7 @@ Measurements are from the current worktree on `perf/optimise` and use the produc
 | P4 | HUMAN | `.env` targets the hosted pooler; no local PostgreSQL instance is available for seeded p95s or `EXPLAIN`. No migration or external DB request was made. |
 | P5 | HUMAN | No test Google account/calendar or API-call counter is available; did not trigger OAuth, calendar sync, or external Google requests. |
 | P6 | HUMAN | No isolated local/test LLM or TTFT harness is available; assistant requests persist user content and may call a billable provider, so no baseline request was sent. |
-| P7 | TODO | No cache target established from measured hot traffic. |
+| P7 | HUMAN | P0 did not produce request-frequency/latency evidence; cache remains intentionally absent rather than being added speculatively. |
 | P8 | TODO | No interaction/perceived-performance benchmark captured. |
 | P9 | TODO | Budget guard and README benchmark instructions remain to be implemented. |
 | P10 | TODO | Final report remains to be written after iterations. |
@@ -66,6 +66,7 @@ Measurements are from the current worktree on `perf/optimise` and use the produc
 | 4 | Local read-endpoint p95 and query plans | — | HUMAN; no local PostgreSQL instance; hosted database intentionally not queried | `node scripts/perf-smoke.mjs` and `EXPLAIN (ANALYZE, BUFFERS)` require a local seeded DB |
 | 5 | Google API calls per sync/view | — | HUMAN; no test calendar or request counter; OAuth/consent flow not triggered | Google sync integration tests require test credentials and an authorized calendar |
 | 6 | Assistant time-to-first-token / fallback | — | HUMAN; no local model or isolated test provider; no user content sent to an external LLM | Requires a controlled assistant fixture and TTFT-capable client measurement |
+| 7 | Cache hit rate / latency / invalidation | — | HUMAN; no endpoint identified as hot from measured traffic | No caching change made without per-user hit-rate and invalidation evidence |
 
 The bundle script reports raw and gzip bytes for every emitted JS/CSS asset and the HTML entry's static JS dependency graph. The API smoke script is deliberately loopback-only, issues GET requests, performs no seeding or writes, and does not call an external LLM.
 
@@ -85,7 +86,8 @@ The bundle script reports raw and gzip bytes for every emitted JS/CSS asset and 
 | 4 | Made no query/index change without local query-plan evidence; avoids running seed data, `EXPLAIN ANALYZE`, or migrations against the hosted pooler. |
 | 5 | Made no Google sync changes without a measurable API-call baseline; did not access external calendars or alter consent/scope behavior. |
 | 6 | Made no assistant streaming/context change without controlled TTFT and fallback measurements; no content was sent to the configured provider. |
+| 7 | Added no cache: the measured baseline does not identify a hot endpoint, and user-scoped cache invalidation cannot be validated without a local seed. |
 
 ## Iteration Counter
 
-6 — P0 baseline, P1 route split, and P2-P6 measurement limitations.
+7 — P0 baseline, P1 route split, and P2-P7 measurement limitations.
