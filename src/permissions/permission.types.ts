@@ -151,6 +151,79 @@ export const PermissionCheckInputSchema = z.object({
 
 export type PermissionCheckInput = z.infer<typeof PermissionCheckInputSchema>;
 
+/**
+ * Stage 4k runtime contracts. The `/api/permissions` controller used to take
+ * bare `@Body() body: SomeTsType` with no pipe, and because these types are
+ * zod-inferred they vanish at compile time — anything reached the database.
+ * `userId` is injected from the JWT, never from the body.
+ */
+export const CheckPermissionInputSchema = PermissionCheckInputSchema.omit({ userId: true });
+export type CheckPermissionInput = z.infer<typeof CheckPermissionInputSchema>;
+
+export const GrantPermissionInputSchema = z.object({
+  action: PermissionActionSchema,
+  scope: PermissionScopeSchema,
+  decision: PermissionDecisionSchema,
+  conditions: z.record(z.any()).default({}),
+  grantedBy: z.string().optional(),
+  expiresAt: z.string().datetime().optional().nullable(),
+});
+
+export type GrantPermissionInput = z.infer<typeof GrantPermissionInputSchema>;
+
+export const CreateAutonomyPolicyInputSchema = z.object({
+  name: z.string().min(1).max(200),
+  description: z.string().max(500).optional(),
+  autonomyLevel: AutonomyLevelSchema,
+  enabledScopes: z.array(PermissionScopeSchema).default([]),
+  allowedActions: z.array(PermissionActionSchema).default([]),
+  riskThreshold: z.enum(['NONE', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL']).default('LOW'),
+  requireConfirmationFor: z.array(PermissionActionSchema).default([]),
+  protectedEntities: z
+    .array(
+      z.object({
+        type: z.enum(['EVENT', 'TASK', 'COMMITMENT', 'GOAL', 'PROJECT']),
+        id: z.string(),
+        reason: z.string(),
+      }),
+    )
+    .default([]),
+  timeRestrictions: z
+    .array(
+      z.object({
+        startTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/),
+        endTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/),
+        days: z.array(z.number().int().min(0).max(6)),
+      }),
+    )
+    .default([]),
+  maxActionsPerPeriod: z
+    .object({
+      count: z.number().int().positive(),
+      periodMinutes: z.number().int().positive(),
+    })
+    .optional(),
+  isActive: z.boolean().default(true),
+  priority: z.number().int().default(0),
+});
+
+export type CreateAutonomyPolicyInput = z.infer<typeof CreateAutonomyPolicyInputSchema>;
+
+export const UpdateAutonomyPolicyInputSchema = CreateAutonomyPolicyInputSchema.partial();
+export type UpdateAutonomyPolicyInput = z.infer<typeof UpdateAutonomyPolicyInputSchema>;
+
+export const ApplyTemplateInputSchema = z.object({
+  templateId: z.string().min(1),
+});
+export type ApplyTemplateInput = z.infer<typeof ApplyTemplateInputSchema>;
+
+/** Undo takes the audit id from the body; userId comes from the JWT. */
+export const UndoActionInputSchema = z.object({
+  auditRecordId: z.string().min(1),
+  reason: z.string().optional(),
+});
+export type UndoActionInput = z.infer<typeof UndoActionInputSchema>;
+
 export const PermissionCheckResultSchema = z.object({
   allowed: z.boolean(),
   decision: PermissionDecisionSchema,

@@ -1,12 +1,23 @@
 import { Controller, Get, Post, Put, Delete, Body, UseGuards, Request, Param, Query } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { PermissionService } from './permission.service';
 import {
   PermissionAction,
   PermissionScope,
-  PermissionCheckInput,
-  AutonomyPolicy,
   UndoRequest,
+  CheckPermissionInputSchema,
+  CheckPermissionInput,
+  GrantPermissionInputSchema,
+  GrantPermissionInput,
+  CreateAutonomyPolicyInputSchema,
+  CreateAutonomyPolicyInput,
+  UpdateAutonomyPolicyInputSchema,
+  UpdateAutonomyPolicyInput,
+  ApplyTemplateInputSchema,
+  ApplyTemplateInput,
+  UndoActionInputSchema,
+  UndoActionInput,
 } from './permission.types';
 
 @Controller('permissions')
@@ -15,7 +26,10 @@ export class PermissionController {
   constructor(private readonly permissionService: PermissionService) {}
 
   @Post('check')
-  async checkPermission(@Request() req, @Body() body: PermissionCheckInput) {
+  async checkPermission(
+    @Request() req,
+    @Body(new ZodValidationPipe(CheckPermissionInputSchema)) body: CheckPermissionInput,
+  ) {
     return this.permissionService.checkPermission({ ...body, userId: req.user.id });
   }
 
@@ -31,7 +45,7 @@ export class PermissionController {
   @Post('permissions')
   async grantPermission(
     @Request() req,
-    @Body() body: Omit<import('./permission.types').UserPermission, 'id' | 'grantedAt' | 'isActive'>,
+    @Body(new ZodValidationPipe(GrantPermissionInputSchema)) body: GrantPermissionInput,
   ) {
     return this.permissionService.grantPermission(req.user.id, body);
   }
@@ -55,7 +69,7 @@ export class PermissionController {
   @Post('autonomy-policies')
   async createPolicy(
     @Request() req,
-    @Body() body: Omit<import('./permission.types').AutonomyPolicy, 'id' | 'userId' | 'createdAt' | 'updatedAt'>,
+    @Body(new ZodValidationPipe(CreateAutonomyPolicyInputSchema)) body: CreateAutonomyPolicyInput,
   ) {
     return this.permissionService.createAutonomyPolicy(req.user.id, body);
   }
@@ -64,7 +78,7 @@ export class PermissionController {
   async updatePolicy(
     @Request() req,
     @Param('id') id: string,
-    @Body() body: Partial<import('./permission.types').AutonomyPolicy>,
+    @Body(new ZodValidationPipe(UpdateAutonomyPolicyInputSchema)) body: UpdateAutonomyPolicyInput,
   ) {
     return this.permissionService.updateAutonomyPolicy(req.user.id, id, body);
   }
@@ -76,7 +90,10 @@ export class PermissionController {
   }
 
   @Post('apply-template')
-  async applyTemplate(@Request() req, @Body() body: { templateId: string }) {
+  async applyTemplate(
+    @Request() req,
+    @Body(new ZodValidationPipe(ApplyTemplateInputSchema)) body: ApplyTemplateInput,
+  ) {
     await this.permissionService.applyTemplate(req.user.id, body.templateId);
     return { success: true };
   }
@@ -87,8 +104,14 @@ export class PermissionController {
   }
 
   @Post('undo')
-  async undoAction(@Request() req, @Body() body: UndoRequest) {
-    return this.permissionService.undoAction(req.user.id, body);
+  async undoAction(
+    @Request() req,
+    @Body(new ZodValidationPipe(UndoActionInputSchema)) body: UndoActionInput,
+  ) {
+    return this.permissionService.undoAction(req.user.id, {
+      ...body,
+      userId: req.user.id,
+    } satisfies UndoRequest);
   }
 
   @Get('audit')

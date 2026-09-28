@@ -18,8 +18,6 @@ import {
 @Injectable()
 export class PermissionService {
   private readonly logger = new Logger(PermissionService.name);
-  private readonly permissionScopePrefix = 'calassist.permission:';
-  private readonly policyMarker = 'calassistPolicy';
 
   private readonly templates: PermissionTemplate[] = [
     {
@@ -194,9 +192,15 @@ export class PermissionService {
     return false;
   }
 
+  /**
+   * Explicit grants read straight from the structured Permission columns.
+   * Stage 4k: the whole grant used to be URL-encoded JSON smuggled through the
+   * `scope` string behind a `calassist.permission:` prefix; the prefix filter
+   * and the decode step are both gone.
+   */
   async getUserPermissions(userId: string, action?: PermissionAction, scope?: PermissionScope): Promise<UserPermission[]> {
     const stored = await this.prisma.permission.findMany({
-      where: { userId, isActive: true, scope: { startsWith: this.permissionScopePrefix } },
+      where: { userId, isActive: true },
     });
     return stored
       .map((permission) => this.mapToUserPermission(permission))
@@ -208,65 +212,78 @@ export class PermissionService {
   }
 
   async grantPermission(userId: string, permission: Omit<UserPermission, 'id' | 'grantedAt' | 'isActive' | 'userId'>): Promise<UserPermission> {
-    const existing = (await this.getUserPermissions(userId))
-      .find((item) => item.action === permission.action && item.scope === permission.scope);
-    const encodedScope = this.encodePermissionScope(permission);
-    const data = {
-      scope: encodedScope,
-      level: 'EXECUTE' as const,
-      grantedBy: permission.grantedBy || 'USER',
-      expiresAt: permission.expiresAt ? new Date(permission.expiresAt) : null,
-      isActive: true,
-    };
-    const saved = existing
-      ? await this.prisma.permission.update({ where: { id: existing.id }, data })
-      : await this.prisma.permission.create({ data: { userId, ...data } });
+    const saved = await this.prisma.permission.upsert({
+      where: {
+        userId_action_scope: { userId, action: permission.action, scope: permission.scope },
+      },
+      update: {
+        decision: permission.decision,
+        conditions: (permission.conditions ?? {}) as object,
+        grantedBy: permission.grantedBy || 'USER',
+        expiresAt: permission.expiresAt ? new Date(permission.expiresAt) : null,
+        isActive: true,
+      },
+      create: {
+        userId,
+        action: permission.action,
+        scope: permission.scope,
+        decision: permission.decision,
+        conditions: (permission.conditions ?? {}) as object,
+        grantedBy: permission.grantedBy || 'USER',
+        expiresAt: permission.expiresAt ? new Date(permission.expiresAt) : null,
+        isActive: true,
+      },
+    });
     return this.mapToUserPermission(saved);
   }
 
   async revokePermission(userId: string, permissionId: string): Promise<void> {
-    await this.prisma.permission.update({
+    const revoked = await this.prisma.permission.updateMany({
       where: { id: permissionId, userId },
       data: { isActive: false },
     });
+    if (revoked.count === 0) {
+      throw new NotFoundException('Permission not found');
+    }
   }
 
+  /**
+   * Stage 4k: policies are rows in the dedicated AutonomyPolicy table. They
+   * used to be JSON.stringify-ed into AutonomyRule.actionConfig under a
+   * `calassistPolicy` marker, which forced the rules/replanning engines to
+   * distinguish row types by sniffing that marker.
+   */
   async getAutonomyPolicies(userId: string): Promise<AutonomyPolicy[]> {
-    const rules = await this.prisma.autonomyRule.findMany({
+    const rows = await this.prisma.autonomyPolicy.findMany({
       where: { userId, isActive: true },
       orderBy: { priority: 'desc' },
     });
-    return rules
-      .filter((rule) => this.isStoredPolicy(rule.actionConfig))
-      .map((rule) => this.mapToAutonomyPolicy(rule));
+    return rows.map((row) => this.mapToAutonomyPolicy(row));
   }
 
   async getActiveAutonomyPolicy(userId: string): Promise<AutonomyPolicy | null> {
-    const rules = await this.prisma.autonomyRule.findMany({
+    const row = await this.prisma.autonomyPolicy.findFirst({
       where: { userId, isActive: true },
       orderBy: { priority: 'desc' },
     });
-    const policy = rules.find((rule) => this.isStoredPolicy(rule.actionConfig));
-    return policy ? this.mapToAutonomyPolicy(policy) : null;
+    return row ? this.mapToAutonomyPolicy(row) : null;
   }
 
   async createAutonomyPolicy(userId: string, input: Omit<AutonomyPolicy, 'id' | 'userId' | 'createdAt' | 'updatedAt'>): Promise<AutonomyPolicy> {
-    const policy = {
-      ...input,
-      protectedEntities: input.protectedEntities || [],
-      timeRestrictions: input.timeRestrictions || [],
-    };
-    const stored = await this.prisma.autonomyRule.create({
+    const stored = await this.prisma.autonomyPolicy.create({
       data: {
         userId,
         name: input.name,
         description: input.description,
-        scope: 'POLICY',
-        triggerType: 'MANUAL',
-        actionType: 'ADJUST_PREFERENCE',
-        conditions: { kind: this.policyMarker },
-        actionConfig: { [this.policyMarker]: JSON.stringify(policy) },
-        isActive: input.isActive,
+        autonomyLevel: input.autonomyLevel,
+        enabledScopes: input.enabledScopes ?? [],
+        allowedActions: input.allowedActions ?? [],
+        riskThreshold: input.riskThreshold ?? 'LOW',
+        requireConfirmationFor: input.requireConfirmationFor ?? [],
+        protectedEntities: (input.protectedEntities ?? []) as object,
+        timeRestrictions: (input.timeRestrictions ?? []) as object,
+        maxActionsPerPeriod: input.maxActionsPerPeriod as object | undefined,
+        isActive: input.isActive ?? true,
         priority: input.priority ?? 0,
       },
     });
@@ -274,41 +291,44 @@ export class PermissionService {
   }
 
   async updateAutonomyPolicy(userId: string, policyId: string, updates: Partial<AutonomyPolicy>): Promise<AutonomyPolicy> {
-    const rule = await this.prisma.autonomyRule.findFirst({
+    const existing = await this.prisma.autonomyPolicy.findFirst({
       where: { id: policyId, userId },
     });
-    if (!rule || !this.isStoredPolicy(rule.actionConfig)) {
+    if (!existing) {
       throw new NotFoundException('Autonomy policy not found');
     }
 
-    const currentPolicy = this.readStoredPolicy(rule.actionConfig);
-    const updatedPolicy = {
-      ...currentPolicy,
-      ...updates,
-      id: undefined,
-      userId: undefined,
-      createdAt: undefined,
-      updatedAt: undefined,
-    };
-    const updated = await this.prisma.autonomyRule.update({
+    const updated = await this.prisma.autonomyPolicy.update({
       where: { id: policyId },
       data: {
-        name: updates.name ?? rule.name,
-        description: updates.description ?? rule.description,
-        actionConfig: { [this.policyMarker]: JSON.stringify(updatedPolicy) },
-        isActive: updates.isActive ?? rule.isActive,
-        priority: updates.priority ?? rule.priority,
+        name: updates.name ?? existing.name,
+        description: updates.description ?? existing.description,
+        autonomyLevel: updates.autonomyLevel ?? existing.autonomyLevel,
+        enabledScopes: updates.enabledScopes ?? existing.enabledScopes,
+        allowedActions: updates.allowedActions ?? existing.allowedActions,
+        riskThreshold: updates.riskThreshold ?? existing.riskThreshold,
+        requireConfirmationFor: updates.requireConfirmationFor ?? existing.requireConfirmationFor,
+        protectedEntities: (updates.protectedEntities ?? existing.protectedEntities) as object,
+        timeRestrictions: (updates.timeRestrictions ?? existing.timeRestrictions) as object,
+        maxActionsPerPeriod:
+          updates.maxActionsPerPeriod === undefined
+            ? (existing.maxActionsPerPeriod as object | undefined)
+            : (updates.maxActionsPerPeriod as object | undefined),
+        isActive: updates.isActive ?? existing.isActive,
+        priority: updates.priority ?? existing.priority,
       },
     });
     return this.mapToAutonomyPolicy(updated);
   }
 
   async deleteAutonomyPolicy(userId: string, policyId: string): Promise<void> {
-    const rule = await this.prisma.autonomyRule.findFirst({ where: { id: policyId, userId } });
-    if (!rule || !this.isStoredPolicy(rule.actionConfig)) {
+    const existing = await this.prisma.autonomyPolicy.findFirst({
+      where: { id: policyId, userId },
+    });
+    if (!existing) {
       throw new NotFoundException('Autonomy policy not found');
     }
-    await this.prisma.autonomyRule.delete({ where: { id: policyId } });
+    await this.prisma.autonomyPolicy.delete({ where: { id: policyId } });
   }
 
   async applyTemplate(userId: string, templateId: string): Promise<void> {
@@ -481,17 +501,39 @@ export class PermissionService {
   private mapToAutonomyPolicy(p: {
     id: string;
     userId: string;
-    actionConfig: unknown;
-    createdAt: Date;
-    updatedAt: Date;
+    name: string;
+    description: string | null;
+    autonomyLevel: string;
+    enabledScopes: string[];
+    allowedActions: string[];
+    riskThreshold: string;
+    requireConfirmationFor: string[];
+    protectedEntities: unknown;
+    timeRestrictions: unknown;
+    maxActionsPerPeriod: unknown;
     isActive: boolean;
     priority: number;
+    createdAt: Date;
+    updatedAt: Date;
   }): AutonomyPolicy {
-    const storedPolicy = this.readStoredPolicy(p.actionConfig);
     return {
       id: p.id,
       userId: p.userId,
-      ...storedPolicy,
+      name: p.name,
+      description: p.description ?? undefined,
+      autonomyLevel: p.autonomyLevel as AutonomyPolicy['autonomyLevel'],
+      enabledScopes: p.enabledScopes as AutonomyPolicy['enabledScopes'],
+      allowedActions: p.allowedActions as AutonomyPolicy['allowedActions'],
+      riskThreshold: p.riskThreshold as AutonomyPolicy['riskThreshold'],
+      requireConfirmationFor:
+        p.requireConfirmationFor as AutonomyPolicy['requireConfirmationFor'],
+      protectedEntities: Array.isArray(p.protectedEntities)
+        ? (p.protectedEntities as AutonomyPolicy['protectedEntities'])
+        : [],
+      timeRestrictions: Array.isArray(p.timeRestrictions)
+        ? (p.timeRestrictions as AutonomyPolicy['timeRestrictions'])
+        : [],
+      maxActionsPerPeriod: p.maxActionsPerPeriod as AutonomyPolicy['maxActionsPerPeriod'],
       isActive: p.isActive,
       priority: p.priority,
       createdAt: p.createdAt.toISOString(),
@@ -499,54 +541,32 @@ export class PermissionService {
     };
   }
 
-  private encodePermissionScope(
-    permission: Omit<UserPermission, 'id' | 'grantedAt' | 'isActive' | 'userId'>
-  ): string {
-    return `${this.permissionScopePrefix}${encodeURIComponent(JSON.stringify(permission))}`;
-  }
-
   private mapToUserPermission(permission: {
     id: string;
     userId: string;
+    action: string;
     scope: string;
-    grantedAt: Date;
+    decision: string;
+    conditions: unknown;
     grantedBy: string;
+    grantedAt: Date;
     expiresAt: Date | null;
     isActive: boolean;
   }): UserPermission {
-    const payload = JSON.parse(
-      decodeURIComponent(permission.scope.slice(this.permissionScopePrefix.length))
-    ) as Pick<UserPermission, 'action' | 'scope' | 'decision' | 'conditions'>;
     return {
       id: permission.id,
       userId: permission.userId,
-      ...payload,
+      action: permission.action as UserPermission['action'],
+      scope: permission.scope as UserPermission['scope'],
+      decision: permission.decision as UserPermission['decision'],
+      conditions:
+        permission.conditions && typeof permission.conditions === 'object'
+          ? (permission.conditions as Record<string, unknown>)
+          : {},
       grantedAt: permission.grantedAt.toISOString(),
       grantedBy: permission.grantedBy,
       expiresAt: permission.expiresAt?.toISOString() ?? null,
       isActive: permission.isActive,
     };
-  }
-
-  private isStoredPolicy(actionConfig: unknown): boolean {
-    return Boolean(
-      actionConfig &&
-      typeof actionConfig === 'object' &&
-      this.policyMarker in actionConfig
-    );
-  }
-
-  private readStoredPolicy(actionConfig: unknown): Omit<AutonomyPolicy, 'id' | 'userId' | 'createdAt' | 'updatedAt'> {
-    if (!this.isStoredPolicy(actionConfig)) {
-      throw new BadRequestException('Autonomy policy data is missing or invalid');
-    }
-    const encoded = (actionConfig as Record<string, unknown>)[this.policyMarker];
-    if (typeof encoded !== 'string') {
-      throw new BadRequestException('Autonomy policy data is malformed');
-    }
-    return JSON.parse(encoded) as Omit<
-      AutonomyPolicy,
-      'id' | 'userId' | 'createdAt' | 'updatedAt'
-    >;
   }
 }

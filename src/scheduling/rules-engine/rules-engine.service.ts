@@ -27,7 +27,6 @@ import {
 @Injectable()
 export class RulesEngineService {
   private readonly logger = new Logger(RulesEngineService.name);
-  private readonly policyMarker = 'calassistPolicy';
 
   constructor(
     private readonly prisma: PrismaService,
@@ -78,7 +77,7 @@ export class RulesEngineService {
       where: { id: ruleId, userId },
     });
 
-    if (!rule || this.isPolicyRow(rule)) {
+    if (!rule || !this.isRuleRow(rule)) {
       throw new NotFoundException(`Rule ${ruleId} not found`);
     }
 
@@ -92,7 +91,7 @@ export class RulesEngineService {
       where: { id, userId },
     });
 
-    if (!existing || this.isPolicyRow(existing)) {
+    if (!existing || !this.isRuleRow(existing)) {
       throw new NotFoundException(`Rule ${id} not found`);
     }
 
@@ -135,11 +134,12 @@ export class RulesEngineService {
       where: { id: ruleId, userId },
     });
 
-    if (!rule || this.isPolicyRow(rule)) {
+    if (!rule || !this.isRuleRow(rule)) {
       throw new NotFoundException(`Rule ${ruleId} not found`);
     }
 
     await this.prisma.autonomyRule.delete({ where: { id: ruleId } });
+    await this.removeConflictsForRule(userId, ruleId);
   }
 
   async listRules(
@@ -159,7 +159,7 @@ export class RulesEngineService {
     });
 
     let mapped = rules
-      .filter((rule) => !this.isPolicyRow(rule))
+      .filter((rule) => !!this.isRuleRow(rule))
       .map((r) => this.mapToRule(r));
 
     if (filters?.type) {
@@ -235,17 +235,17 @@ export class RulesEngineService {
   }
 
   async checkRuleConflicts(userId: string, ruleId: string): Promise<RuleConflict[]> {
+    await this.reconcileConflicts(userId);
     const rules = await this.prisma.autonomyRule.findMany({
-      where: { userId, isActive: true },
+      where: { userId },
     });
-    const newRule = rules.find((rule) => rule.id === ruleId && !this.isPolicyRow(rule));
-    if (!newRule) return [];
-    return rules
-      .filter((rule) => rule.id !== ruleId && !this.isPolicyRow(rule))
-      .flatMap((existing) => {
-        const result = this.createRuleConflict(newRule, existing);
-        return result ? [result] : [];
-      });
+    const conflictRows = await this.prisma.ruleConflict.findMany({
+      where: { userId },
+    });
+    const ruleNames = new Map(rules.map((rule) => [rule.id, rule.name]));
+    return conflictRows
+      .filter((row) => row.ruleId1 === ruleId || row.ruleId2 === ruleId)
+      .map((row) => this.mapConflict(row, ruleNames));
   }
 
   private detectConflict(
@@ -289,40 +289,26 @@ export class RulesEngineService {
     return null;
   }
 
-  private createRuleConflict(rule1: any, rule2: any): RuleConflict | null {
-    const [firstRule, secondRule] = [rule1, rule2].sort((left, right) =>
-      left.id.localeCompare(right.id)
-    );
+  /**
+   * Builds the pairwise conflict record for two DB rows, or null when they are
+   * compatible. Rule rows are the AutonomyRule rows whose `conditions` JSON
+   * carries a `ruleType` (the same shape mapToRule reads).
+   */
+  private buildConflict(firstRule: any, secondRule: any): any | null {
     const conditions1 = firstRule.conditions as Record<string, unknown>;
     const conditions2 = secondRule.conditions as Record<string, unknown>;
     const conflict = this.detectConflict(firstRule, conditions1, secondRule, conditions2);
     if (!conflict) return null;
 
-    const id = this.createConflictId(firstRule.id, secondRule.id);
-    const resolvedConflicts = Array.isArray(conditions1.resolvedConflicts)
-      ? conditions1.resolvedConflicts
-          .filter((entry): entry is string => typeof entry === 'string')
-          .map((entry) => JSON.parse(entry) as Record<string, unknown>)
-      : [];
-    const secondRuleResolutions = Array.isArray(conditions2.resolvedConflicts)
-      ? conditions2.resolvedConflicts
-          .filter((entry): entry is string => typeof entry === 'string')
-          .map((entry) => JSON.parse(entry) as Record<string, unknown>)
-      : [];
-    const resolved = [...resolvedConflicts, ...secondRuleResolutions]
-      .find((entry) => entry.id === id);
     return {
-      id,
+      conflictKey: this.createConflictId(firstRule.id, secondRule.id),
       ruleId1: firstRule.id,
       ruleId2: secondRule.id,
       rule1Name: firstRule.name,
       rule2Name: secondRule.name,
-      conflictType: conflict.type as RuleConflict['conflictType'],
+      conflictType: conflict.type,
       description: conflict.description,
-      severity: conflict.severity as RuleConflict['severity'],
-      detectedAt: firstRule.createdAt.toISOString(),
-      resolvedAt: typeof resolved?.resolvedAt === 'string' ? resolved.resolvedAt : null,
-      resolution: resolved?.resolution as RuleConflict['resolution'],
+      severity: conflict.severity,
     };
   }
 
@@ -338,30 +324,144 @@ export class RulesEngineService {
     return [parts[0], parts[1]];
   }
 
-  private isPolicyRow(rule: { actionConfig: unknown; conditions: unknown }): boolean {
-    const config = rule.actionConfig;
+  private isRuleRow(rule: { conditions: unknown }): boolean {
     const conditions = rule.conditions;
     return Boolean(
-      !conditions ||
-      typeof conditions !== 'object' ||
-      !('ruleType' in conditions) ||
-      (config && typeof config === 'object' && this.policyMarker in config)
+      conditions &&
+      typeof conditions === 'object' &&
+      'ruleType' in conditions
     );
   }
 
-  async getConflicts(userId: string): Promise<RuleConflict[]> {
-    const rules = await this.prisma.autonomyRule.findMany({
-      where: { userId },
+  /**
+   * Delete every persisted conflict record involving a rule (called on rule
+   * delete so stale pairs disappear immediately rather than at next detect).
+   */
+  private async removeConflictsForRule(userId: string, ruleId: string): Promise<void> {
+    await this.prisma.ruleConflict.deleteMany({
+      where: {
+        userId,
+        OR: [{ ruleId1: ruleId }, { ruleId2: ruleId }],
+      },
     });
-    const ruleRows = rules.filter((rule) => !this.isPolicyRow(rule));
-    const conflicts: RuleConflict[] = [];
-    for (let firstIndex = 0; firstIndex < ruleRows.length; firstIndex += 1) {
-      for (let secondIndex = firstIndex + 1; secondIndex < ruleRows.length; secondIndex += 1) {
-        const conflict = this.createRuleConflict(ruleRows[firstIndex], ruleRows[secondIndex]);
-        if (conflict) conflicts.push(conflict);
+  }
+
+  private mapConflict(
+    row: {
+      conflictKey: string;
+      ruleId1: string;
+      ruleId2: string;
+      rule1Name: string;
+      rule2Name: string;
+      conflictType: string;
+      description: string;
+      severity: string;
+      suggestedResolution: string | null;
+      detectedAt: Date;
+      resolvedAt: Date | null;
+      resolution: string | null;
+    },
+    ruleNames?: Map<string, string>,
+  ): RuleConflict {
+    return {
+      id: row.conflictKey,
+      ruleId1: row.ruleId1,
+      ruleId2: row.ruleId2,
+      rule1Name: ruleNames?.get(row.ruleId1) ?? row.rule1Name,
+      rule2Name: ruleNames?.get(row.ruleId2) ?? row.rule2Name,
+      conflictType: row.conflictType as RuleConflict['conflictType'],
+      description: row.description,
+      severity: row.severity as RuleConflict['severity'],
+      suggestedResolution: row.suggestedResolution as RuleConflict['suggestedResolution'],
+      detectedAt: row.detectedAt.toISOString(),
+      resolvedAt: row.resolvedAt?.toISOString() ?? null,
+      resolution: row.resolution as RuleConflict['resolution'],
+    };
+  }
+
+  async getConflicts(userId: string): Promise<RuleConflict[]> {
+    await this.reconcileConflicts(userId);
+    const [rows, rules] = await Promise.all([
+      this.prisma.ruleConflict.findMany({
+        where: { userId },
+        orderBy: { detectedAt: 'asc' },
+      }),
+      this.prisma.autonomyRule.findMany({ where: { userId } }),
+    ]);
+    const ruleNames = new Map(rules.map((rule) => [rule.id, rule.name]));
+    return rows.map((row) => this.mapConflict(row, ruleNames));
+  }
+
+  /**
+   * Stage 4k: re-detect every pairwise conflict for the user and upsert the
+   * open ones into the RuleConflict table. Resolved rows are kept: a
+   * resolution is an instruction ("stop warning me"), not amnesia, and the
+   * next detect pass must not resurrect a conflict the user already answered.
+   * Before this, conflicts were recomputed on read with resolutions smuggled
+   * back as stringified JSON entries inside conditions.resolvedConflicts.
+   */
+  async reconcileConflicts(userId: string): Promise<void> {
+    const rules = (await this.prisma.autonomyRule.findMany({
+      where: { userId },
+    })).filter((rule) => this.isRuleRow(rule));
+
+    const detected: Array<{
+      conflictKey: string;
+      ruleId1: string;
+      ruleId2: string;
+      rule1Name: string;
+      rule2Name: string;
+      conflictType: string;
+      description: string;
+      severity: string;
+    }> = [];
+    for (let firstIndex = 0; firstIndex < rules.length; firstIndex += 1) {
+      for (let secondIndex = firstIndex + 1; secondIndex < rules.length; secondIndex += 1) {
+        const conflict = this.buildConflict(rules[firstIndex], rules[secondIndex]);
+        if (conflict) detected.push(conflict);
       }
     }
-    return conflicts;
+
+    for (const conflict of detected) {
+      await this.prisma.ruleConflict.upsert({
+        where: {
+          userId_conflictKey: { userId, conflictKey: conflict.conflictKey },
+        },
+        update: {
+          rule1Name: conflict.rule1Name,
+          rule2Name: conflict.rule2Name,
+          conflictType: conflict.conflictType as any,
+          description: conflict.description,
+          severity: conflict.severity as any,
+          detectedAt: new Date(),
+        },
+        create: {
+          userId,
+          conflictKey: conflict.conflictKey,
+          ruleId1: conflict.ruleId1,
+          ruleId2: conflict.ruleId2,
+          rule1Name: conflict.rule1Name,
+          rule2Name: conflict.rule2Name,
+          conflictType: conflict.conflictType as any,
+          description: conflict.description,
+          severity: conflict.severity as any,
+        },
+      });
+    }
+
+    // A conflict whose rule pair no longer conflicts (or was deleted) is gone.
+    const detectedKeys = new Set(detected.map((conflict) => conflict.conflictKey));
+    const persisted = await this.prisma.ruleConflict.findMany({
+      where: { userId },
+    });
+    const staleKeys = persisted
+      .filter((row) => !detectedKeys.has(row.conflictKey))
+      .map((row) => row.conflictKey);
+    if (staleKeys.length > 0) {
+      await this.prisma.ruleConflict.deleteMany({
+        where: { userId, conflictKey: { in: staleKeys } },
+      });
+    }
   }
 
   async resolveConflict(
@@ -370,11 +470,12 @@ export class RulesEngineService {
     resolution: RuleConflict['resolution']
   ): Promise<void> {
     const [ruleId1, ruleId2] = this.parseConflictId(conflictId);
-    const [rule1, rule2] = await Promise.all([
+    const [row, rule1, rule2] = await Promise.all([
+      this.prisma.ruleConflict.findFirst({ where: { userId, conflictKey: conflictId } }),
       this.prisma.autonomyRule.findFirst({ where: { id: ruleId1, userId } }),
       this.prisma.autonomyRule.findFirst({ where: { id: ruleId2, userId } }),
     ]);
-    if (!rule1 || !rule2 || this.isPolicyRow(rule1) || this.isPolicyRow(rule2)) {
+    if (!row || !rule1 || !rule2) {
       throw new NotFoundException(`Conflict ${conflictId} not found`);
     }
 
@@ -398,29 +499,19 @@ export class RulesEngineService {
         });
         break;
       case 'KEEP_BOTH':
+      case 'MERGE':
+      case 'MANUAL':
+        // Acknowledgement-only resolutions: record the answer, change nothing.
         break;
       default:
         throw new BadRequestException(`Unsupported conflict resolution: ${resolution}`);
     }
 
-    const conditions = rule1.conditions as Record<string, unknown>;
-    const resolvedConflicts = Array.isArray(conditions.resolvedConflicts)
-      ? conditions.resolvedConflicts.filter((entry): entry is string => typeof entry === 'string')
-      : [];
-    const resolvedAt = new Date().toISOString();
-    await this.prisma.autonomyRule.update({
-      where: { id: rule1.id },
+    await this.prisma.ruleConflict.update({
+      where: { id: row.id },
       data: {
-        conditions: {
-          ...conditions,
-          resolvedConflicts: [
-            ...resolvedConflicts.filter((item) => {
-              const decoded = JSON.parse(item) as Record<string, unknown>;
-              return decoded.id !== conflictId;
-            }),
-            JSON.stringify({ id: conflictId, resolution, resolvedAt }),
-          ],
-        } as any,
+        resolution,
+        resolvedAt: new Date(),
       },
     });
   }
@@ -433,7 +524,7 @@ export class RulesEngineService {
     const rules = (await this.prisma.autonomyRule.findMany({
       where: { userId, isActive: true },
       orderBy: { priority: 'desc' },
-    })).filter((rule) => !this.isPolicyRow(rule));
+    })).filter((rule) => !!this.isRuleRow(rule));
 
     const results: RuleEnforcementResult[] = [];
     const appliedAdjustments: RulesEnforcementSummary['appliedAdjustments'] = [];

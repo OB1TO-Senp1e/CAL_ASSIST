@@ -14,32 +14,10 @@ import {
   ReplanExecutionResult,
 } from './replanning.types';
 
-interface AutonomyRuleConditions {
-  triggers?: ReplanTrigger[];
-  constraints?: any[];
-  protectedTimeRanges?: any[];
-  requireConfirmationFor?: string[];
-}
-
-interface AutonomyRuleActionConfig {
-  allowedActions?: string[];
-  maxChangesPerOperation?: number;
-  maxTimeShiftMinutes?: number;
-}
-
-interface AutonomyRuleRecord {
-  id: string;
-  userId: string;
-  name: string;
-  description: string | null;
-  scope: string | null;
-  isActive: boolean;
-  conditions: AutonomyRuleConditions | null;
-  actionConfig: AutonomyRuleActionConfig | null;
-  priority: number;
-  createdAt: Date;
-  updatedAt: Date;
-}
+// Stage 4k: replanning policies live in the dedicated ReplanningPolicy table.
+// The old AutonomyRuleConditions/ActionConfig/Record interfaces described the
+// JSON blobs these policies were smuggled through inside the AutonomyRule
+// table and are gone with them.
 
 @Injectable()
 export class ReplanningEngineService {
@@ -174,60 +152,35 @@ export class ReplanningEngineService {
   }
 
   async getAutonomyPolicies(userId: string): Promise<AutonomyPolicy[]> {
-    const policies = await this.prisma.autonomyRule.findMany({
-      where: { userId, isActive: true },
+    // Stage 4k: ReplanningPolicy is this service's dedicated table; the policy
+    // rows used to share AutonomyRule with scheduling rules and were told
+    // apart by marker heuristics.
+    const policies = await this.prisma.replanningPolicy.findMany({
+      where: { userId },
       orderBy: { priority: 'desc' },
     });
 
-    return policies.filter((policy) => !this.isPermissionPolicy(policy)).map((p: any) => {
-      const conditions = p.conditions as AutonomyRuleConditions | null;
-      const actionConfig = p.actionConfig as AutonomyRuleActionConfig | null;
-      return {
-        id: p.id,
-        userId: p.userId,
-        name: p.name,
-        description: p.description || '',
-        enabled: p.isActive,
-        scope: (p.scope as AutonomyPolicy['scope']) || 'GLOBAL',
-        triggers: (conditions?.triggers || []) as AutonomyPolicy['triggers'],
-        allowedActions: (actionConfig?.allowedActions || []) as AutonomyPolicy['allowedActions'],
-        constraints: conditions?.constraints || [],
-        maxChangesPerOperation: actionConfig?.maxChangesPerOperation || 3,
-        maxTimeShiftMinutes: actionConfig?.maxTimeShiftMinutes || 120,
-        protectedTimeRanges: conditions?.protectedTimeRanges || [],
-        requireConfirmationFor: (conditions?.requireConfirmationFor ||
-          []) as AutonomyPolicy['requireConfirmationFor'],
-        priority: p.priority,
-        createdAt: p.createdAt.toISOString(),
-        updatedAt: p.updatedAt.toISOString(),
-      };
-    });
+    return policies.map((p) => this.mapToAutonomyPolicy(p));
   }
 
   async createAutonomyPolicy(
     userId: string,
     input: CreateAutonomyPolicyInput
   ): Promise<AutonomyPolicy> {
-    const policy = await this.prisma.autonomyRule.create({
+    const policy = await this.prisma.replanningPolicy.create({
       data: {
         userId,
         name: input.name,
         description: input.description,
-        scope: input.scope,
-        triggerType: 'MANUAL',
-        actionType: 'CREATE_EVENT',
-        conditions: {
-          triggers: input.triggers,
-          constraints: input.constraints,
-          protectedTimeRanges: input.protectedTimeRanges,
-          requireConfirmationFor: input.requireConfirmationFor,
-        },
-        actionConfig: {
-          allowedActions: input.allowedActions,
-          maxChangesPerOperation: input.maxChangesPerOperation,
-          maxTimeShiftMinutes: input.maxTimeShiftMinutes,
-        },
-        isActive: true,
+        scope: input.scope as any,
+        triggers: input.triggers as any,
+        allowedActions: input.allowedActions as any,
+        constraints: (input.constraints ?? []) as object,
+        maxChangesPerOperation: input.maxChangesPerOperation,
+        maxTimeShiftMinutes: input.maxTimeShiftMinutes,
+        protectedTimeRanges: (input.protectedTimeRanges ?? []) as object,
+        requireConfirmationFor: input.requireConfirmationFor as any,
+        enabled: true,
         priority: 0,
       },
     });
@@ -240,38 +193,30 @@ export class ReplanningEngineService {
     policyId: string,
     updates: Partial<CreateAutonomyPolicyInput>
   ): Promise<AutonomyPolicy> {
-    const policy = await this.prisma.autonomyRule.findFirst({
+    const policy = await this.prisma.replanningPolicy.findFirst({
       where: { id: policyId, userId },
     });
 
-    if (!policy || this.isPermissionPolicy(policy)) {
+    if (!policy) {
       throw new Error('Autonomy policy not found');
     }
 
-    const currentConditions = policy.conditions as AutonomyRuleConditions | null;
-    const currentActionConfig = policy.actionConfig as AutonomyRuleActionConfig | null;
-
-    const updated = await this.prisma.autonomyRule.update({
+    const updated = await this.prisma.replanningPolicy.update({
       where: { id: policyId },
       data: {
         name: updates.name ?? policy.name,
         description: updates.description ?? policy.description,
-        scope: updates.scope ?? policy.scope,
-        conditions: {
-          triggers: (updates.triggers ?? currentConditions?.triggers) || [],
-          constraints: (updates.constraints ?? currentConditions?.constraints) || [],
-          protectedTimeRanges:
-            (updates.protectedTimeRanges ?? currentConditions?.protectedTimeRanges) || [],
-          requireConfirmationFor:
-            (updates.requireConfirmationFor ?? currentConditions?.requireConfirmationFor) || [],
-        },
-        actionConfig: {
-          allowedActions: (updates.allowedActions ?? currentActionConfig?.allowedActions) || [],
-          maxChangesPerOperation:
-            (updates.maxChangesPerOperation ?? currentActionConfig?.maxChangesPerOperation) || 3,
-          maxTimeShiftMinutes:
-            (updates.maxTimeShiftMinutes ?? currentActionConfig?.maxTimeShiftMinutes) || 120,
-        },
+        scope: (updates.scope ?? policy.scope) as any,
+        triggers: (updates.triggers ?? policy.triggers) as any,
+        allowedActions: (updates.allowedActions ?? policy.allowedActions) as any,
+        constraints: ((updates.constraints ?? policy.constraints) ?? []) as object,
+        maxChangesPerOperation:
+          updates.maxChangesPerOperation ?? policy.maxChangesPerOperation,
+        maxTimeShiftMinutes: updates.maxTimeShiftMinutes ?? policy.maxTimeShiftMinutes,
+        protectedTimeRanges: ((updates.protectedTimeRanges ??
+          policy.protectedTimeRanges) ?? []) as object,
+        requireConfirmationFor: (updates.requireConfirmationFor ??
+          policy.requireConfirmationFor) as any,
       },
     });
 
@@ -279,13 +224,13 @@ export class ReplanningEngineService {
   }
 
   async deleteAutonomyPolicy(userId: string, policyId: string): Promise<void> {
-    const policy = await this.prisma.autonomyRule.findFirst({
+    const policy = await this.prisma.replanningPolicy.findFirst({
       where: { id: policyId, userId },
     });
-    if (!policy || this.isPermissionPolicy(policy)) {
+    if (!policy) {
       throw new Error('Autonomy policy not found');
     }
-    await this.prisma.autonomyRule.delete({ where: { id: policyId } });
+    await this.prisma.replanningPolicy.delete({ where: { id: policyId } });
   }
 
   async getReplanSuggestions(userId: string, reason: string) {
@@ -728,41 +673,52 @@ export class ReplanningEngineService {
   }
 
   private async getActiveAutonomyPolicies(userId: string): Promise<AutonomyPolicy[]> {
-    const policies = await this.prisma.autonomyRule.findMany({
-      where: { userId, isActive: true },
+    const policies = await this.prisma.replanningPolicy.findMany({
+      where: { userId, enabled: true },
       orderBy: { priority: 'desc' },
     });
 
-    return policies.filter((policy) => !this.isPermissionPolicy(policy)).map(this.mapToAutonomyPolicy);
+    return policies.map((policy) => this.mapToAutonomyPolicy(policy));
   }
 
-  private isPermissionPolicy(policy: { actionConfig: unknown; scope: string | null }): boolean {
-    const config = policy.actionConfig;
-    return policy.scope === 'POLICY' || Boolean(
-      config &&
-      typeof config === 'object' &&
-      'calassistPolicy' in config
-    );
-  }
-
-  private mapToAutonomyPolicy(p: any): AutonomyPolicy {
-    const conditions = p.conditions as AutonomyRuleConditions | null;
-    const actionConfig = p.actionConfig as AutonomyRuleActionConfig | null;
+  /**
+   * Maps a ReplanningPolicy row (Stage 4k dedicated table) to the public
+   * AutonomyPolicy contract. Every field is a real column now; the old
+   * conditions/actionConfig JSON split and the `calassistPolicy` marker
+   * heuristic are gone.
+   */
+  private mapToAutonomyPolicy(p: {
+    id: string;
+    userId: string;
+    name: string;
+    description: string | null;
+    enabled: boolean;
+    scope: string;
+    triggers: string[];
+    allowedActions: string[];
+    constraints: unknown;
+    maxChangesPerOperation: number;
+    maxTimeShiftMinutes: number;
+    protectedTimeRanges: unknown;
+    requireConfirmationFor: string[];
+    priority: number;
+    createdAt: Date;
+    updatedAt: Date;
+  }): AutonomyPolicy {
     return {
       id: p.id,
       userId: p.userId,
       name: p.name,
       description: p.description || '',
-      enabled: p.isActive,
-      scope: (p.scope as AutonomyPolicy['scope']) || 'GLOBAL',
-      triggers: (conditions?.triggers || []) as AutonomyPolicy['triggers'],
-      allowedActions: (actionConfig?.allowedActions || []) as AutonomyPolicy['allowedActions'],
-      constraints: conditions?.constraints || [],
-      maxChangesPerOperation: actionConfig?.maxChangesPerOperation || 3,
-      maxTimeShiftMinutes: actionConfig?.maxTimeShiftMinutes || 120,
-      protectedTimeRanges: conditions?.protectedTimeRanges || [],
-      requireConfirmationFor: (conditions?.requireConfirmationFor ||
-        []) as AutonomyPolicy['requireConfirmationFor'],
+      enabled: p.enabled,
+      scope: p.scope as AutonomyPolicy['scope'],
+      triggers: p.triggers as AutonomyPolicy['triggers'],
+      allowedActions: p.allowedActions as AutonomyPolicy['allowedActions'],
+      constraints: Array.isArray(p.constraints) ? p.constraints : [],
+      maxChangesPerOperation: p.maxChangesPerOperation,
+      maxTimeShiftMinutes: p.maxTimeShiftMinutes,
+      protectedTimeRanges: Array.isArray(p.protectedTimeRanges) ? p.protectedTimeRanges : [],
+      requireConfirmationFor: p.requireConfirmationFor as AutonomyPolicy['requireConfirmationFor'],
       priority: p.priority,
       createdAt: p.createdAt.toISOString(),
       updatedAt: p.updatedAt.toISOString(),

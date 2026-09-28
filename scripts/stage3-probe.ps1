@@ -240,16 +240,19 @@ $prefOk = ($pref -and $pref.minPriority -eq 'HIGH' -and $pref.snoozeDurationMinu
 Show '3j' '  preferences round-trip' $(if ($prefOk){'PASS'}else{'FAIL'}) "minPriority=$($pref.minPriority) snooze=$($pref.snoozeDurationMinutes)"
 $null = Hit '3j' 'GET /api/permissions/permissions' Get '/api/permissions/permissions' $null
 $null = Hit '3j' 'GET /api/permissions/autonomy-policies' Get '/api/permissions/autonomy-policies' $null
-$null = Hit '3j' 'POST /api/permissions/check' Post '/api/permissions/check' @{ actionType='CREATE_TASK'; context=@{} }
+# Stage 4k: /api/permissions/check is zod-validated now; the pre-4k payload
+# (`actionType` only) was accepted unvalidated and is a genuine 400. Send the
+# real contract: an action + scope from PermissionActionSchema/PermissionScopeSchema.
+$null = Hit '3j' 'POST /api/permissions/check' Post '/api/permissions/check' @{ action='CREATE_TASK'; scope='TASKS'; context=@{} }
 
 # ---- 3k integrations ----
 $null = Hit '3k' 'GET /api/calendar/connections' Get '/api/calendar/connections' $null
 $null = Hit '3k' 'GET /api/calendar/calendars' Get '/api/calendar/calendars' $null
 $auth = Hit '3k' 'GET /api/calendar/auth-url/:provider' Get '/api/calendar/auth-url/google' $null
-# The state param is `connectionId:signedJwt`, and it arrives percent-encoded,
-# so decode before matching or `%3A` never looks like the `:` separator.
+# Stage 4k/5a: the state param is now the self-contained signed JWT itself
+# (no `connectionId:` prefix), arriving percent-encoded, so decode before matching.
 $stateVal = if ($auth -and $auth.authUrl) { [System.Uri]::UnescapeDataString(([System.Text.RegularExpressions.Regex]::Match($auth.authUrl, '[?&]state=([^&]+)')).Groups[1].Value) } else { '' }
-$hasSignedState = ($stateVal -match '^[^:]+:eyJ')
+$hasSignedState = ($stateVal -match '^eyJ')
 Show '3k' '  auth-url carries signed state' $(if ($hasSignedState){'PASS'}else{'FAIL'}) "state=$($stateVal.Substring(0,[Math]::Min(40,$stateVal.Length)))"
 try {
   $cb = Invoke-WebRequest -Uri "$base/api/calendar/callback/google?code=bad&state=bad" `

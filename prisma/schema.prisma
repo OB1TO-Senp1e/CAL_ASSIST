@@ -21,6 +21,9 @@ model User {
   assistantRecommendations AssistantRecommendation[]
   auditLogs                AuditLog[]
   autonomyRules            AutonomyRule[]
+  autonomyPolicies         AutonomyPolicy[]
+  ruleConflicts            RuleConflict[]
+  replanningPolicies       ReplanningPolicy[]
   availabilities           AvailabilityRule[]
   calendars                Calendar[]
   calendarConnections      CalendarConnection[]
@@ -944,20 +947,83 @@ model Integration {
   @@index([isActive])
 }
 
+/// Stage 4k: structured permission grants. Before 4k the service stored the
+/// whole grant (action/scope/decision/conditions) as URL-encoded JSON smuggled
+/// through the `scope` string with a `calassist.permission:` prefix; every
+/// field is now a real, typed column.
 model Permission {
-  id        String          @id @default(cuid())
-  userId    String
-  scope     String
-  level     PermissionLevel
-  grantedBy String
-  grantedAt DateTime        @default(now())
-  expiresAt DateTime?
-  isActive  Boolean         @default(true)
-  user      User            @relation(fields: [userId], references: [id])
+  id         String             @id @default(cuid())
+  userId     String
+  action     PermissionAction
+  scope      PermissionScope
+  decision   PermissionDecision
+  conditions Json               @default("{}")
+  grantedBy  String             @default("USER")
+  grantedAt  DateTime           @default(now())
+  expiresAt  DateTime?
+  isActive   Boolean            @default(true)
+  user       User               @relation(fields: [userId], references: [id])
 
+  @@unique([userId, action, scope])
   @@index([userId, scope])
-  @@index([level])
+  @@index([action])
   @@index([expiresAt])
+}
+
+/// Stage 4k: autonomy policies used to be JSON.stringify-ed into
+/// AutonomyRule.actionConfig under a `calassistPolicy` key, which forced the
+/// rules engine and the replanning engine to guess row types with marker
+/// heuristics. Policies now live here and AutonomyRule is rule storage only.
+model AutonomyPolicy {
+  id                     String             @id @default(cuid())
+  userId                 String
+  name                   String
+  description            String?
+  autonomyLevel          AutonomyLevel      @default(SUGGEST)
+  enabledScopes          PermissionScope[]
+  allowedActions         PermissionAction[]
+  riskThreshold          RiskLevel          @default(LOW)
+  requireConfirmationFor PermissionAction[]
+  protectedEntities      Json               @default("[]")
+  timeRestrictions       Json               @default("[]")
+  maxActionsPerPeriod    Json?
+  isActive               Boolean            @default(true)
+  priority               Int                @default(0)
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+  user                   User               @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([isActive])
+}
+
+/// Stage 4k: detected rule conflicts and their resolutions were recomputed on
+/// every read and smuggled back as stringified entries in the owning rule's
+/// `conditions.resolvedConflicts` JSON array. Conflicts are persisted here now,
+/// keyed by the stable `<ruleId1>:<ruleId2>` external id the API already uses.
+model RuleConflict {
+  id                  String                 @id @default(cuid())
+  userId              String
+  /// External id: the two rule ids, sorted, joined by ':' (stable, parseable).
+  conflictKey         String
+  ruleId1             String
+  ruleId2             String
+  rule1Name           String
+  rule2Name           String
+  conflictType        RuleConflictType
+  description         String
+  severity            RuleConflictSeverity
+  suggestedResolution RuleConflictResolution?
+  detectedAt          DateTime               @default(now())
+  resolvedAt          DateTime?
+  resolution          RuleConflictResolution?
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+  user                User                   @relation(fields: [userId], references: [id])
+
+  @@unique([userId, conflictKey])
+  @@index([userId])
+  @@index([resolvedAt])
 }
 
 model AutonomyRule {
@@ -1097,6 +1163,33 @@ model MeetingArtifact {
   @@index([userId])
   @@index([meetingId])
   @@index([kind])
+}
+
+/// Stage 4k: dedicated home for the replanning-engine's autonomy policies
+/// (the /api/replanning/autonomy-policies contract). These previously shared
+/// the AutonomyRule table with scheduling rules and were told apart by
+/// heuristics; AutonomyRule is now rule storage only.
+model ReplanningPolicy {
+  id                     String               @id @default(cuid())
+  userId                 String
+  name                   String
+  description            String?
+  enabled                Boolean              @default(true)
+  scope                  ReplanningScope      @default(GLOBAL)
+  triggers               ReplanTrigger[]
+  allowedActions         ReplanAllowedAction[]
+  constraints            Json                 @default("[]")
+  maxChangesPerOperation Int                  @default(3)
+  maxTimeShiftMinutes    Int                  @default(120)
+  protectedTimeRanges    Json                 @default("[]")
+  requireConfirmationFor ReplanConfirmation[]
+  priority               Int                  @default(0)
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
+  user                   User                 @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([enabled])
 }
 
 enum ProposalStatus {
@@ -1522,4 +1615,137 @@ enum AutonomyActionType {
   ADJUST_PREFERENCE
   CREATE_TASK
   CREATE_GOAL
+}
+
+// --- Stage 4k: dedicated permission/policy/conflict model enums ---
+
+enum PermissionAction {
+  CREATE_EVENT
+  MOVE_EVENT
+  CANCEL_EVENT
+  CONTACT_PEOPLE
+  NEGOTIATE_MEETING_TIMES
+  MODIFY_TASKS
+  REPLAN_SCHEDULES
+  SEND_NOTIFICATIONS
+  CREATE_TASK
+  UPDATE_TASK
+  DELETE_TASK
+  CREATE_COMMITMENT
+  MODIFY_COMMITMENT
+  EXTRACT_COMMITMENTS
+  MODIFY_GOALS
+  MODIFY_PROJECTS
+  RUN_PROACTIVE_CHECK
+  DISMISS_INTERVENTION
+  MODIFY_RULES
+  MODIFY_AUTONOMY_POLICIES
+  ACCESS_INTEGRATIONS
+  SYNC_CALENDAR
+  MODIFY_PREFERENCES
+}
+
+enum PermissionScope {
+  GLOBAL
+  CALENDAR
+  TASKS
+  COMMITMENTS
+  GOALS
+  PROJECTS
+  SCHEDULING
+  NOTIFICATIONS
+  INTEGRATIONS
+  AI_ASSISTANT
+  PROACTIVE
+  RULES
+}
+
+enum PermissionDecision {
+  ALLOW
+  DENY
+  ASK
+  CONDITIONAL
+}
+
+enum AutonomyLevel {
+  OBSERVE
+  SUGGEST
+  ASK_BEFORE_ACTION
+  AUTO_EXECUTE_LOW_RISK
+  DELEGATED_AUTHORITY
+}
+
+enum RiskLevel {
+  NONE
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum RuleConflictType {
+  DIRECT_CONTRADICTION
+  OVERLAPPING_CONDITIONS
+  MUTUALLY_EXCLUSIVE_ACTIONS
+  PRIORITY_AMBIGUITY
+  SCOPE_OVERLAP
+}
+
+enum RuleConflictSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum RuleConflictResolution {
+  DISABLE_FIRST
+  DISABLE_SECOND
+  ADJUST_PRIORITY
+  MERGE
+  MANUAL
+  KEEP_BOTH
+}
+
+// --- Stage 4k: ReplanningPolicy enums (mirror replanning.types.ts exactly) ---
+
+enum ReplanningScope {
+  GLOBAL
+  SCHEDULING
+  TASKS
+  MEETINGS
+  FOCUS_TIME
+}
+
+enum ReplanTrigger {
+  TASK_OVERRUN
+  MEETING_LATE
+  TASK_POSTPONED
+  DEADLINE_APPROACHING
+  DEPENDENCY_INCOMPLETE
+  SCHEDULE_DRIFT
+  NEW_TASK
+  TASK_CANCELLED
+  MEETING_CANCELLED
+  MANUAL
+}
+
+enum ReplanAllowedAction {
+  MOVE_TASK
+  RESCHEDULE_EVENT
+  SPLIT_TASK
+  MERGE_BLOCKS
+  ADD_BUFFER
+  REDUCE_SCOPE
+  REPRIORITIZE
+  EXTEND_DEADLINE
+  CANCEL_LOW_PRIORITY
+}
+
+enum ReplanConfirmation {
+  DEADLINE_CHANGES
+  MEETING_MOVES
+  FOCUS_TIME_CHANGES
+  EXTERNAL_EVENT_CHANGES
+  HIGH_PRIORITY_CHANGES
 }
