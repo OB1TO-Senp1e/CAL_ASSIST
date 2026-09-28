@@ -11,7 +11,13 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   constructor(private configService: ConfigService) {
     const databaseUrl = configService.get<string>('DATABASE_URL') || 'postgresql://postgres:postgres@localhost:5432/calassist?schema=public';
     const adapter = new PrismaPg({ connectionString: databaseUrl });
-    super({ adapter, log: ['error', 'warn'] });
+    const queryLoggingEnabled =
+      configService.get<string>('NODE_ENV') === 'development' &&
+      configService.get<string>('PRISMA_QUERY_LOGGING') === 'true';
+    super({
+      adapter,
+      log: queryLoggingEnabled ? ['query', 'error', 'warn'] : ['error', 'warn'],
+    });
   }
 
   async onModuleInit() {
