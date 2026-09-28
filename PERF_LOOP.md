@@ -39,7 +39,7 @@ Measurements are from the current worktree on `perf/optimise` and use the produc
 | P5 | HUMAN | No test Google account/calendar or API-call counter is available; did not trigger OAuth, calendar sync, or external Google requests. |
 | P6 | HUMAN | No isolated local/test LLM or TTFT harness is available; assistant requests persist user content and may call a billable provider, so no baseline request was sent. |
 | P7 | HUMAN | P0 did not produce request-frequency/latency evidence; cache remains intentionally absent rather than being added speculatively. |
-| P8 | TODO | No interaction/perceived-performance benchmark captured. |
+| P8 | HUMAN | No mobile Lighthouse/CLS or authenticated main-flow timing is available; no skeleton/motion changes made without layout-shift or feedback measurements. |
 | P9 | TODO | Budget guard and README benchmark instructions remain to be implemented. |
 | P10 | TODO | Final report remains to be written after iterations. |
 
@@ -67,6 +67,7 @@ Measurements are from the current worktree on `perf/optimise` and use the produc
 | 5 | Google API calls per sync/view | — | HUMAN; no test calendar or request counter; OAuth/consent flow not triggered | Google sync integration tests require test credentials and an authorized calendar |
 | 6 | Assistant time-to-first-token / fallback | — | HUMAN; no local model or isolated test provider; no user content sent to an external LLM | Requires a controlled assistant fixture and TTFT-capable client measurement |
 | 7 | Cache hit rate / latency / invalidation | — | HUMAN; no endpoint identified as hot from measured traffic | No caching change made without per-user hit-rate and invalidation evidence |
+| 8 | Main-flow feedback / layout shift | — | HUMAN; no mobile Lighthouse/CLS run or authenticated main-flow timing | Browser only verified the public login page; no interaction timing inferred |
 
 The bundle script reports raw and gzip bytes for every emitted JS/CSS asset and the HTML entry's static JS dependency graph. The API smoke script is deliberately loopback-only, issues GET requests, performs no seeding or writes, and does not call an external LLM.
 
@@ -87,7 +88,8 @@ The bundle script reports raw and gzip bytes for every emitted JS/CSS asset and 
 | 5 | Made no Google sync changes without a measurable API-call baseline; did not access external calendars or alter consent/scope behavior. |
 | 6 | Made no assistant streaming/context change without controlled TTFT and fallback measurements; no content was sent to the configured provider. |
 | 7 | Added no cache: the measured baseline does not identify a hot endpoint, and user-scoped cache invalidation cannot be validated without a local seed. |
+| 8 | Made no perceived-performance UI changes without a mobile CLS/interaction measurement; preserved existing loading and reduced-motion behavior. |
 
 ## Iteration Counter
 
-7 — P0 baseline, P1 route split, and P2-P7 measurement limitations.
+8 — P0 baseline, P1 route split, and P2-P8 measurement limitations.
