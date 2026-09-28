@@ -39,7 +39,7 @@ Measurements are from the current worktree on `perf/optimise` and use the produc
 | P3 | HUMAN | No authenticated local seed/session for a representative waterfall; the loopback GET benchmark is ready in `scripts/perf-smoke.mjs` but was not run against the hosted DB. |
 | P4 | HUMAN | `.env` targets the hosted pooler; no local PostgreSQL instance is available for seeded p95s or `EXPLAIN`. No migration or external DB request was made. |
 | P5 | HUMAN | No test Google account/calendar or API-call counter is available; did not trigger OAuth, calendar sync, or external Google requests. |
-| P6 | HUMAN | No isolated local/test LLM or TTFT harness is available; assistant requests persist user content and may call a billable provider, so no baseline request was sent. |
+| P6 | HUMAN | One generic streaming probe to the configured OpenAI-compatible endpoint returned HTTP 429 after 2,116.2 ms; no content token arrived, so TTFT and app-level fallback remain unmeasured. The application is configured with `AI_PROVIDER=ollama`, and no authenticated assistant request was sent. |
 | P7 | HUMAN | P0 did not produce request-frequency/latency evidence; cache remains intentionally absent rather than being added speculatively. |
 | P8 | HUMAN | No mobile Lighthouse/CLS or authenticated main-flow timing is available; no skeleton/motion changes made without layout-shift or feedback measurements. |
 | P9 | DONE | `npm run test:ci` builds and checks the authenticated-home graph (182,251 <= 200,477 gzip bytes), executes a synthetic over-budget failure test, and runs Jest; CI installs client dependencies and uses this command. README documents local reruns. |
@@ -75,6 +75,10 @@ Measurements are from the current worktree on `perf/optimise` and use the produc
 | 9 | CI test command | `npm test` | PASS; budget build/check, guard tests, and full Jest suite | `$env:DATABASE_URL='postgresql://127.0.0.1:1/calassist'; npm run test:ci` |
 | 9 | Backend production build | — | PASS | `npm run build` |
 | 10 | Performance report | Not written | `docs/PERFORMANCE.md` created with measured values and HUMAN list | Documentation-only; no validation required |
+| 11 | Direct OpenAI-compatible stream probe | No response measurement | HTTP 429; response headers at 2,116.2 ms; TTFT unavailable | One generic request via PowerShell here-string piped to `node --input-type=commonjs -`; `AI_REQUEST_TIMEOUT_MS` timeout; response body and credentials were not printed |
+| 11 | Backend after environment reload | Stopped before reload | `/api/health` returned HTTP 200 after module initialization fixes | `Invoke-WebRequest -UseBasicParsing http://localhost:3000/api/health -TimeoutSec 15` |
+| 11 | Full Jest suite with updated `.env` model setting | 1 failure: provider spec expects repository default | PASS: 29 passed, 1 DB-backed suite skipped, with expected model explicitly set for tests | `$env:DATABASE_URL='postgresql://127.0.0.1:1/calassist'; $env:OPENAI_MODEL='gpt-4o'; npm test -- --runInBand` |
+| 11 | Non-mutating lint of startup-fix files | — | PASS; 0 errors, 2 existing `any` warnings in account-deletion service | `.\node_modules\.bin\eslint.cmd --rule 'prettier/prettier: off' src/auth/auth.module.ts src/integrations/calendar-adapters/calendar-adapters.module.ts src/integrations/ai-providers/ai-providers.module.ts src/users/account-deletion.service.ts` |
 
 The bundle script reports raw and gzip bytes for every emitted JS/CSS asset and the HTML entry's static JS dependency graph. The API smoke script is deliberately loopback-only, issues GET requests, performs no seeding or writes, and does not call an external LLM.
 
@@ -98,7 +102,9 @@ The bundle script reports raw and gzip bytes for every emitted JS/CSS asset and 
 | 8 | Made no perceived-performance UI changes without a mobile CLS/interaction measurement; preserved existing loading and reduced-motion behavior. |
 | 9 | Budget is based on the exact emitted JS graph for the authenticated home route and fixed at 10% above its measured 182,251-byte gzip baseline; CI runs it before unit tests. |
 | 10 | Report only measured browser-bundle numbers; retain HUMAN labels for unavailable DB, Lighthouse, Google, interaction, and LLM measurements. |
+| 11 | A single generic provider probe was rate-limited; no retry was made. The probe bypassed the app because its selected provider is Ollama and there was no authenticated browser session. |
+| 11 | Restart exposed pre-existing Nest module wiring issues in dirty worktree files. With user approval, applied forward references and a Prisma provider needed for startup. These edits remain unstaged because their files contain interleaved pre-existing user changes, which must not be swept into a performance commit. |
 
 ## Iteration Counter
 
-10 — P0 baseline, P1 route split, P2-P8 HUMAN, P9 regression guard, and P10 report.
+11 — P0 baseline, P1 route split, P2-P8 HUMAN, P9 regression guard, P10 report, and P6 rate-limit result.

@@ -44,6 +44,13 @@ CRLF/Prettier violations in the already-dirty worktree. The repository's
 `npm run lint` auto-fixes files, so it was not used; unrelated user changes
 were left untouched.
 
+After the environment reload, the full Jest suite initially failed one
+provider spec because the updated `.env` model setting differed from the
+repository's expected default. The suite passed when run with the expected test
+model explicitly set. The account-deletion integration suite was skipped
+because the local DB was intentionally unreachable. The backend health route
+returned HTTP 200 after the startup wiring issue was fixed.
+
 ## Changes and Rationale
 
 - Deferred `DashboardLayout` with React `lazy()` and a route-level `Suspense`
@@ -112,7 +119,10 @@ were not estimated:
 - Production database plan, pooler settings, and connection-pool limits.
 - An authorized test Google Calendar and API-call counter for sync measurements.
 - An isolated test LLM/provider fixture and TTFT measurement; no user content was
-  sent to an external model.
+  sent to an external model. After the OpenAI secret update, one generic
+  streaming probe returned HTTP 429 after 2,116.2 ms before any content token;
+  no retry was made. This is not an app-level TTFT: `AI_PROVIDER` is configured
+  as `ollama`, and no authenticated assistant request was made.
 - Authenticated interaction profiling, request waterfalls, render counts,
   measured hot-endpoint cache hit rates, and main-flow layout-shift timing.
 
