@@ -1,11 +1,23 @@
 import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
+import session from 'express-session';
 import { ValidationPipe, Logger, BadRequestException } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
+  app.use(session({
+    secret: process.env.SESSION_SECRET || process.env.JWT_SECRET || 'calassist-development-session',
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+    },
+  }));
   const logger = new Logger('Bootstrap');
 
   app.useGlobalPipes(
@@ -41,6 +53,8 @@ async function bootstrap() {
     exclude: [
       'auth/register',
       'auth/login',
+      'auth/google',
+      'auth/google/callback',
       'auth/test-user',
       'auth/test-user-direct',
       'auth/test-user-no-bcrypt',

@@ -7,12 +7,15 @@ import {
   HttpCode,
   HttpStatus,
   Get,
+  Res,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { AuthService } from './auth.service';
 import { JwtService } from '@nestjs/jwt';
 import { UsersService } from '../users/users.service';
 import { LocalAuthGuard } from './local-auth.guard';
 import { PrismaService } from '../common/services/prisma.service';
+import { GoogleAuthGuard } from './google-auth.guard';
 
 @Controller('auth')
 export class AuthController {
@@ -27,6 +30,18 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async login(@Request() req) {
     return this.authService.login(req.user);
+  }
+
+  @Get('google')
+  @UseGuards(GoogleAuthGuard)
+  googleLogin() {}
+
+  @Get('google/callback')
+  @UseGuards(GoogleAuthGuard)
+  async googleCallback(@Request() req, @Res() response: Response) {
+    const session = await this.authService.loginWithGoogle(req.user);
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3001';
+    response.redirect(`${frontendUrl}/login#access_token=${encodeURIComponent(session.access_token)}`);
   }
 
   @Post('register')
