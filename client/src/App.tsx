@@ -1,6 +1,5 @@
 import { lazy, Suspense } from 'react';
 import { Routes, Route } from 'react-router-dom';
-import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { RouteFallback } from '@/components/layout/RouteFallback';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { AssistantProvider } from '@/contexts/AssistantContext';
@@ -8,6 +7,12 @@ import { ThemeProvider } from '@/contexts/ThemeContext';
 import { RequireAuth } from '@/components/auth/RequireAuth';
 import { LoginPage } from '@/pages/LoginPage';
 import { RegisterPage } from '@/pages/RegisterPage';
+import { PrivacyPage } from '@/pages/PrivacyPage';
+import { TermsPage } from '@/pages/TermsPage';
+
+const DashboardLayout = lazy(() =>
+  import('@/components/layout/DashboardLayout').then((m) => ({ default: m.DashboardLayout })),
+);
 
 /**
  * Routes are lazy so a cold load only pays for the authenticated shell. Auth is
@@ -54,6 +59,9 @@ function App() {
           {/* Public */}
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          {/* C5: legal pages must render without a session. */}
+          <Route path="/privacy" element={<PrivacyPage />} />
+          <Route path="/terms" element={<TermsPage />} />
           <Route
             path="/architecture"
             element={
@@ -68,7 +76,9 @@ function App() {
             path="/"
             element={
               <RequireAuth>
-                <DashboardLayout />
+                <Suspense fallback={<RouteFallback />}>
+                  <DashboardLayout />
+                </Suspense>
               </RequireAuth>
             }
           >

@@ -6,7 +6,8 @@ Measurements are from the current worktree on `perf/optimise` and use the produc
 
 | Area | Baseline | Target / status |
 |---|---:|---|
-| Login and authenticated-shell entry JS | 510,891 bytes raw / 169,864 bytes gzip | Initial JS guideline <= 200 KB gzip |
+| Login entry JS | Before P1: 510,891 bytes raw / 169,864 bytes gzip; after P1: 299,701 bytes raw / 102,309 bytes gzip | Initial JS guideline <= 200 KB gzip |
+| Authenticated shell JS chunk | After P1: 20,855 bytes raw / 6,301 bytes gzip | Loaded only for authenticated routes |
 | Initial stylesheet | 78,617 bytes raw / 14,557 bytes gzip | Measured |
 | Async Calendar route chunk | 46,842 bytes raw / 13,374 bytes gzip | Per emitted chunk; see build report |
 | Async Tasks route chunk | 17,065 bytes raw / 5,266 bytes gzip | Per emitted chunk; see build report |
@@ -31,7 +32,7 @@ Measurements are from the current worktree on `perf/optimise` and use the produc
 | P0-lighthouse | HUMAN | No local headless Chrome or Lighthouse command was found; no scores were estimated. |
 | P0-api | HUMAN | The configured database is hosted, so no seed or database-backed request was run. Local-only GET benchmark tooling is in `scripts/perf-smoke.mjs`. |
 | P0-query-logging | DONE | Prisma query logging is guarded by `NODE_ENV=development` and explicit `PRISMA_QUERY_LOGGING=true`; per-request counts remain HUMAN pending a local seeded run. |
-| P1 | TODO | Route-level emitted chunks exist; initial shell entry is 169,864 gzip bytes. Further bundle changes require a measured improvement. |
+| P1 | DONE | DashboardLayout is lazy; login entry gzip fell from 169,864 to 102,309 bytes (39.8%). Client build and full Jest suite passed; ESLint reported 0 errors on App.tsx (3 existing warnings). |
 | P2 | TODO | No render/interaction profile captured. |
 | P3 | TODO | No request waterfall captured. |
 | P4 | TODO | Query plans and local endpoint latency not measured; no DB schema change made. |
@@ -54,6 +55,12 @@ Measurements are from the current worktree on `perf/optimise` and use the produc
 | 0 | Backend ESLint | — | FAIL; existing CRLF/Prettier violations across the dirty worktree; no auto-fixes applied | `.\node_modules\.bin\eslint.cmd "src/**/*.ts"` |
 | 0 | Lighthouse mobile | — | HUMAN; tool unavailable | `Get-Command chrome,msedge,chromium,lighthouse -ErrorAction SilentlyContinue` |
 | 0 | Seeded API p50 / p95 and per-request query counts | — | HUMAN; no local database available; no requests sent to hosted DB | `node scripts/perf-smoke.mjs` (requires a local API and `PERF_TOKEN`) |
+| 1 | Login entry JavaScript | 510,891 bytes raw / 169,864 bytes gzip | 299,701 bytes raw / 102,309 bytes gzip | `npm --prefix client run build` then `node scripts/perf-bundle.mjs` |
+| 1 | DashboardLayout async chunk | Eagerly included in initial bundle | 20,855 bytes raw / 6,301 bytes gzip, loaded on authenticated routes | `npm --prefix client run build` then `node scripts/perf-bundle.mjs` |
+| 1 | Initial CSS | 78,617 bytes raw / 14,557 bytes gzip | 78,617 bytes raw / 14,557 bytes gzip | `npm --prefix client run build` then `node scripts/perf-bundle.mjs` |
+| 1 | Frontend typecheck and production build | — | PASS | `npm --prefix client run build` |
+| 1 | Full Jest suite | — | PASS | `$env:DATABASE_URL='postgresql://127.0.0.1:1/calassist'; npm test -- --runInBand` |
+| 1 | App.tsx ESLint rules | — | PASS with 0 errors and 3 existing warnings; repository Prettier check still fails on this CRLF worktree file | `.\node_modules\.bin\eslint.cmd --parser-options '{"project":"client/tsconfig.json"}' --rule 'prettier/prettier: off' client/src/App.tsx` |
 
 The bundle script reports raw and gzip bytes for every emitted JS/CSS asset and the HTML entry's static JS dependency graph. The API smoke script is deliberately loopback-only, issues GET requests, performs no seeding or writes, and does not call an external LLM.
 
@@ -66,7 +73,9 @@ The bundle script reports raw and gzip bytes for every emitted JS/CSS asset and 
 | 0 | Did not estimate Lighthouse metrics; no local headless Chrome/Lighthouse executable was available. |
 | 0 | Added dependency-free local benchmark tooling; no package dependency was added. |
 | 0 | Did not run the repository's `npm run lint` script because it auto-fixes files; the non-mutating ESLint run found CRLF/Prettier violations in existing dirty files, so unrelated formatting was left untouched. |
+| 1 | Split DashboardLayout behind React.lazy and a matching route-level Suspense fallback; this reduced login entry JS by 67,555 gzip bytes (39.8%) without changing routes or auth guards. |
+| 1 | Kept the measured split despite the app shell now loading one 6,301-byte gzip chunk after authentication; login avoids that module, and the route fallback covers its asynchronous load. |
 
 ## Iteration Counter
 
-0 — baseline collection.
+1 — P0 baseline and P1 route split.
