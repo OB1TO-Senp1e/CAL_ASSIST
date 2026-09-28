@@ -5,17 +5,24 @@
 > created from the loop prompt's stage definitions.)
 
 ## Current position
-- **Stage:** 4 — Backend Hardening
-- **Next unit:** Stage 4i and 4j are closed (connections token-scrub + per-calendar delta sync, and
-  the calendar JSON/id boundary — both live-verified). Remaining Stage 4 candidates: real-provider
-  answer-quality passes once keys rotate, the permissions/rule-conflict compatibility JSON →
-  dedicated models migration, and notification-preferences follow-ups.
-- **Verification of record (2026-09-28, Stage 4j):** `npx tsc --noEmit` 0 · `npx jest --silent`
+- **Stage:** 5 — AI provider hardening (5a complete); Stage 4 fully closed incl. 4k schema migration.
+- **Status:** Stage 4k (dedicated Permission/AutonomyPolicy/RuleConflict/ReplanningPolicy models,
+  migrations applied + legacy JSON compatibility rows drained to 0) and Stage 5a (shared provider
+  HTTP transport, typed provider errors, circuit breaker + health, capability registry, AI metrics,
+  provider-health endpoint, s5a probe) are live-verified. Google login OAuth (strategy/guard,
+  session middleware, login route, callback token handoff) is committed as 5a-b.
+- **Verification of record (2026-09-28, Stage 4k + 5a):** `npx tsc --noEmit` 0 · `npx jest --silent`
+  **245/245** (20 suites) · `npx prisma migrate status` via DIRECT_URL: both stage4k migrations
+  finished, dedicated tables present, legacy compat rows 0 (`scripts/s4k-check-db.js`) ·
+  `scripts/s5a-probe.ps1` → **17 PASS / 0 FAIL / 5 INFO** (live LLM + metrics + breaker) ·
+  `scripts/stage3-probe.ps1` → **100 PASS / 0 FAIL / 1 INFO** · `GET /auth/google` → 302 to
+  accounts.google.com · backend + client builds green.
+  Earlier (Stage 4j): `npx tsc --noEmit` 0 · `npx jest --silent`
   **135/135** (12 suites; +8 from the new `calendar-boundary.spec.ts`) ·
   `scripts/s4j-probe.ps1` → **ALL PASS** (10 checks) · backend restarted from current `dist` before
   probing. Before that (4i): `scripts/s4i-probe.ps1` all PASS incl. `s4i-check-db.js` DB truth ·
   `scripts/stage3-probe.ps1` → **100 PASS / 0 FAIL / 1 INFO** · `scripts/s4-gate-probe.ps1` steps
-  1–10 all OK. Stage 1 ✅, Stage 2 ✅ (13/13), Stage 3 ✅ (13/13).
+  1–10 all OK. Stage 1 ✅, Stage 2 ✅ (13/13), Stage 3 ✅ (13/13), Stage 4 ✅.
 - **Live backend right now:** Nest (`node dist/main.js` of the latest build) on
   `http://localhost:3000/api` (`GET /api/health` → 200), Vite **dev** server on `http://localhost:3001`
   with `/api` + `/auth` proxied to 3000.
@@ -44,7 +51,8 @@
 | 1 — Design Foundation | ✅ DONE (2026-09-27) |
 | 2 — Frontend Screens | ✅ DONE (13/13, 2026-09-27) |
 | 3 — Backend Tie-in | ✅ DONE (13/13 wired and live-verified, 2026-09-27) |
-| 4 — Backend Hardening | 🟨 IN PROGRESS (4f–4j done; remaining items listed under 4j) |
+| 4 — Backend Hardening | ✅ DONE (4f–4k closed, verification complete) |
+| 5 — AI Provider Hardening | 🟡 IN PROGRESS (5a + 5a-b done; 5b+ not started) |
 
 ### Stage 2 screen-groups
 | Unit | Status |
@@ -79,6 +87,62 @@
 | 3k Integrations | ✅ DONE (2026-09-27) — travel-time returns clean 503 without a key; OAuth callback live |
 | 3l Meeting Intelligence | ✅ DONE (2026-09-27) — preparation/post-meeting retrievable, not placeholders |
 | 3m Command Center | ✅ DONE (2026-09-27) — daily/current, morning, briefing, context, health live |
+
+### 2026-09-28 — Stage 5a-b: Google login OAuth (strategy, session, callback handoff) ✅ (live-verified)
+
+- `GoogleStrategy` (passport-google-oauth20) + `GoogleAuthGuard`; `express-session` middleware in
+  `main.ts` (state=true round-trip needs it); `auth/google` + `auth/google/callback` excluded from
+  the `api` prefix; `AuthService.loginWithGoogle` provisions-or-looks-up by verified email and mints
+  the app JWT. `.env.example`/`docker-compose.yml` document the new vars.
+- Client: "Continue with Google" on the login page; `AuthContext.loginWithToken` consumes the
+  `#access_token` handoff from the callback redirect, then clears the hash.
+- Live: `GET /auth/google` → **302** to `accounts.google.com/o/oauth2/v2/auth` with the configured
+  client id/redirect. Full round-trip needs a real Google account and is not probe-automatable.
+
+### 2026-09-28 — Stage 5a: AI provider transport hardening ✅ (live-verified)
+
+**Built**
+- `provider-http.ts`: shared fetch transport — timeout per attempt, typed retries (429/5xx/timeout/
+  network only; hard 4xx never retried), structured `AiProviderError` kinds (`auth`, `rate_limit`,
+  `timeout`, `network`, `server`, `parse`, `unsupported`). OpenAI/Ollama/Nemotron now ride it via
+  `openai-compatible.provider.ts`.
+- `provider-health.ts`: per-provider circuit breaker. Availability failures trip; **auth failures
+  never do** (bad key ≠ outage). Half-open probe budget configurable, off by default.
+- `ai-capabilities.ts`: declared + env-overridable capability registry (chat/tools/json/embed per
+  provider); `embed()` throws `unsupported` instead of returning `[]`, which had disguised outages
+  as zero-relevance memory results.
+- `MetricsService` AI family: requests/duration/errors(by kind)/retries/tokens/fallbacks/circuit
+  state; `GET /api/assistant/providers/health` exposes capabilities + breaker state read-only.
+- Memory search gains an honest recency+keyword fallback (counted as fallback) when embedding is
+  unavailable; assistant counts provider-silence separately from transport failure.
+- Travel-time provider: `traffic_model` only sent with a departure time (Directions rejects it
+  otherwise); upstream REQUEST_DENIED/billing now degrades to **503**, not a raw 500. Mode schema
+  accepts lowercase client values.
+- Calendar OAuth state contract corrected: adapters pass the self-contained signed JWT verbatim
+  (the old `userId:jwt` prefix broke `verifyOAuthState`). Probe expectation updated to match.
+
+**Verified (2026-09-28)**
+- `scripts/s5a-probe.ps1` (new) → **17 PASS / 0 FAIL / 5 INFO** against live backend: env
+  consistency, auth, live read→proposal path, 2-task fan-out, provider health, breaker closed,
+  every metric family incremented, latency observed, error taxonomy labelled, auth never trips
+  breaker. (Fix during run: probe's latency regex had an unclosed group.)
+- `scripts/stage3-probe.ps1` → **100 PASS / 0 FAIL / 1 INFO**. OpenAI live leg returned a genuine
+  429 "no credits" — surfaced as typed `rate_limit`, breaker stayed closed: exactly the behaviour
+  this unit exists to guarantee.
+
+### 2026-09-28 — Stage 4k: dedicated permission/policy models (JSON compatibility retired) ✅ (live-verified)
+
+- Prisma: first-class `Permission`, `AutonomyPolicy`, `RuleConflict`, `ReplanningPolicy` models with
+  proper enums/scopes; migrations `20260928120000_stage4k_permission_models` +
+  `20260928121000_stage4k_replanning_policy` **applied to dev DB** (verified via `_prisma_migrations`
+  through DIRECT_URL — the Supabase session pooler breaks the CLI's prepared statements).
+- Permission service, rules engine (conflict persistence), and replanning engine rewritten against
+  the models; the JSON/string compatibility representations are gone.
+- `/api/permissions/check` is zod-validated on the real contract (`action`+`scope`); stage3 probe
+  updated (the old `actionType`-only body is now genuinely a 400).
+- `scripts/s4k-check-db.js`: new columns/tables present, legacy compat rows **0**.
+- New specs: `permission-storage.spec.ts`, `memory-engine.service.spec.ts`, rules/replanning
+  coverage → Jest **245/245 (20 suites)**.
 
 ### 2026-09-28 — Stage 4j: calendar boundary closed (Luxon serialisation + id flavour) ✅ (live-verified)
 
