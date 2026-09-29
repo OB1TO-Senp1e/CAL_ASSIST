@@ -136,3 +136,7 @@ Simplification actually implemented: delete every child table incl. all AuditLog
 - Files: NEW docs/GOOGLE_VERIFICATION.md (154 lines, 8 sections). Doc-only iteration; no code touched.
 - Contents: scope table w/ console-ready justification; consent-screen field values; exact redirect-URI list (dev+prod, tied to C9 boot validator); 10-point Limited Use evidence mapping C1–C9; 8-shot demo-video script; form answers; pre-submission checklist (console items marked HUMAN); §7 records the four open follow-ups (watch auto-create, channel renewal, embeddings-under-consent decision, CI migration mode) so nothing is silently closed.
 - Loop-protocol re-verification (final): `npx tsc --noEmit` 0 (server+client); full `npx jest` 30 suites/299 tests PASS; remaining repo-wide eslint prettier/CRLF errors are the pre-existing baseline (not introduced by C1–C10).
+
+### Post-review correction — C4 account-erasure coverage
+- Added CalendarOAuthPkce and CalendarPushChannel to the explicit userId cleanup list; neither model has a User FK, so the final user deletion would not remove these rows automatically.
+- Extended the database integration fixture with both models and added an isolated deletion-order regression test. The focused regression passes; live-DB verification remains dependent on the local test database being available.

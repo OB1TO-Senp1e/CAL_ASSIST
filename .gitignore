@@ -19,3 +19,7 @@ drift-*.sql
 prisma-drift.sql
 scripts/*.token
 scripts/*.txt
+
+# Coordination-audit scratch: spec text dumps, edit-block drafts, pre-fix file
+# copies. All throwaway; the pre-fix email provider is already in git history.
+.tmp-spec/

@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CAL_ASSIST Upgrade Implementation Specification</title>
+<style>
+body{font-family:Inter,Arial,sans-serif;line-height:1.6;max-width:1050px;margin:auto;padding:40px;color:#17202a;background:#fff}
+h1{font-size:36px;margin-bottom:6px} h2{margin-top:42px;border-bottom:2px solid #ddd;padding-bottom:8px}
+h3{margin-top:24px} code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,monospace} pre{background:#f6f8fa;padding:16px;border-radius:8px;overflow:auto}
+.cover{padding:70px 0 40px;border-bottom:1px solid #ddd} .sub{color:#58616b;font-size:18px}
+.card{background:#f7f9fb;border-left:4px solid #444;padding:14px 18px;margin:14px 0}
+table{border-collapse:collapse;width:100%;margin:16px 0}td,th{border:1px solid #ddd;padding:8px;text-align:left} th{background:#f2f2f2}
+li{margin:6px 0} .small{color:#6b7280;font-size:13px}
+@media print{body{padding:15px}h2{page-break-before:always}}
+</style></head><body>
+<div class="cover"><h1>CAL_ASSIST Upgrade Implementation Specification</h1><p class="sub">Personal Time Operating System — Coordination, Scheduling, Google Calendar/Meet, Reality &amp; Replanning</p>
+<div class="card"><strong>Implementation target:</strong> Extend the existing Node.js 20+, PostgreSQL 14+, Prisma, Zod, JWT architecture without turning CAL_ASSIST into a conventional calendar app.</div>
+<p class="small">Prepared from the CAL_ASSIST architecture and requirements supplied in the project brief.</p></div>
+<h2>Table of Contents</h2><ol><li><a href="#s1">1. Executive Summary</a></li>
+<li><a href="#s2">2. Existing Architecture to Preserve</a></li>
+<li><a href="#s3">3. New Engines and Modules</a></li>
+<li><a href="#s4">4. Product Capabilities</a></li>
+<li><a href="#s5">5. Google Integration</a></li>
+<li><a href="#s6">6. Provider Interface</a></li>
+<li><a href="#s7">7. Meeting Lifecycle</a></li>
+<li><a href="#s8">8. Database Model</a></li>
+<li><a href="#s9">9. Autonomy and Approval</a></li>
+<li><a href="#s10">10. Natural-Language Scheduling</a></li>
+<li><a href="#s11">11. Availability and Scheduling</a></li>
+<li><a href="#s12">12. Executive/Boss Mode</a></li>
+<li><a href="#s13">13. Templates, Invitations, Confirmations &amp; Reminders</a></li>
+<li><a href="#s14">14. Meeting Briefing and Follow-up</a></li>
+<li><a href="#s15">15. Reality Engine Integration</a></li>
+<li><a href="#s16">16. Replanning</a></li>
+<li><a href="#s17">17. API Expansion</a></li>
+<li><a href="#s18">18. Security</a></li>
+<li><a href="#s19">19. Frontend</a></li>
+<li><a href="#s20">20. Example End-to-End Workflow</a></li>
+<li><a href="#s21">21. Implementation Roadmap</a></li>
+<li><a href="#s22">22. Testing &amp; Acceptance Criteria</a></li>
+<li><a href="#s23">23. Free-First Strategy</a></li>
+<li><a href="#s24">24. Prioritized Backlog</a></li>
+<li><a href="#s25">25. Migration Plan</a></li>
+<li><a href="#s26">26. Definition of Done</a></li></ol>
+<section id="s1"><h2>1. Executive Summary</h2><p>CAL_ASSIST should remain a Personal Time Operating System rather than becoming a conventional calendar. The upgrade adds a Coordination layer that manages the administrative lifecycle around meetings: understand intent, find feasible times, obtain approval where required, create calendar/Google Meet events, track confirmations, prepare briefs, monitor execution, and create follow-up tasks.</p><p>Target lifecycle: Intent → Understand → Plan → Coordinate → Schedule → Confirm → Execute → Reality Detection → Replan → Follow-up → Learn.</p></section><section id="s2"><h2>2. Existing Architecture to Preserve</h2><p>Core engines: Context Engine, Memory Engine, Assistant Orchestrator. AI engines: Intent Parser, Planning Engine, Scheduling Engine, Reality Engine, Replanning Engine. Domain engines: Goal Engine, Commitment Engine, Project Engine, Task Engine.</p><p>Existing principles remain mandatory: strong typing, Zod validation, explicit autonomy controls, explainability/audit logs, pluggable providers, production-quality testing and type safety.</p></section><section id="s3"><h2>3. New Engines and Modules</h2><p>Add Coordination Engine, Meeting Engine, Availability Engine, Confirmation Engine, Reminder Engine, Briefing Engine, Follow-up Engine, and Preference Engine. These should be domain/application services, not LLM-only behaviors.</p><pre>Suggested structure:
+src/coordination/
+  coordination-engine/
+  meeting-engine/
+  availability-engine/
+  invitation-engine/
+  confirmation-engine/
+  reminder-engine/
+  briefing-engine/
+  followup-engine/
+src/preferences/
+src/integrations/calendar-adapters/
+  calendar-provider.interface.ts
+  google-calendar.adapter.ts
+  mock-calendar.adapter.ts</pre></section><section id="s4"><h2>4. Product Capabilities</h2><p>Natural-language scheduling; availability search; hard/soft constraints; Google Calendar sync; Google Meet creation; attendee management; approval gates; invitation drafting; confirmation tracking; reminders; recurring meetings; time-zone intelligence; meeting templates; executive preferences; meeting briefs; agenda generation; post-meeting follow-up; action-item extraction; task creation; reality detection; intelligent replanning; daily briefings.</p><p>Core user promise: “Tell CAL_ASSIST what needs to happen; it coordinates the work around your time while keeping you in control of consequential actions.”</p></section><section id="s5"><h2>5. Google Integration</h2><p>Use Google OAuth 2.0 for account authorization. Store access/refresh tokens encrypted server-side. Do not expose refresh tokens to the browser.</p><p>Create a provider abstraction so Google is an adapter rather than a hard-coded dependency. The Google Calendar adapter should support calendar discovery, event listing, event creation/update/deletion, attendee handling, availability lookup, recurrence, and Google Meet conference creation.</p><p>For Meet-enabled events, request Calendar conference data using the Google Meet conference solution. Persist the provider event ID, conference ID/code where available, and join URL.</p><p>Recommended scopes should be minimized to the features actually enabled. Request broader Calendar write scope only when required by the user&#x27;s enabled workflow.</p></section><section id="s6"><h2>6. Provider Interface</h2><pre>TypeScript contract:
+interface CalendarProvider {
+  listCalendars(): Promise&lt;Calendar[]&gt;;
+  listEvents(query: EventQuery): Promise&lt;CalendarEvent[]&gt;;
+  createEvent(input: CreateEventInput): Promise&lt;CalendarEvent&gt;;
+  updateEvent(id: string, input: UpdateEventInput): Promise&lt;CalendarEvent&gt;;
+  deleteEvent(id: string): Promise&lt;void&gt;;
+  findAvailability(input: AvailabilityQuery): Promise&lt;AvailabilityResult&gt;;
+}</pre><pre>Conference support should be provider-neutral:
+conference: { enabled: boolean; provider: &#x27;google_meet&#x27; | &#x27;none&#x27; | string }.</pre></section><section id="s7"><h2>7. Meeting Lifecycle</h2><p>DRAFT → PROPOSED → PENDING_APPROVAL → SCHEDULED → INVITATIONS_SENT → PARTIALLY_CONFIRMED → CONFIRMED → IN_PROGRESS → COMPLETED → FOLLOW_UP → CLOSED.</p><p>Additional terminal/intermediate states: DECLINED, CANCELLED, RESCHEDULED, NO_SHOW, FAILED.</p></section><section id="s8"><h2>8. Database Model</h2><p>Recommended new Prisma entities: CalendarConnection, Meeting, MeetingParticipant, MeetingProposal, SchedulingPreference, MeetingTemplate, Reminder, MeetingBrief, FollowUp, AiActionLog. Reuse existing Event, Commitment, Task, Project, Goal and User entities where appropriate.</p><p>Example Meeting fields: id, userId, eventId, title, description, status, durationMinutes, timezone, meetingType, conferenceProvider, conferenceUrl, conferenceId, createdAt, updatedAt.</p><p>MeetingParticipant: id, meetingId, name, email, role, responseStatus, required, respondedAt.</p><p>MeetingProposal: id, meetingId, start, end, score/priority if used internally, reasons, conflicts, createdAt. Expose human-readable reasons instead of opaque scores.</p></section><section id="s9"><h2>9. Autonomy and Approval</h2><p>Implement granular permissions instead of a single AI autonomy switch: calendar.read, calendar.create, calendar.update, calendar.delete, meeting.create, meeting.reschedule, meeting.cancel, email.draft, email.send, reminder.create, external_contact.</p><p>Recommended levels: Suggest only; Prepare drafts; Ask before external action; Auto-schedule; Auto-coordinate. External communication and destructive calendar changes should default to approval unless explicitly enabled.</p><p>Every execution path must pass permission checks and write an audit record.</p></section><section id="s10"><h2>10. Natural-Language Scheduling</h2><p>Example: “Arrange a 45-minute call with ABC next week, preferably Tuesday afternoon, use Google Meet.” The Intent Parser should produce structured JSON validated by Zod. The LLM should not directly call Google APIs.</p><pre>Example structured intent:
+{ intent: &#x27;schedule_meeting&#x27;, durationMinutes: 45, dateRange: {from, to}, preferredTime: {period:&#x27;afternoon&#x27;}, participants:[...], conference:{provider:&#x27;google_meet&#x27;} }</pre><p>Execution path: LLM → structured intent → Zod validation → permission check → Coordination Engine → Availability Engine → Scheduling Engine → approval → Calendar provider.</p></section><section id="s11"><h2>11. Availability and Scheduling</h2><p>Hard constraints: existing events, required attendees, working hours, time zones, explicit blocked periods, commitments. Soft constraints: preferred hours, meeting duration, buffers, lunch, focus time, meeting density, learned preferences.</p><p>Return multiple candidate slots with explanations. Example: “Wednesday 3:30–4:15 PM — all required participants available; within preferred afternoon window; 15-minute buffer preserved.”</p><p>Avoid opaque AI-only ranking. Deterministic constraints should be enforced in application code; AI can interpret preferences and explain results.</p></section><section id="s12"><h2>12. Executive/Boss Mode</h2><p>Allow a user to define working hours, preferred meeting times, minimum buffer, maximum meetings/day, lunch window, focus hours, default duration, preferred timezone, and preferred conference provider.</p><p>Support per-meeting-type rules such as client=45 minutes, internal=30 minutes, interview=60 minutes, board=60 minutes.</p><p>Distinguish explicit preferences from learned patterns. Learned behavior should be proposed as a suggestion, not silently converted into a hard rule.</p></section><section id="s13"><h2>13. Templates, Invitations, Confirmations &amp; Reminders</h2><p>Templates should store duration, conference provider, agenda starter, buffers and reminder rules. Provide Client Meeting, Interview, Internal Standup and Board Meeting templates as examples.</p><p>Invitation engine should generate professional drafts and optionally send via a connected provider after approval.</p><p>Confirmation engine tracks PENDING, ACCEPTED, DECLINED, TENTATIVE and UNKNOWN. Dashboard should show counts and prompt follow-up when appropriate.</p><p>Reminder engine supports 24h, 1h, 15m and custom reminders, with in-app/email/push channels as available.</p></section><section id="s14"><h2>14. Meeting Briefing and Follow-up</h2><p>Briefing engine combines Context Engine + Memory Engine + meeting data to produce purpose, participants, prior interactions, open items, suggested agenda and relevant tasks.</p><p>Follow-up engine turns notes into proposed action items, owners, due dates and email drafts. Require confirmation before creating externally assigned tasks or sending messages.</p><p>Example: “Rahul will send the revised proposal by Friday” → proposed task with owner Rahul, due Friday, linked to the meeting/project.</p></section><section id="s15"><h2>15. Reality Engine Integration</h2><p>Use actual execution data to compare planned vs actual. Detect overruns, early finishes, missed meetings, no-shows and downstream schedule impact.</p><p>Example: a 30-minute meeting runs 18 minutes over. Reality Engine reports the deviation; Replanning Engine proposes moving subsequent flexible blocks while protecting hard commitments and buffers.</p></section><section id="s16"><h2>16. Replanning</h2><p>When a user reports “I’m running 30 minutes late,” calculate affected events/tasks/commitments and propose a new plan. Never silently change consequential external commitments unless autonomy rules permit it.</p><p>Proposal format should list impacted items, proposed new times, conflicts and why the changes were chosen.</p></section><section id="s17"><h2>17. API Expansion</h2><pre>Add:
+GET /calendar/connections
+GET /calendar/availability
+POST /meetings
+GET /meetings
+GET /meetings/:id
+PATCH /meetings/:id
+POST /meetings/:id/confirm
+POST /meetings/:id/cancel
+POST /meetings/:id/reschedule
+GET /meetings/:id/proposals
+POST /coordination/analyze
+POST /coordination/propose
+POST /coordination/execute
+GET/PATCH /preferences/scheduling
+GET/POST /meeting-briefs
+GET/POST /followups
+GET/PATCH /autonomy/permissions
+GET /reminders</pre><p>Keep existing /events, /tasks, /commitments, /ai/intent/parse, /ai/planning/from-intent and /scheduling/generate backward compatible.</p></section><section id="s18"><h2>18. Security</h2><p>Encrypt OAuth tokens at rest. Use short-lived access tokens where possible, refresh securely, and revoke connections cleanly. Apply least-privilege scopes. Validate every request with Zod. Enforce ownership/authorization at service level, not only controller level.</p><p>Protect against prompt injection from calendar descriptions, event titles, emails and notes. Treat external text as untrusted data. Never allow external content to redefine permissions or tool policy.</p><p>Audit permission checks, proposals, approvals, executions, provider errors and user overrides. Do not store private chain-of-thought; store concise operational reasoning summaries.</p></section><section id="s19"><h2>19. Frontend</h2><p>Recommended screens/components: Ask CAL_ASSIST composer; Schedule Meeting modal; Candidate Slots panel; Meeting Detail; Calendar Connections; Executive Preferences; Autonomy Controls; Meeting Dashboard; Meeting Brief; Follow-up panel; Daily Briefing.</p><p>Ask composer should show what CAL_ASSIST understood before execution. Every external or destructive action should have a visible approval state.</p></section><section id="s20"><h2>20. Example End-to-End Workflow</h2><p>User: “Boss wants a 45-minute meeting with ABC Agency next Wednesday afternoon with Rahul and Priya.” CAL_ASSIST parses intent, loads preferences, checks calendars, proposes slots, creates a proposal, requests approval if needed, creates Google Calendar + Meet, tracks responses, prepares a brief, and later converts outcomes into follow-up tasks.</p><p>This should feel like an executive assistant workflow, not a form-driven calendar workflow.</p></section><section id="s21"><h2>21. Implementation Roadmap</h2><p>Phase 1: Google OAuth, Calendar provider abstraction, event sync, Meet creation, Meeting entity, participants, availability, proposals, autonomy and approval gates.</p><p>Phase 2: Natural-language scheduling, preferences, templates, invitation drafts, confirmation tracking, reminders, recurring meetings and timezone support.</p><p>Phase 3: Meeting briefs, agenda generation, memory integration, follow-ups, action-item extraction, task creation and daily briefing.</p><p>Phase 4: Reality detection, overrun detection, commitment impact analysis, intelligent replanning and learned preferences.</p></section><section id="s22"><h2>22. Testing &amp; Acceptance Criteria</h2><p>Unit tests: intent schemas, constraint evaluation, availability intersection, timezone conversions, permission checks, lifecycle transitions, provider mapping, recurrence handling.</p><p>Integration tests: OAuth connection, Calendar event creation/update/delete, Meet conference creation, attendee responses, token refresh and failure recovery.</p><p>E2E acceptance: natural-language request produces a validated proposal; approval is required when configured; approved request creates event and Meet; participant state is tracked; reminder fires; meeting completion can produce follow-up tasks.</p><p>Security tests: cross-user access denial, invalid tokens, malicious event descriptions, unauthorized tool calls, approval bypass attempts.</p><p>Performance: retain the existing frontend bundle budget and loopback API smoke benchmark. Add benchmarks for availability queries, event synchronization and meeting proposal generation.</p></section><section id="s23"><h2>23. Free-First Strategy</h2><p>Keep core individual productivity free: Google Calendar connection, Google Meet creation, natural-language scheduling, availability/conflict detection, templates, recurring meetings, reminders, agenda generation, meeting briefs, basic follow-up and daily schedule.</p><p>Potential paid layer should focus on organizational scale: shared assistants, team scheduling, admin controls, advanced integrations, audit/compliance features, organization-wide policies and higher AI usage limits.</p></section><section id="s24"><h2>24. Prioritized Backlog</h2><pre>P0: Google OAuth; provider interface; Google Calendar adapter; Meet creation; Meeting model; participant model; availability engine; approval/autonomy; audit logging; basic UI.</pre><p>P1: natural-language scheduling; preferences; templates; confirmations; reminders; timezone handling; recurring meetings; invitation drafts.</p><p>P2: briefs; agendas; memory-aware context; follow-up; task extraction; daily briefing.</p><p>P3: reality-driven replanning; learned preferences; multi-provider coordination; advanced organization workflows.</p></section><section id="s25"><h2>25. Migration Plan</h2><p>1. Add database migrations without removing existing Event/Task/Commitment models. 2. Introduce provider interfaces and mock adapter. 3. Add Google connection storage and OAuth flow. 4. Add Meeting as a domain object linked to Event. 5. Route new meeting creation through Coordination Engine while retaining /events for legacy clients. 6. Add audit/autonomy enforcement. 7. Add UI incrementally. 8. Backfill only safe relationships from existing events after validation.</p></section><section id="s26"><h2>26. Definition of Done</h2><p>A release is complete when a user can connect Google, ask CAL_ASSIST in natural language to arrange a meeting, see what was understood, receive feasible slots with explanations, approve or reject execution, create a Google Calendar event with a Google Meet link, invite attendees, track responses, receive reminders, open a meeting brief, and create follow-up tasks — with permissions, audit logs, validation, error handling and tests covering the workflow.</p></section><h2>Appendix A — Recommended First Sprint</h2>
+<ol>
+<li>Create calendar provider interface and mock adapter.</li>
+<li>Add Prisma models for CalendarConnection, Meeting, MeetingParticipant and MeetingProposal.</li>
+<li>Implement Google OAuth connection and encrypted token storage.</li>
+<li>Implement Google Calendar event creation with optional Google Meet conference data.</li>
+<li>Implement availability query and candidate-slot generation.</li>
+<li>Add autonomy/approval middleware and AiActionLog.</li>
+<li>Build Ask CAL_ASSIST → proposal → approval → schedule UI flow.</li>
+<li>Add integration and end-to-end tests.</li>
+</ol>
+<h2>Appendix B — Engineering Rule</h2>
+<div class="card"><strong>AI proposes and interprets; deterministic services validate and execute.</strong><br>
+This rule should govern calendar changes, permissions, external messages, task creation, and replanning.</div>
+</body></html>
