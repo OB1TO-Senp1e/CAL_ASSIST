@@ -17,16 +17,25 @@ Repo: `d:\CAL_ASS_V1\CAL_ASSIST` · Branch: `feat/cross-functional-coordination`
 
 ## Iteration status
 
-Iteration counter: **1 CLOSED.** C-00 signed off (D1–D8 as proposed + Phase 1 scope). **C-01 (coordination
-substrate) delivered** on `feat/cross-functional-coordination`: `src/coordination/` module with outbox +
-lease-based claim + shutdown-aware worker + Zod DTOs + co-located specs. The C-01 migration is **authored
-to `prisma/pending/`, NOT applied** (see the ledger row and the migration file's own deploy header).
+Iteration counter: **2 — canonical C-01 delivered** (this pass). C-00 signed off (D1–D8 as proposed +
+Phase 1 scope).
+
+> **⚠ Id-namespace collision — resolved this pass.** The row below that the substrate commit
+> (`75315a4`, subject "feat(coordination): **C-01** substrate …") labelled `C-01` is **not** canonical
+> C-01. In the authoritative Phase-1 checklist, **C-01 = `CalendarProvider` contract (spec §6) +
+> `MockCalendarAdapter` + shared contract suite**, and the coordination substrate is **C-00 supporting
+> infrastructure** (decision D1's job runner). Canonical dependency order:
+> `C-00 → C-01 → C-02 → C-06 → C-05 → C-07 → C-03 → C-04 → C-08 → C-10 → C-09 → C-11 → C-12`.
+> Checklist IDs decide what is done; commit subjects do not. `75315a4` is **retained as-is** — not
+> reverted, not re-counted as C-01. Canonical C-01 evidence is the new section further down.
 
 | ID | Item | Status | Evidence (file:line + command output) |
 |----|------|--------|----------------------------------------|
 | C-00 | Repo/architecture audit vs. spec, decisions recorded before any code | **CLOSED — SIGNED OFF** | `docs/coordination-audit.md`. G1 + G2 closed; fresh-clone verification green (44 suites / 358 tests on clean clone of `8d5e510`); D1–D8 confirmed as proposed + Phase 1 scope agreed; branch `feat/cross-functional-coordination` created from `21e6997` (audit §8 all checked). |
-| C-01 | Coordination substrate: `src/coordination/` outbox + job worker (D1) | **DELIVERED — MIGRATION NOT APPLIED** | 12 files under `src/coordination/` + `prisma/pending/20260929120000_c01_outbox_job/migration.sql`. Evidence: `npx tsc --noEmit` exit 0; `npx eslint --quiet src/coordination` exit 0; `npm test` **48/48 suites, 391/391 tests** (baseline 44/358 + 4 new suites / 33 tests); `npm run build` exit 0. Claim = `$queryRaw` `SELECT ... FOR UPDATE SKIP LOCKED` + leasing `UPDATE` inside ONE `$transaction` (`outbox.store.ts` `claimOne`). Zero new production deps; no `@nestjs/schedule` (the worker is a self-scheduled `setTimeout`). Worker **default OFF** (`COORDINATION_WORKER_ENABLED`) because polling hits a table that does not exist until the migration ships. No Prisma schema change (option C's schema surface not started). |
-| C-02+ | Not started | **READY — AWAITING KICKOFF** | Substrate exists; handlers are still unregistered by design — a claimed job with no handler nacks `NO_HANDLER_FOR_<type>` and retries, it never crashes or loses the row. |
+| C-00b | **Substrate** (retlabelled this pass — commit `75315a4` called it "C-01"): `src/coordination/` outbox + job worker (D1) | **DELIVERED — MIGRATION NOT APPLIED** | 12 files under `src/coordination/` + `prisma/pending/20260929120000_c01_outbox_job/migration.sql`. Evidence: `npx tsc --noEmit` exit 0; `npx eslint --quiet src/coordination` exit 0; `npm test` **48/48 suites, 391/391 tests** (baseline 44/358 + 4 new suites / 33 tests); `npm run build` exit 0. Claim = `$queryRaw` `SELECT ... FOR UPDATE SKIP LOCKED` + leasing `UPDATE` inside ONE `$transaction` (`outbox.store.ts` `claimOne`). Zero new production deps; no `@nestjs/schedule` (the worker is a self-scheduled `setTimeout`). Worker **default OFF** (`COORDINATION_WORKER_ENABLED`) because polling hits a table that does not exist until the migration ships. No Prisma schema change (option C's schema surface not started). |
+| **C-01 (canonical)** | `CalendarProvider` contract (spec §6) + `MockCalendarAdapter` + shared contract suite | **DELIVERED — PASS** | 4 new files under `src/integrations/calendar-adapters/`: `calendar-provider.interface.ts` (spec §6's six methods verbatim + Zod input/output schemas + `CalendarProviderError`/`EventNotFoundError`), `mock-calendar.adapter.ts` (`@Injectable`, deterministic: injected fixed clock `MOCK_FIXED_NOW`, monotonic id counters, no `Date.now`/`Math.random`), `calendar-provider.contract.ts` (reusable `describeCalendarProviderContract()`), `calendar-provider.contract.spec.ts` (runner: 13 contract tests + 8 mock-specific + 1 teeth-check). Evidence: `npx jest src/integrations/calendar-adapters` **8 suites / 61 tests** (was 7/39; +22); `npx tsc --noEmit` exit 0; `npm run build` exit 0; `npx eslint --quiet <4 new files>` exit 0; `npm test` **49/49 suites, 413/413 tests** exit 0. No DB/network/OAuth. |
+| C-02 (canonical) | §8 domain schema — `Meeting`/`MeetingParticipant`/`MeetingProposal`/`SchedulingPreference`/`AiActionLog` (+ `CalendarConnection`, `MeetingTemplate`, `MeetingBrief`, `FollowUp`, `Reminder`) | **NEXT — NOT STARTED** | Prisma **enums already exist** (`ProposalStatus`, `ParticipantStatus`, `PreferenceCategory`, `MeetingArtifactKind`, `Autonomy*`); the five **models are absent** (`grep '^model'` → no `Meeting`/`MeetingParticipant`/`MeetingProposal`/`SchedulingPreference`/`AiActionLog`). Per audit D5, `Event` stays the anchor and `Meeting` is a 1:1 extension. |
+| (old "C-02+") | Substrate handlers still unregistered | DEFERRED | A claimed job with no handler nacks `NO_HANDLER_FOR_<type>` and retries — never crashes or loses the row. Wiring handlers belongs to C-08/C-09/C-11, not to the C-01→C-02 path. |
 
 ## Gate — closed, C-00 signed off
 
@@ -82,7 +91,7 @@ scratch under the new `.tmp-spec/` ignore rule.
 - `promtool` is available without a local install:
   `docker run --rm -v ${PWD}/prometheus:/etc/prometheus prom/prometheus:v2.52.0 promtool check rules /etc/prometheus/alerts.yml`
 
-## Next action (single, explicit)
+## Gate-closure checklist (iteration 1 — all items done; the forward step is at the end of this file)
 
 1. ~~User places the spec at `docs/specs/...`~~ — **done** (G1 closed).
 2. ~~User picks G2 (branch base: a, b, or c)~~ — **done: option (a), commit not stash.** R3 fix committed alone first (`f04c4e2`), then infra/app/tests/docs coarse commits. Nothing stashed, reset, or discarded; the 4 deleted visual-check PNGs stay uncommitted by instruction.
@@ -91,9 +100,10 @@ scratch under the new `.tmp-spec/` ignore rule.
    **after** `npx prisma generate`, which bare `npm ci` does not run (no `prepare` script; CI already does
    this, so pre-existing, not a G2 regression); `npm test` exit 0 — **44 suites / 358 tests passed**.
 4. ~~Create `feat/cross-functional-coordination` from the cleaned tip and request gate approval~~ — **DONE: branch created from `21e6997`; user gave full sign-off (D1–D8 as proposed + Phase 1 scope).**
-5. ~~No code until the user kicks off C-01~~ — **done: C-01 kicked off and delivered** (substrate, option B).
+5. ~~No code until the user kicks off C-01~~ — **done: substrate kicked off and delivered** (option B).
+   *Note: the substrate is **C-00b**, not canonical C-01 — see the id-namespace warning above.*
 
-## C-01 delivered state + open follow-ups (iteration 1)
+## Substrate (C-00b) delivered state + open follow-ups (iteration 1)
 
 Shipped: `src/coordination/{coordination.module.ts, coordination.types.ts, coordination.controller.ts,
 outbox/{outbox.types.ts, outbox.store.ts, outbox.service.ts}, jobs/{job-handlers.ts, job-worker.service.ts}}`
@@ -113,7 +123,52 @@ branch by CI**).
 | **Zero job handlers registered** | By design. `OutboxJobTypeSchema` declares `REMINDER`/`FOLLOWUP`/`CHANNEL_RENEWAL`; claiming one nacks `NO_HANDLER_FOR_<type>` and retries — no crash, no lost row. Wiring a handler is a later control point. |
 | **Worker env knobs** | `COORDINATION_WORKER_ENABLED` (default `false`), `_POLL_MS` (5000), `_BATCH_SIZE` (5), `_LEASE_SECONDS` (60), `_RETRY_SECONDS` (30) — validated at construction; out-of-range values throw instead of silently defaulting. Nothing added to `.env` in this cut. |
 
+## Canonical C-01 delivered state (iteration 2)
+
+**Spec anchors:** §6 "Provider Interface" (six methods + provider-neutral `conference`) and §3's suggested
+files `calendar-provider.interface.ts` / `mock-calendar.adapter.ts`; Appendix A step 1 "Create calendar
+provider interface and mock adapter"; §11 "hard constraints enforced in application code; human-readable
+reasons, not opaque scores"; Appendix B "deterministic services validate and execute".
+
+**Files (4, all new, all `src/integrations/calendar-adapters/`):**
+- `calendar-provider.interface.ts` — `CalendarProvider` (spec §6 verbatim: `listCalendars`, `listEvents`,
+  `createEvent`, `updateEvent`, `deleteEvent`, `findAvailability`), Zod schemas for calendar/event/query/
+  result shapes, `CalendarProviderError` + `EventNotFoundError`, DI token `CALENDAR_PROVIDER` (documented
+  as **not registered** — registering the mock would ship it as a production default).
+- `mock-calendar.adapter.ts` — deterministic in-memory `@Injectable` implementation: fixed clock
+  (`MOCK_FIXED_NOW`), monotonic `mock-evt-N`/`mock-cal-N` ids (contrast `LocalCalendarAdapter`, which uses
+  `Date.now()`+`Math.random()` and so cannot anchor the suite), pure-arithmetic `findAvailability`
+  honouring `bufferMinutes`, `workingHours`, `limit`/`truncated`.
+- `calendar-provider.contract.ts` — reusable `describeCalendarProviderContract(name, ctx)` + `contractEvent()`
+  fixture (13 assertions). Intentionally **not** a `.spec.ts`: Jest's `testRegex: '.*\.spec\.ts$'` would
+  collect it as an empty failing suite.
+- `calendar-provider.contract.spec.ts` — runner (13 contract + 8 mock-specific + 1 "suite has teeth"
+  negative-control).
+
+**Design decision recorded (naming):** spec §6's helper names collide with existing `src/` symbols
+(`CreateEventInput`/`UpdateEventInput` in `tool-schemas.ts`; `CalendarProvider` is a Prisma enum). Auxiliary
+types are `Provider*`-prefixed with an explicit §6→file mapping in the header; `CalendarProvider` itself
+keeps the spec name because **no `src/` file imports the enum** (client-only). No existing file was renamed.
+
+**Scope discipline:** no Google OAuth/Meet (C-03/C-04), no Prisma model change (C-02), no worker/migration
+touch, no new dependencies. The legacy `CalendarAdapter` implementations are **not** bridged — they are
+event/OAuth-oriented and do not implement `CalendarProvider`; faking compliance was rejected.
+
+**Gate evidence (iteration 2):** `npx jest src/integrations/calendar-adapters` → **8 suites / 61 tests**;
+`npx tsc --noEmit` → exit 0; `npx eslint --quiet <the 4 new files>` → exit 0; `npm run build` → exit 0;
+`npm test` → **49/49 suites / 413/413 tests** (413 = 391 substrate-era baseline + 22 new).
+
+**Known pre-existing conditions, NOT introduced here:** (a) linting whole directories (`src/calendar`,
+`src/coordination`) reports `Delete ␍` on every file because `core.autocrlf=true` checks the tree out CRLF
+while `.prettierrc` sets `endOfLine: "lf"` — repo-wide and unrelated to C-01, so new files were written
+LF-first; (b) `npm test` once failed `src/common/redis/redis.module.spec.ts` with a `@redis/client`
+`XPENDING` resolution error under parallel runs — it passes standalone (2/5) and on rerun, a node_modules
+flake with zero coupling to C-01 (grep of the 4 new files for `redis` → 0).
+
 ## Next action (single, explicit)
 
-6. **Await C-02 kickoff.** Nothing further is built on `feat/cross-functional-coordination` until then;
-   the migration stays unapplied and the worker stays disabled.
+6. **Canonical C-02** (now the live next step in `C-00 → C-01 → C-02 → …`; C-01 is PASS): add the §8 Prisma
+   **models** — `Meeting` (1:1 extension of `Event` per D5), `MeetingParticipant`, `MeetingProposal`,
+   `SchedulingPreference`, `AiActionLog` — over the enums that already exist. Then **C-06**.
+   The outbox migration **stays unapplied** and the worker **stays disabled** until the PgBouncer
+   `SKIP LOCKED` smoke test passes and the user explicitly approves touching the live DB.
