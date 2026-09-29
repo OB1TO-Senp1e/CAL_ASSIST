@@ -1,0 +1,79 @@
+groups:
+  - name: calassist-api
+    rules:
+      - alert: CalAssistApiScrapeFailure
+        expr: up{job="calassist-api"} == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: A CalAssist API replica is not scrapeable
+          description: 'Prometheus cannot scrape API target {{ $labels.instance }}.'
+
+      - alert: CalAssistApiTargetsMissing
+        expr: absent(up{job="calassist-api"})
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: No CalAssist API replicas are discovered
+          description: Prometheus DNS service discovery has no API targets.
+
+      - alert: CalAssistApiHighServerErrorRate
+        expr: |
+          sum(rate(calassist_http_requests_total{job="calassist-api",status_code=~"5.."}[5m]))
+          /
+          clamp_min(sum(rate(calassist_http_requests_total{job="calassist-api"}[5m])), 1)
+          > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: CalAssist API server error rate exceeds 5%
+          description: 'The API 5xx request ratio has exceeded 5% for five minutes.'
+
+      - alert: CalAssistApiHighP95Latency
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(calassist_http_request_duration_seconds_bucket{job="calassist-api"}[5m]))
+          ) > 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: CalAssist API p95 latency exceeds one second
+          description: 'The aggregated API p95 request duration has exceeded one second for ten minutes.'
+
+      - alert: CalAssistRedisMemoryHigh
+        expr: |
+          (
+            redis_memory_used_bytes{job="redis"}
+            /
+            redis_memory_max_bytes{job="redis"}
+          ) > 0.8
+          and redis_memory_max_bytes{job="redis"} > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: CalAssist Redis memory exceeds 80% of its configured maximum
+          description: 'Redis memory usage has exceeded 80% of maxmemory for five minutes.'
+
+      - alert: CalAssistRedisUnavailable
+        expr: redis_up{job="redis"} == 0 or up{job="redis"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: CalAssist Redis dependency is unavailable
+          description: 'Redis is degraded in /health/deps or the Redis exporter cannot reach it.'
+
+      - alert: CalAssistThrottlerRedisFallback
+        expr: increase(calassist_throttler_redis_fallback_total{job="calassist-api"}[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: CalAssist is using per-process throttling
+          description: 'Redis-backed throttling has failed on an API replica; distributed limits are degraded.'
