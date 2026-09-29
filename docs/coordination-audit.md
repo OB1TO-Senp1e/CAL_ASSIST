@@ -8,7 +8,7 @@
 | Target phase | `TARGET_PHASE=1` |
 | Iteration | 0 (C-00) — spec reconciliation, **pass 2**: every `Spec ref` re-verified against spec text |
 | Spec | `docs/specs/CAL_ASSIST_Upgrade_Implementation_Specification.html` — 99 lines / 19,898 B, read in full |
-| Status | **SPEC-REVIEWED — GATE CLEARED** (G1 + G2 closed; fresh-clone verification green — see §7/§8) |
+| Status | **CLOSED — C-00 SIGNED OFF** (G1 + G2 closed; fresh-clone verification green; D1–D8 + Phase 1 scope confirmed as proposed; coordination branch `feat/cross-functional-coordination` created from `21e6997`) |
 
 ## 1. Pre-conditions, and what that means for this document
 
@@ -243,7 +243,7 @@ finding, all held up against spec text without amendment.
 `TBD` or "cannot be assessed" rows left in this section, and every citation was resolved against the
 section list above rather than carried over from iteration 0.
 
-## 4. Decisions taken at C-00 (`TARGET_PHASE=1`)
+## 4. Decisions taken at C-00 (`TARGET_PHASE=1`) — D1–D8 CONFIRMED AS PROPOSED (user sign-off)
 
 These are decisions about **how** to build, reachable from repo evidence alone. They are independent
 of the spec's wording and should hold regardless of what the spec says. Product scope questions are
@@ -446,8 +446,8 @@ register the module in `src/app.module.ts` (`:50-116`); keep `PrismaService` inj
 - [x] Fresh-clone verification green on a clean clone of the tip `8d5e510`: `npm ci` (1118 pkgs),
       `npx prisma generate` (required — see §7 "Fresh clone" row), `npm run build` (exit 0),
       `npm test` (**44/44 suites, 358/358 tests**, exit 0)
-- [ ] `feat/cross-functional-coordination` created **only** from the verified cleaned tip
-- [ ] D1–D8 confirmed, or amended with reasons
-- [ ] Phase 1 in-scope / out-of-scope list agreed
+- [x] `feat/cross-functional-coordination` created from the verified tip `21e6997` (docs sign-off commit follows)
+- [x] D1–D8 confirmed **as proposed** (user sign-off)
+- [x] Phase 1 in-scope / out-of-scope list **agreed**
 
-**No code, no branch, no migration, no compose stack is created until this checklist is complete.**
+**Gate complete — C-00 CLOSED.** Coordination branch created; no new work on it yet. No code, no migration until the user explicitly kicks off C-01.

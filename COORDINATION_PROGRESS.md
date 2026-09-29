@@ -3,7 +3,7 @@
 Working memory between iterations. Re-read at the start of every iteration; update at the end.
 Mirrors the convention of `COMPLIANCE_LOOP.md` (per-item table with `file:line` + command evidence).
 
-Repo: `d:\CAL_ASS_V1\CAL_ASSIST` · Branch: `feature/redis-health-oauth-session` · HEAD: `6304ef6`
+Repo: `d:\CAL_ASS_V1\CAL_ASSIST` · Branch: `feat/cross-functional-coordination` · created from verified tip `21e6997` (parent: `feature/redis-health-oauth-session`)
 `TARGET_PHASE=1` · Planned isolated compose project: `calassist-coordination`
 
 > **Naming warning — read this first.**
@@ -17,19 +17,19 @@ Repo: `d:\CAL_ASS_V1\CAL_ASSIST` · Branch: `feature/redis-health-oauth-session`
 
 ## Iteration status
 
-Iteration counter: **0.** C-00 drafted, spec-reconciled, **stopped at the gate** by user instruction.
+Iteration counter: **0 CLOSED.** C-00 spec-reconciled, fresh-clone verified, and **signed off** by the user (D1–D8 as proposed + Phase 1 scope). Coordination branch created from `21e6997`; no code yet.
 
 | ID | Item | Status | Evidence (file:line + command output) |
 |----|------|--------|----------------------------------------|
-| C-00 | Repo/architecture audit vs. spec, decisions recorded before any code | **GATE CLEARED — AWAITING SIGN-OFF** | `docs/coordination-audit.md`. G1 closed; §3 citations re-verified in pass 2 (20 wrong citations corrected — audit §3.2). G2 resolved by the user: option (a), commit not stash — fresh-clone verification **green** (44 suites / 358 tests on a clean clone of `8d5e510`). |
-| C-01+ | Not started | **BLOCKED** | No work begins until the C-00 gate is cleared and the user approves. |
+| C-00 | Repo/architecture audit vs. spec, decisions recorded before any code | **CLOSED — SIGNED OFF** | `docs/coordination-audit.md`. G1 + G2 closed; fresh-clone verification green (44 suites / 358 tests on clean clone of `8d5e510`); D1–D8 confirmed as proposed + Phase 1 scope agreed; branch `feat/cross-functional-coordination` created from `21e6997` (audit §8 all checked). |
+| C-01+ | Not started | **READY — AWAITING KICKOFF** | C-00 signed off; coordination branch exists. No code, no migration until the user explicitly starts C-01. |
 
-## Gate — closed, fresh-clone verification green
+## Gate — closed, C-00 signed off
 
 | # | Blocker | Detail | Who resolves |
 |---|---------|--------|--------------|
 | G1 | ~~Specification file is not present~~ | **CLOSED.** Spec placed at `docs/specs/CAL_ASSIST_Upgrade_Implementation_Specification.html` (19,898 B, 99 lines) and read in full — 26 sections + Appendix A (first sprint) + Appendix B (engineering rule). | ✅ done |
-| G2 | ~~Branch base is undecided~~ | **CLOSED — user chose (a): commit, NOT stash.** No `git stash`/`reset`/`checkout` was used. The 83-path worktree became coarse commits over `6304ef6` — R3 fix alone first (`f04c4e2`), then infra/scripts (`545a54f`), app code (`e2c55ea`), tests (`dba6a46`), docs. Deliberately left uncommitted: the 4 deleted `calassist-architecture.visual-check.*.png`. **`feat/cross-functional-coordination` may only be created after a fresh clone (nothing copied in) passes `npm ci`, `npm run build`, `npm test`.** | ✅ done |
+| G2 | ~~Branch base is undecided~~ | **CLOSED — user chose (a): commit, NOT stash.** No `git stash`/`reset`/`checkout` was used. The 83-path worktree became coarse commits over `6304ef6` — R3 fix alone first (`f04c4e2`), then infra/scripts (`545a54f`), app code (`e2c55ea`), tests (`dba6a46`), docs. Deliberately left uncommitted: the 4 deleted `calassist-architecture.visual-check.*.png`. Fresh-clone gate **met**; branch since created from `21e6997`. | ✅ done |
 
 **Consequence:** the `PROVISIONAL` marker is **retired**. Every §3 row now cites a real spec section, or an
 explicit **`none`** where the spec is genuinely silent — so silence is never misread as support.
@@ -86,5 +86,5 @@ scratch under the new `.tmp-spec/` ignore rule.
    `d:\CAL_ASS_V1\_freshclone` (nothing copied in): `npm ci` exit 0 (1118 pkgs); `npm run build` exit 0 —
    **after** `npx prisma generate`, which bare `npm ci` does not run (no `prepare` script; CI already does
    this, so pre-existing, not a G2 regression); `npm test` exit 0 — **44 suites / 358 tests passed**.
-4. Then, and only then: create `feat/cross-functional-coordination` from the cleaned tip and request gate approval. §3 rows and §5 risks R1–R13 are reconciled against spec text.
-5. **No further code, no branch, no migration** until the gate is approved.
+4. ~~Create `feat/cross-functional-coordination` from the cleaned tip and request gate approval~~ — **DONE: branch created from `21e6997`; user gave full sign-off (D1–D8 as proposed + Phase 1 scope).**
+5. **No code, no migration** on `feat/cross-functional-coordination` until the user explicitly kicks off C-01.
