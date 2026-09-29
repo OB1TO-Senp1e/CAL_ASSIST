@@ -1,6 +1,7 @@
 import { AiProviderService } from '../../integrations/ai-providers/ai-provider.service';
 import { PrismaService } from '../../common/services/prisma.service';
 import { IntentParserService } from './intent-parser.service';
+import { AiProviderError } from '../../integrations/ai-providers/ai-provider.error';
 
 describe('IntentParserService date/time integration', () => {
   const prisma = {
@@ -65,5 +66,44 @@ describe('IntentParserService date/time integration', () => {
     expect(result.entities.title).toBe('submit report');
     expect(result.entities.dueDate).toBeDefined();
     expect(result.entities.priority).toBe(8);
+  });
+
+  it('surfaces typed provider outages instead of returning a local AI-shaped fallback', async () => {
+    const providerError = new AiProviderError('provider unavailable', {
+      provider: 'OpenAI',
+      kind: 'network',
+      retryable: true,
+    });
+    aiProvider.generateStructured = jest.fn().mockRejectedValue(providerError);
+
+    await expect(service.parseIntent('user-1', 'milk')).rejects.toBe(providerError);
+    expect(prisma.intent.create).not.toHaveBeenCalled();
+  });
+
+  it('uses the local classifier for explicit commands when AI providers are down', async () => {
+    aiProvider.generateStructured = jest.fn().mockRejectedValue(
+      new AiProviderError('provider unavailable', {
+        provider: 'OpenAI',
+        kind: 'network',
+        retryable: true,
+      })
+    );
+
+    const result = await service.parseIntent('user-1', 'Create task buy milk');
+
+    expect(result).toMatchObject({
+      type: 'CREATE_TASK',
+      confidence: 0.92,
+      entities: { title: 'buy milk' },
+      originalText: 'Create task buy milk',
+    });
+    expect(prisma.intent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: 'COMPLETED',
+          errorMessage: 'provider unavailable',
+        }),
+      })
+    );
   });
 });

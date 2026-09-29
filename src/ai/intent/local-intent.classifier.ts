@@ -46,6 +46,7 @@ export interface LocalIntent {
 
 /** Maximum length accepted by `Create*InputSchema.title` (`.min(1).max(200)`). */
 export const MAX_TITLE_LENGTH = 200;
+export const LOCAL_INTENT_HIGH_CONFIDENCE = 0.9;
 
 /** Extracts the common conversational form used to enumerate task steps. */
 export function extractSequencedTaskTitles(text: string): string[] {
@@ -55,11 +56,13 @@ export function extractSequencedTaskTitles(text: string): string[] {
   if (!match) return [];
 
   const titles = [match[1], ...match[2].split(/\s+then\s+/i)]
-    .map((title) => title
-      .replace(/^(?:and|the)\s+/i, '')
-      .replace(/\s+at\s+the\s+end$/i, '')
-      .replace(/\s+and$/i, '')
-      .trim())
+    .map((title) =>
+      title
+        .replace(/^(?:and|the)\s+/i, '')
+        .replace(/\s+at\s+the\s+end$/i, '')
+        .replace(/\s+and$/i, '')
+        .trim()
+    )
     .filter(Boolean);
 
   return titles.length > 1 ? titles : [];
@@ -182,7 +185,7 @@ export function classifyLocally(text: string, reference: Date = new Date()): Loc
   });
 
   if (parsed.isQuery) {
-    return build(readOnlyIntentForQuery(originalText), 0.9);
+    return build(readOnlyIntentForQuery(originalText), LOCAL_INTENT_HIGH_CONFIDENCE);
   }
 
   // 1. An entity noun sitting directly after the command verb.
@@ -212,7 +215,7 @@ export function classifyLocally(text: string, reference: Date = new Date()): Loc
 
   // 5. Read-only queries.
   if (matches(lower, /\b(conflict\w*|double-?book\w*|overlap\w*)\b/)) {
-    return build('CHECK_CONFLICTS', 0.9);
+    return build('CHECK_CONFLICTS', LOCAL_INTENT_HIGH_CONFIDENCE);
   }
   if (
     matches(

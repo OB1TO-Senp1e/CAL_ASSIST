@@ -2,7 +2,13 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../common/services/prisma.service';
 import { INTENT_TYPES, ParsedIntent } from './interfaces/intent.interface';
 import { AiProviderService } from '../../integrations/ai-providers/ai-provider.service';
-import { classifyLocally, extractTitle, MAX_TITLE_LENGTH } from './local-intent.classifier';
+import { AiProviderError } from '../../integrations/ai-providers/ai-provider.error';
+import {
+  classifyLocally,
+  extractTitle,
+  LOCAL_INTENT_HIGH_CONFIDENCE,
+  MAX_TITLE_LENGTH,
+} from './local-intent.classifier';
 import { mergeDateTimeIntoEntities, readOnlyIntentForQuery } from './date-time.parser';
 
 @Injectable()
@@ -49,19 +55,24 @@ export class IntentParserService {
       });
 
       return intent;
-    } catch (error: any) {
-      // Neither LLM provider is reachable (no OPENAI_API_KEY / OLLAMA_URL).
-      // Fall back to the deterministic classifier so the assistant thread still
-      // answers instead of 500-ing. See local-intent.classifier.ts for the
-      // routing rules and why they are the ones that actually run locally.
+    } catch (error: unknown) {
       const fallback = this.localFallback(text);
+      if (AiProviderError.is(error)) {
+        if (fallback.confidence < LOCAL_INTENT_HIGH_CONFIDENCE) throw error;
+      }
+
+      // Neither LLM provider is reachable (no OPENAI_API_KEY / OLLAMA_URL).
+      // Explicit local commands remain available; ambiguous requests still
+      // surface typed provider outages rather than masquerading as AI responses.
+      const errorMessage =
+        error instanceof Error ? error.message : 'LLM provider unavailable; local classifier used';
       await this.prisma.intent.create({
         data: {
           userId,
           originalText: text,
           parsedJson: JSON.stringify(fallback),
           status: 'COMPLETED',
-          errorMessage: error?.message || 'LLM provider unavailable; local classifier used',
+          errorMessage,
         },
       });
       return fallback;
