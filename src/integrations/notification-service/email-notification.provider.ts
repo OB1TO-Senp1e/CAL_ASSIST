@@ -7,6 +7,16 @@ import {
   NotificationResult,
 } from './notification.interface';
 
+/**
+ * R3 — explicit failure codes for the email channel.
+ *
+ * Exported so callers and tests can assert *why* an email did not go out,
+ * instead of having to match on free-text log messages. Both codes mean
+ * "not delivered"; neither may ever be paired with `success: true`.
+ */
+export const EMAIL_NOT_CONFIGURED = 'EMAIL_NOT_CONFIGURED';
+export const EMAIL_TRANSPORT_NOT_IMPLEMENTED = 'EMAIL_TRANSPORT_NOT_IMPLEMENTED';
+
 @Injectable()
 export class EmailNotificationProvider implements NotificationProvider {
   private readonly logger = new Logger(EmailNotificationProvider.name);
@@ -37,28 +47,43 @@ export class EmailNotificationProvider implements NotificationProvider {
       return { channel: this.channel, success: false, error: 'Email not enabled or no address' };
     }
 
+    // R3: never report success for a message that was never handed to a transport.
+    // This branch used to return `success: true` with `messageId: sim_<epoch>`,
+    // so `NotificationService` wrote a `NOTIFICATION_SENT` audit row and callers
+    // believed an email had gone out when nothing had.
     if (!this.smtpUser || !this.smtpPass) {
-      this.logger.warn('SMTP not configured, simulating email send');
-      return { channel: this.channel, success: true, messageId: `sim_${Date.now()}` };
+      this.logger.error(
+        'SMTP not configured (SMTP_USER/SMTP_PASS): reporting failure, not a simulated success'
+      );
+      return {
+        channel: this.channel,
+        success: false,
+        error: `${EMAIL_NOT_CONFIGURED}: SMTP_USER/SMTP_PASS are not set`,
+      };
     }
 
-    try {
-      // In production, use nodemailer or similar
-      // For now, simulate
-      this.logger.log(`Sending email to ${preferences.email.address}: ${payload.title}`);
-
-      const html = this.generateHtml(payload);
-
-      // Simulate sending
-      // await this.transporter.sendMail({ ... });
-
-      return { channel: this.channel, success: true, messageId: `email_${Date.now()}` };
-    } catch (error: any) {
-      this.logger.error(`Email send failed: ${error.message}`);
-      return { channel: this.channel, success: false, error: error.message };
-    }
+    // R3: credentials exist, but there is still no transport to use them —
+    // `nodemailer` is not a dependency and the call below has always been
+    // commented out. Returning a synthetic id here is a fabrication, so this
+    // reports an explicit failure until a real transport is wired up.
+    this.logger.error(
+      'No email transport is implemented: reporting failure, not a fabricated messageId'
+    );
+    return {
+      channel: this.channel,
+      success: false,
+      error: `${EMAIL_TRANSPORT_NOT_IMPLEMENTED}: no transport is wired up (nodemailer is not a dependency)`,
+    };
   }
 
+  /**
+   * Renders the HTML body for a notification.
+   *
+   * Retained deliberately: this is the payload-rendering half of the email
+   * contract and is what the real transport will send once one is added. It is
+   * intentionally unreferenced by `send()` until that happens — returning
+   * `success: true` without delivering was the R3 defect.
+   */
   private generateHtml(payload: NotificationPayload): string {
     const priorityColors = {
       LOW: '#6b7280',
