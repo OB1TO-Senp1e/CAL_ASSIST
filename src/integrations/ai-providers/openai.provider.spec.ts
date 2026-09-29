@@ -14,6 +14,7 @@ describe('OpenAIProvider Stage 5a behaviour', () => {
   beforeEach(() => {
     process.env.OPENAI_API_KEY = 'test-key';
     process.env.OPENAI_BASE_URL = 'https://api.openai.com/v1';
+    process.env.OPENAI_MODEL = 'gpt-4o';
     process.env.AI_MAX_RETRIES = '0';
     process.env.AI_REQUEST_TIMEOUT_MS = '5000';
     delete process.env.AI_PROBE_ENABLED;
@@ -341,4 +342,3 @@ describe('NemotronNimProvider Stage 5a behaviour', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
-

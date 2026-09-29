@@ -4,10 +4,16 @@ import { OAuthTokenCryptoService } from './oauth-token-crypto.service';
 
 const b64Key = () => randomBytes(32).toString('base64');
 
-const makeService = (key: string | undefined, nodeEnv = 'test') => {
+const makeService = (key: string | undefined, nodeEnv = 'test', previousKeys?: string) => {
   const config = {
     get: (name: string) =>
-      name === 'OAUTH_TOKEN_KEY' ? key : name === 'NODE_ENV' ? nodeEnv : undefined,
+      name === 'OAUTH_TOKEN_KEY'
+        ? key
+        : name === 'OAUTH_TOKEN_PREVIOUS_KEYS'
+          ? previousKeys
+          : name === 'NODE_ENV'
+            ? nodeEnv
+            : undefined,
   } as unknown as ConfigService;
   const svc = new OAuthTokenCryptoService(config);
   svc.onModuleInit();
@@ -51,6 +57,34 @@ describe('OAuthTokenCryptoService (C2)', () => {
     const b = makeService(b64Key());
     const stored = a.encrypt('token-under-key-a')!;
     expect(() => b.decrypt(stored)).toThrow();
+  });
+
+  it('decrypts with a previous key and rotates ciphertext to the active key', () => {
+    const oldKey = b64Key();
+    const nextKey = b64Key();
+    const oldService = makeService(oldKey);
+    const stored = oldService.encrypt('calendar-refresh-token')!;
+    const rotatingService = makeService(nextKey, 'test', oldKey);
+
+    expect(rotatingService.decrypt(stored)).toBe('calendar-refresh-token');
+    expect(rotatingService.needsReencryption(stored)).toBe(true);
+
+    const rotated = rotatingService.reencrypt(stored)!;
+    expect(rotated).not.toBe(stored);
+    expect(rotatingService.decrypt(rotated)).toBe('calendar-refresh-token');
+    expect(rotatingService.needsReencryption(rotated)).toBe(false);
+  });
+
+  it('rejects malformed previous-key configuration', () => {
+    const service = new OAuthTokenCryptoService({
+      get: (name: string) =>
+        name === 'OAUTH_TOKEN_KEY'
+          ? b64Key()
+          : name === 'OAUTH_TOKEN_PREVIOUS_KEYS'
+            ? 'bad'
+            : 'test',
+    } as unknown as ConfigService);
+    expect(() => service.onModuleInit()).toThrow(/OAUTH_TOKEN_PREVIOUS_KEYS/);
   });
 
   it('is idempotent: encrypt skips values that already carry the v1: prefix', () => {

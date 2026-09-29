@@ -17,7 +17,8 @@ import { CalendarConnectionService } from '../integrations/calendar-adapters/cal
  */
 
 const databaseUrl =
-  process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/calassist?schema=public';
+  process.env.DATABASE_URL ||
+  'postgresql://postgres:postgres@localhost:5432/calassist?schema=public';
 
 // Set by scripts/jest-global-setup.js (TCP probe) before collection.
 const dbReachable = process.env.DB_REACHABLE === '1';
@@ -54,10 +55,20 @@ describe('AccountDeletionService (C4, integration)', () => {
       // user behind.
       if (userId) {
         try {
-          const ids = (await db.task.findMany({ where: { userId }, select: { id: true } })).map((r) => r.id);
-          const evts = (await db.event.findMany({ where: { userId }, select: { id: true } })).map((r) => r.id);
-          if (ids.length) await db.taskDependency.deleteMany({ where: { OR: [{ taskId: { in: ids } }, { dependsOnId: { in: ids } }] } });
-          if (evts.length) await db.eventParticipant.deleteMany({ where: { eventId: { in: evts } } });
+          const ids = (await db.task.findMany({ where: { userId }, select: { id: true } })).map(
+            (r) => r.id
+          );
+          const evts = (await db.event.findMany({ where: { userId }, select: { id: true } })).map(
+            (r) => r.id
+          );
+          if (ids.length)
+            await db.taskDependency.deleteMany({
+              where: { OR: [{ taskId: { in: ids } }, { dependsOnId: { in: ids } }] },
+            });
+          if (evts.length)
+            await db.eventParticipant.deleteMany({ where: { eventId: { in: evts } } });
+          await db.calendarOAuthPkce.deleteMany({ where: { userId } });
+          await db.calendarPushChannel.deleteMany({ where: { userId } });
           await db.user.delete({ where: { id: userId } }).catch(() => undefined);
         } catch {
           /* best effort */
@@ -88,7 +99,13 @@ describe('AccountDeletionService (C4, integration)', () => {
         },
       });
       const calendar = await db.calendar.create({
-        data: { userId, connectionId: connection.id, name: 'Primary', provider: 'GOOGLE', isPrimary: true },
+        data: {
+          userId,
+          connectionId: connection.id,
+          name: 'Primary',
+          provider: 'GOOGLE',
+          isPrimary: true,
+        },
       });
       const event = await db.event.create({
         data: {
@@ -106,7 +123,12 @@ describe('AccountDeletionService (C4, integration)', () => {
       const taskB = await db.task.create({ data: { userId, title: 'Task B' } });
       await db.taskDependency.create({ data: { taskId: taskA.id, dependsOnId: taskB.id } });
       await db.memory.create({
-        data: { userId, content: 'likes mornings', category: 'EXPLICIT_PREFERENCE', embedding: [0.1, 0.2] },
+        data: {
+          userId,
+          content: 'likes mornings',
+          category: 'EXPLICIT_PREFERENCE',
+          embedding: [0.1, 0.2],
+        },
       });
       const conversation = await db.conversation.create({ data: { userId, title: 'C1' } });
       await db.conversationMessage.create({
@@ -114,6 +136,24 @@ describe('AccountDeletionService (C4, integration)', () => {
       });
       await db.session.create({
         data: { userId, token: `sess-c4-${userId}`, expiresAt: new Date(Date.now() + 86_400_000) },
+      });
+      await db.calendarOAuthPkce.create({
+        data: {
+          id: `c4-pkce-${userId}`,
+          userId,
+          provider: 'GOOGLE',
+          codeVerifier: 'fixture-verifier',
+          expiresAt: new Date(Date.now() + 600_000),
+        },
+      });
+      await db.calendarPushChannel.create({
+        data: {
+          userId,
+          provider: 'GOOGLE',
+          channelId: `c4-channel-${userId}`,
+          resourceUri: 'https://www.googleapis.com/calendar/v3/calendars/primary/events',
+          channelToken: 'fixture-channel-token',
+        },
       });
       await db.profile.create({ data: { userId, bio: 'fixture' } });
       await db.auditLog.create({
@@ -148,6 +188,8 @@ describe('AccountDeletionService (C4, integration)', () => {
         sessions,
         profile,
         audits,
+        oauthPkce,
+        pushChannels,
       ] = await Promise.all([
         db.user.findUnique({ where: { id: userId } }),
         db.calendarConnection.count({ where: { userId } }),
@@ -162,6 +204,8 @@ describe('AccountDeletionService (C4, integration)', () => {
         db.session.count({ where: { userId } }),
         db.profile.count({ where: { userId } }),
         db.auditLog.count({ where: { userId } }),
+        db.calendarOAuthPkce.count({ where: { userId } }),
+        db.calendarPushChannel.count({ where: { userId } }),
       ]);
 
       expect(userRow).toBeNull();
@@ -178,6 +222,8 @@ describe('AccountDeletionService (C4, integration)', () => {
         sessions,
         profile,
         audits,
+        oauthPkce,
+        pushChannels,
       }).toEqual({
         connections: 0,
         calendars: 0,
@@ -191,6 +237,8 @@ describe('AccountDeletionService (C4, integration)', () => {
         sessions: 0,
         profile: 0,
         audits: 0,
+        oauthPkce: 0,
+        pushChannels: 0,
       });
       userId = undefined as any; // fixture fully gone; skip afterEach net
     });
