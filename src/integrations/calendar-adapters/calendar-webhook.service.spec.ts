@@ -77,7 +77,10 @@ describe('CalendarWebhookService (C8)', () => {
     const { service } = make(findUnique);
 
     await expect(
-      service.verifyAndDispatch('user-1', headers({ channelToken: undefined, resourceState: 'update' }))
+      service.verifyAndDispatch(
+        'user-1',
+        headers({ channelToken: undefined, resourceState: 'update' })
+      )
     ).rejects.toThrow(/invalid channel token/);
   });
 

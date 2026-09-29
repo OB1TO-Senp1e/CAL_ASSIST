@@ -5,12 +5,9 @@ export const TravelModeSchema = z
     z.enum(['DRIVING', 'WALKING', 'BICYCLING', 'TRANSIT', 'FLIGHT']),
     z.enum(['driving', 'walking', 'bicycling', 'transit', 'flight']),
   ])
-  .transform((value) => value.toUpperCase() as
-    | 'DRIVING'
-    | 'WALKING'
-    | 'BICYCLING'
-    | 'TRANSIT'
-    | 'FLIGHT');
+  .transform(
+    (value) => value.toUpperCase() as 'DRIVING' | 'WALKING' | 'BICYCLING' | 'TRANSIT' | 'FLIGHT'
+  );
 
 export type TravelMode = z.infer<typeof TravelModeSchema>;
 
@@ -44,12 +41,16 @@ export const TravelTimeResultSchema = z.object({
   distanceKilometers: z.number().optional(),
   startAddress: z.string().optional(),
   endAddress: z.string().optional(),
-  steps: z.array(z.object({
-    instruction: z.string(),
-    distanceMeters: z.number(),
-    durationMinutes: z.number(),
-    polyline: z.string().optional(),
-  })).optional(),
+  steps: z
+    .array(
+      z.object({
+        instruction: z.string(),
+        distanceMeters: z.number(),
+        durationMinutes: z.number(),
+        polyline: z.string().optional(),
+      })
+    )
+    .optional(),
   polyline: z.string().optional(),
   trafficModel: z.enum(['BEST_GUESS', 'PESSIMISTIC', 'OPTIMISTIC']).optional(),
   warnings: z.array(z.string()).optional(),
@@ -68,11 +69,26 @@ export const RouteMatrixRequestSchema = z.object({
 export type RouteMatrixRequest = z.infer<typeof RouteMatrixRequestSchema>;
 
 export const RouteMatrixResultSchema = z.object({
-  rows: z.array(z.array(z.object({
-    durationMinutes: z.number().int().positive(),
-    distanceMeters: z.number().int().positive(),
-    status: z.enum(['OK', 'ZERO_RESULTS', 'NOT_FOUND', 'MAX_ROUTE_LENGTH_EXCEEDED', 'MAX_WAYPOINTS_EXCEEDED', 'INVALID_REQUEST', 'OVER_DAILY_LIMIT', 'OVER_QUERY_LIMIT', 'REQUEST_DENIED', 'UNKNOWN_ERROR']),
-  }))),
+  rows: z.array(
+    z.array(
+      z.object({
+        durationMinutes: z.number().int().positive(),
+        distanceMeters: z.number().int().positive(),
+        status: z.enum([
+          'OK',
+          'ZERO_RESULTS',
+          'NOT_FOUND',
+          'MAX_ROUTE_LENGTH_EXCEEDED',
+          'MAX_WAYPOINTS_EXCEEDED',
+          'INVALID_REQUEST',
+          'OVER_DAILY_LIMIT',
+          'OVER_QUERY_LIMIT',
+          'REQUEST_DENIED',
+          'UNKNOWN_ERROR',
+        ]),
+      })
+    )
+  ),
   provider: z.string(),
 });
 
@@ -129,28 +145,38 @@ export const GeocodeRequestSchema = z.object({
 export type GeocodeRequest = z.infer<typeof GeocodeRequestSchema>;
 
 export const GeocodeResultSchema = z.object({
-  results: z.array(z.object({
-    formattedAddress: z.string(),
-    latitude: z.number(),
-    longitude: z.number(),
-    placeId: z.string(),
-    types: z.array(z.string()),
-    addressComponents: z.array(z.object({
-      longName: z.string(),
-      shortName: z.string(),
+  results: z.array(
+    z.object({
+      formattedAddress: z.string(),
+      latitude: z.number(),
+      longitude: z.number(),
+      placeId: z.string(),
       types: z.array(z.string()),
-    })).optional(),
-    geometry: z.object({
-      location: z.object({
-        lat: z.number(),
-        lng: z.number(),
-      }),
-      viewport: z.object({
-        northeast: z.object({ lat: z.number(), lng: z.number() }),
-        southwest: z.object({ lat: z.number(), lng: z.number() }),
-      }).optional(),
-    }).optional(),
-  })),
+      addressComponents: z
+        .array(
+          z.object({
+            longName: z.string(),
+            shortName: z.string(),
+            types: z.array(z.string()),
+          })
+        )
+        .optional(),
+      geometry: z
+        .object({
+          location: z.object({
+            lat: z.number(),
+            lng: z.number(),
+          }),
+          viewport: z
+            .object({
+              northeast: z.object({ lat: z.number(), lng: z.number() }),
+              southwest: z.object({ lat: z.number(), lng: z.number() }),
+            })
+            .optional(),
+        })
+        .optional(),
+    })
+  ),
   provider: z.string(),
 });
 

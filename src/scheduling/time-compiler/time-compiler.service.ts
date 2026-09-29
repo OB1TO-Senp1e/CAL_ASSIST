@@ -120,17 +120,20 @@ export class TimeCompilerService {
     // No AvailabilityRule rows is the common case for a new user, and the old
     // behaviour there was zero slots -> zero blocks. Fall back to the user's
     // configured working hours so a compile always has somewhere to put work.
-    const effectiveAvailability: AvailabilityRule[] = availability.length === 0
-      ? [{
-          id: 'derived_working_hours',
-          startTime: preferences.workingHoursStart,
-          endTime: preferences.workingHoursEnd,
-          timezone,
-          isAvailable: true,
-          priority: 0,
-          recurrence: 'DAILY',
-        }]
-      : availability;
+    const effectiveAvailability: AvailabilityRule[] =
+      availability.length === 0
+        ? [
+            {
+              id: 'derived_working_hours',
+              startTime: preferences.workingHoursStart,
+              endTime: preferences.workingHoursEnd,
+              timezone,
+              isAvailable: true,
+              priority: 0,
+              recurrence: 'DAILY',
+            },
+          ]
+        : availability;
 
     const current = new Date(timeRange.start);
 

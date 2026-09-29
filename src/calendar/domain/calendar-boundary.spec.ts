@@ -19,7 +19,10 @@ describe('DateTime JSON boundary', () => {
   it('keeps the Luxon-like wrapper out of nested structures', () => {
     const payload = {
       events: [
-        { start: new DateTime('2026-10-01T09:00:00Z'), end: new DateTime('2026-10-01T10:00:00Z', 'Asia/Kolkata') },
+        {
+          start: new DateTime('2026-10-01T09:00:00Z'),
+          end: new DateTime('2026-10-01T10:00:00Z', 'Asia/Kolkata'),
+        },
       ],
       weekStart: new DateTime('2026-09-28T00:00:00Z'),
     };
@@ -43,7 +46,10 @@ describe('CreateEventSchema id boundary', () => {
   };
 
   it('accepts a Prisma CUID calendarId', () => {
-    const result = CreateEventSchema.safeParse({ ...base, calendarId: 'cmukpzq8d00048wuochimvc2g' });
+    const result = CreateEventSchema.safeParse({
+      ...base,
+      calendarId: 'cmukpzq8d00048wuochimvc2g',
+    });
     expect(result.success).toBe(true);
   });
 

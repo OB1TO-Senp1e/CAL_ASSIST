@@ -209,12 +209,12 @@ export class ReplanningEngineService {
         scope: (updates.scope ?? policy.scope) as any,
         triggers: (updates.triggers ?? policy.triggers) as any,
         allowedActions: (updates.allowedActions ?? policy.allowedActions) as any,
-        constraints: ((updates.constraints ?? policy.constraints) ?? []) as object,
-        maxChangesPerOperation:
-          updates.maxChangesPerOperation ?? policy.maxChangesPerOperation,
+        constraints: (updates.constraints ?? policy.constraints ?? []) as object,
+        maxChangesPerOperation: updates.maxChangesPerOperation ?? policy.maxChangesPerOperation,
         maxTimeShiftMinutes: updates.maxTimeShiftMinutes ?? policy.maxTimeShiftMinutes,
-        protectedTimeRanges: ((updates.protectedTimeRanges ??
-          policy.protectedTimeRanges) ?? []) as object,
+        protectedTimeRanges: (updates.protectedTimeRanges ??
+          policy.protectedTimeRanges ??
+          []) as object,
         requireConfirmationFor: (updates.requireConfirmationFor ??
           policy.requireConfirmationFor) as any,
       },

@@ -1,4 +1,10 @@
-import { Injectable, Logger, BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  BadRequestException,
+  NotFoundException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { PrismaService } from '../common/services/prisma.service';
 import {
   AutonomyLevel,
@@ -71,8 +77,18 @@ export class PermissionService {
       description: 'AI handles routine scheduling automatically, asks for significant changes',
       autonomyLevel: 'AUTO_EXECUTE_LOW_RISK',
       permissions: [
-        { action: 'CREATE_EVENT', scope: 'CALENDAR', decision: 'ALLOW', conditions: { maxDurationMinutes: 60 } },
-        { action: 'MOVE_EVENT', scope: 'CALENDAR', decision: 'ALLOW', conditions: { maxShiftMinutes: 30 } },
+        {
+          action: 'CREATE_EVENT',
+          scope: 'CALENDAR',
+          decision: 'ALLOW',
+          conditions: { maxDurationMinutes: 60 },
+        },
+        {
+          action: 'MOVE_EVENT',
+          scope: 'CALENDAR',
+          decision: 'ALLOW',
+          conditions: { maxShiftMinutes: 30 },
+        },
         { action: 'CANCEL_EVENT', scope: 'CALENDAR', decision: 'ASK', conditions: {} },
         { action: 'MODIFY_TASKS', scope: 'TASKS', decision: 'ALLOW', conditions: {} },
         { action: 'REPLAN_SCHEDULES', scope: 'SCHEDULING', decision: 'ASK', conditions: {} },
@@ -110,7 +126,7 @@ export class PermissionService {
 
     const policy = await this.getActiveAutonomyPolicy(userId);
     const explicitPermissions = await this.getUserPermissions(userId, action, scope);
-    
+
     if (explicitPermissions.length > 0) {
       const permission = explicitPermissions[0];
       if (permission.decision === 'ALLOW') {
@@ -143,11 +159,17 @@ export class PermissionService {
     return this.createAskResult(input, 'Risk level requires confirmation');
   }
 
-  private evaluateAutonomyPolicy(policy: AutonomyPolicy, input: PermissionCheckInput): PermissionCheckResult | null {
+  private evaluateAutonomyPolicy(
+    policy: AutonomyPolicy,
+    input: PermissionCheckInput
+  ): PermissionCheckResult | null {
     const { action, scope, riskLevel, entityId } = input;
 
     if (!policy.allowedActions.includes(action)) {
-      return this.createDeniedResult(input, `Action not allowed by autonomy policy: ${policy.name}`);
+      return this.createDeniedResult(
+        input,
+        `Action not allowed by autonomy policy: ${policy.name}`
+      );
     }
 
     if (policy.enabledScopes.length > 0 && !policy.enabledScopes.includes(scope)) {
@@ -158,14 +180,17 @@ export class PermissionService {
     const riskIndex = riskLevels.indexOf(riskLevel);
     const thresholdIndex = riskLevels.indexOf(policy.riskThreshold);
     if (riskIndex > thresholdIndex) {
-      return this.createAskResult(input, `Risk level ${riskLevel} exceeds policy threshold ${policy.riskThreshold}`);
+      return this.createAskResult(
+        input,
+        `Risk level ${riskLevel} exceeds policy threshold ${policy.riskThreshold}`
+      );
     }
 
     if (policy.requireConfirmationFor.includes(action)) {
       return this.createAskResult(input, `Policy requires confirmation for ${action}`);
     }
 
-    if (entityId && policy.protectedEntities.some(e => e.id === entityId)) {
+    if (entityId && policy.protectedEntities.some((e) => e.id === entityId)) {
       return this.createDeniedResult(input, `Entity protected by policy: ${policy.name}`);
     }
 
@@ -178,10 +203,10 @@ export class PermissionService {
 
   private isTimeRestricted(policy: AutonomyPolicy, now: Date): boolean {
     if (!policy.timeRestrictions?.length) return false;
-    
+
     const currentTime = now.toTimeString().slice(0, 5);
     const currentDay = now.getDay();
-    
+
     for (const restriction of policy.timeRestrictions) {
       if (restriction.days.includes(currentDay)) {
         if (currentTime >= restriction.startTime && currentTime <= restriction.endTime) {
@@ -198,20 +223,28 @@ export class PermissionService {
    * `scope` string behind a `calassist.permission:` prefix; the prefix filter
    * and the decode step are both gone.
    */
-  async getUserPermissions(userId: string, action?: PermissionAction, scope?: PermissionScope): Promise<UserPermission[]> {
+  async getUserPermissions(
+    userId: string,
+    action?: PermissionAction,
+    scope?: PermissionScope
+  ): Promise<UserPermission[]> {
     const stored = await this.prisma.permission.findMany({
       where: { userId, isActive: true },
     });
     return stored
       .map((permission) => this.mapToUserPermission(permission))
-      .filter((permission) =>
-        (!action || permission.action === action) &&
-        (!scope || permission.scope === scope) &&
-        (!permission.expiresAt || new Date(permission.expiresAt) > new Date())
+      .filter(
+        (permission) =>
+          (!action || permission.action === action) &&
+          (!scope || permission.scope === scope) &&
+          (!permission.expiresAt || new Date(permission.expiresAt) > new Date())
       );
   }
 
-  async grantPermission(userId: string, permission: Omit<UserPermission, 'id' | 'grantedAt' | 'isActive' | 'userId'>): Promise<UserPermission> {
+  async grantPermission(
+    userId: string,
+    permission: Omit<UserPermission, 'id' | 'grantedAt' | 'isActive' | 'userId'>
+  ): Promise<UserPermission> {
     const saved = await this.prisma.permission.upsert({
       where: {
         userId_action_scope: { userId, action: permission.action, scope: permission.scope },
@@ -269,7 +302,10 @@ export class PermissionService {
     return row ? this.mapToAutonomyPolicy(row) : null;
   }
 
-  async createAutonomyPolicy(userId: string, input: Omit<AutonomyPolicy, 'id' | 'userId' | 'createdAt' | 'updatedAt'>): Promise<AutonomyPolicy> {
+  async createAutonomyPolicy(
+    userId: string,
+    input: Omit<AutonomyPolicy, 'id' | 'userId' | 'createdAt' | 'updatedAt'>
+  ): Promise<AutonomyPolicy> {
     const stored = await this.prisma.autonomyPolicy.create({
       data: {
         userId,
@@ -290,7 +326,11 @@ export class PermissionService {
     return this.mapToAutonomyPolicy(stored);
   }
 
-  async updateAutonomyPolicy(userId: string, policyId: string, updates: Partial<AutonomyPolicy>): Promise<AutonomyPolicy> {
+  async updateAutonomyPolicy(
+    userId: string,
+    policyId: string,
+    updates: Partial<AutonomyPolicy>
+  ): Promise<AutonomyPolicy> {
     const existing = await this.prisma.autonomyPolicy.findFirst({
       where: { id: policyId, userId },
     });
@@ -332,19 +372,19 @@ export class PermissionService {
   }
 
   async applyTemplate(userId: string, templateId: string): Promise<void> {
-    const template = this.templates.find(t => t.id === templateId);
+    const template = this.templates.find((t) => t.id === templateId);
     if (!template) throw new BadRequestException('Template not found');
 
     await this.createAutonomyPolicy(userId, {
       name: template.name,
       description: template.description,
       autonomyLevel: template.autonomyLevel,
-      enabledScopes: template.permissions.map(p => p.scope),
-      allowedActions: template.permissions.map(p => p.action),
+      enabledScopes: template.permissions.map((p) => p.scope),
+      allowedActions: template.permissions.map((p) => p.action),
       riskThreshold: this.autonomyLevelToRiskThreshold(template.autonomyLevel),
       requireConfirmationFor: template.permissions
-        .filter(p => p.decision === 'ASK')
-        .map(p => p.action),
+        .filter((p) => p.decision === 'ASK')
+        .map((p) => p.action),
       protectedEntities: [],
       timeRestrictions: [],
       isActive: true,
@@ -368,18 +408,30 @@ export class PermissionService {
     return this.templates;
   }
 
-  private autonomyLevelToRiskThreshold(level: AutonomyLevel): 'NONE' | 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' {
+  private autonomyLevelToRiskThreshold(
+    level: AutonomyLevel
+  ): 'NONE' | 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' {
     switch (level) {
-      case 'OBSERVE': return 'NONE';
-      case 'SUGGEST': return 'LOW';
-      case 'ASK_BEFORE_ACTION': return 'LOW';
-      case 'AUTO_EXECUTE_LOW_RISK': return 'LOW';
-      case 'DELEGATED_AUTHORITY': return 'MEDIUM';
-      default: return 'LOW';
+      case 'OBSERVE':
+        return 'NONE';
+      case 'SUGGEST':
+        return 'LOW';
+      case 'ASK_BEFORE_ACTION':
+        return 'LOW';
+      case 'AUTO_EXECUTE_LOW_RISK':
+        return 'LOW';
+      case 'DELEGATED_AUTHORITY':
+        return 'MEDIUM';
+      default:
+        return 'LOW';
     }
   }
 
-  private async createAuditRecord(input: PermissionCheckInput, decision: PermissionDecision, policyId?: string): Promise<string> {
+  private async createAuditRecord(
+    input: PermissionCheckInput,
+    decision: PermissionDecision,
+    policyId?: string
+  ): Promise<string> {
     const audit = await this.prisma.auditLog.create({
       data: {
         userId: input.userId,
@@ -406,7 +458,8 @@ export class PermissionService {
     });
 
     if (!auditRecord) throw new NotFoundException('Audit record not found');
-    if ((auditRecord.details ? JSON.parse(auditRecord.details).wasUndone : false)) throw new BadRequestException('Action already undone');
+    if (auditRecord.details ? JSON.parse(auditRecord.details).wasUndone : false)
+      throw new BadRequestException('Action already undone');
 
     const hoursSince = (Date.now() - auditRecord.createdAt.getTime()) / (1000 * 60 * 60);
     if (hoursSince > 24) {
@@ -435,18 +488,21 @@ export class PermissionService {
     const action = auditRecord.action;
     const entityId = auditRecord.entityId;
     const oldData = details.oldData || {};
-    
+
     this.logger.log(`Undoing action ${action} on ${entityId}`);
     return { action, entityId, restoredData: oldData };
   }
 
-  async getAuditHistory(userId: string, filters?: {
-    action?: PermissionAction;
-    scope?: PermissionScope;
-    startDate?: Date;
-    endDate?: Date;
-    limit?: number;
-  }): Promise<AuditAction[]> {
+  async getAuditHistory(
+    userId: string,
+    filters?: {
+      action?: PermissionAction;
+      scope?: PermissionScope;
+      startDate?: Date;
+      endDate?: Date;
+      limit?: number;
+    }
+  ): Promise<AuditAction[]> {
     const where: any = { userId };
     if (filters?.action) where.action = filters.action;
     if (filters?.startDate || filters?.endDate) {
@@ -461,7 +517,7 @@ export class PermissionService {
       take: filters?.limit || 100,
     });
 
-    return records.map(r => {
+    return records.map((r) => {
       const details = JSON.parse(r.details || '{}');
       return {
         id: r.id,
@@ -486,16 +542,46 @@ export class PermissionService {
     });
   }
 
-  private createAllowedResult(input: PermissionCheckInput, reason: string, policyId?: string): PermissionCheckResult {
-    return { allowed: true, decision: 'ALLOW', reason, requiredConfirmation: false, applicablePolicy: policyId };
+  private createAllowedResult(
+    input: PermissionCheckInput,
+    reason: string,
+    policyId?: string
+  ): PermissionCheckResult {
+    return {
+      allowed: true,
+      decision: 'ALLOW',
+      reason,
+      requiredConfirmation: false,
+      applicablePolicy: policyId,
+    };
   }
 
-  private createDeniedResult(input: PermissionCheckInput, reason: string, policyId?: string): PermissionCheckResult {
-    return { allowed: false, decision: 'DENY', reason, requiredConfirmation: false, applicablePolicy: policyId };
+  private createDeniedResult(
+    input: PermissionCheckInput,
+    reason: string,
+    policyId?: string
+  ): PermissionCheckResult {
+    return {
+      allowed: false,
+      decision: 'DENY',
+      reason,
+      requiredConfirmation: false,
+      applicablePolicy: policyId,
+    };
   }
 
-  private createAskResult(input: PermissionCheckInput, reason: string, policyId?: string): PermissionCheckResult {
-    return { allowed: false, decision: 'ASK', reason, requiredConfirmation: true, applicablePolicy: policyId };
+  private createAskResult(
+    input: PermissionCheckInput,
+    reason: string,
+    policyId?: string
+  ): PermissionCheckResult {
+    return {
+      allowed: false,
+      decision: 'ASK',
+      reason,
+      requiredConfirmation: true,
+      applicablePolicy: policyId,
+    };
   }
 
   private mapToAutonomyPolicy(p: {
@@ -525,8 +611,7 @@ export class PermissionService {
       enabledScopes: p.enabledScopes as AutonomyPolicy['enabledScopes'],
       allowedActions: p.allowedActions as AutonomyPolicy['allowedActions'],
       riskThreshold: p.riskThreshold as AutonomyPolicy['riskThreshold'],
-      requireConfirmationFor:
-        p.requireConfirmationFor as AutonomyPolicy['requireConfirmationFor'],
+      requireConfirmationFor: p.requireConfirmationFor as AutonomyPolicy['requireConfirmationFor'],
       protectedEntities: Array.isArray(p.protectedEntities)
         ? (p.protectedEntities as AutonomyPolicy['protectedEntities'])
         : [],

@@ -43,7 +43,7 @@ describe('CalendarConnectionService.disconnect (C3)', () => {
       {} as any,
       {} as any,
       { sign: () => 'jwt', verify: () => ({}) } as any,
-      crypto as any,
+      crypto as any
     );
     return { service, prisma };
   };
@@ -57,7 +57,13 @@ describe('CalendarConnectionService.disconnect (C3)', () => {
     await service.disconnect('user-1', 'GOOGLE');
 
     // revoke strictly precedes any deletion
-    expect(CALLS).toEqual(['read-connection', 'revoke', 'delete-connection', 'delete-calendars', 'audit']);
+    expect(CALLS).toEqual([
+      'read-connection',
+      'revoke',
+      'delete-connection',
+      'delete-calendars',
+      'audit',
+    ]);
     expect(googleDisconnect).toHaveBeenCalledTimes(1);
     expect(googleDisconnect).toHaveBeenCalledWith('plain-access-token', 'plain-refresh-token');
   });

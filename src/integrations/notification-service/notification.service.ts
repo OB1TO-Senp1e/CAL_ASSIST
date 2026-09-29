@@ -402,7 +402,7 @@ export class NotificationService {
  */
 export function mergePreferences(
   base: Record<string, any>,
-  patch: Record<string, any>,
+  patch: Record<string, any>
 ): Record<string, any> {
   const result: Record<string, any> = { ...base };
   for (const [key, value] of Object.entries(patch)) {
@@ -430,9 +430,7 @@ export function mergePreferences(
  * Converts an ISO-string or epoch-millisecond `muteUntil` into the ISO-string
  * form the stored blob uses, so round-tripping through JSON is stable.
  */
-export function normalisePreferencesUpdate(
-  patch: Record<string, any>,
-): Record<string, any> {
+export function normalisePreferencesUpdate(patch: Record<string, any>): Record<string, any> {
   const out: Record<string, any> = { ...patch };
   if (out.muteUntil !== undefined && out.muteUntil !== null) {
     const date = new Date(out.muteUntil as string | number);
@@ -440,4 +438,3 @@ export function normalisePreferencesUpdate(
   }
   return out;
 }
-

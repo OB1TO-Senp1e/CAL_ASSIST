@@ -37,7 +37,7 @@ export class RulesEngineController {
   @Post()
   async createRule(
     @Request() req,
-    @Body(new ZodValidationPipe(CreateRuleInputSchema)) body: CreateRuleInput,
+    @Body(new ZodValidationPipe(CreateRuleInputSchema)) body: CreateRuleInput
   ) {
     return this.rulesEngineService.createRule(req.user.id, body);
   }
@@ -65,7 +65,7 @@ export class RulesEngineController {
   async resolveConflict(
     @Request() req,
     @Param('id') conflictId: string,
-    @Body(new ZodValidationPipe(ResolveConflictInputSchema)) body: ResolveConflictInput,
+    @Body(new ZodValidationPipe(ResolveConflictInputSchema)) body: ResolveConflictInput
   ) {
     await this.rulesEngineService.resolveConflict(req.user.id, conflictId, body.resolution);
     return { success: true };
@@ -85,7 +85,7 @@ export class RulesEngineController {
   async updateRule(
     @Request() req,
     @Param('id') id: string,
-    @Body(new ZodValidationPipe(UpdateRuleBodySchema)) body: UpdateRuleBody,
+    @Body(new ZodValidationPipe(UpdateRuleBodySchema)) body: UpdateRuleBody
   ) {
     return this.rulesEngineService.updateRule(req.user.id, { ...body, id });
   }
@@ -99,7 +99,7 @@ export class RulesEngineController {
   @Post('enforce')
   async enforceRules(
     @Request() req,
-    @Body(new ZodValidationPipe(EnforceRulesInputSchema)) body: EnforceRulesInput,
+    @Body(new ZodValidationPipe(EnforceRulesInputSchema)) body: EnforceRulesInput
   ) {
     return this.rulesEngineService.enforceRules(req.user.id, body.input, body.trigger);
   }
@@ -107,7 +107,7 @@ export class RulesEngineController {
   @Post('parse')
   async parseNaturalLanguage(
     @Request() req,
-    @Body(new ZodValidationPipe(ParseNaturalLanguageInputSchema)) body: ParseNaturalLanguageInput,
+    @Body(new ZodValidationPipe(ParseNaturalLanguageInputSchema)) body: ParseNaturalLanguageInput
   ) {
     return this.rulesEngineService.parseNaturalLanguage(body);
   }
@@ -115,7 +115,7 @@ export class RulesEngineController {
   @Post('from-natural-language')
   async createRuleFromNaturalLanguage(
     @Request() req,
-    @Body(new ZodValidationPipe(NaturalLanguageTextSchema)) body: { text: string },
+    @Body(new ZodValidationPipe(NaturalLanguageTextSchema)) body: { text: string }
   ) {
     return this.rulesEngineService.createRuleFromNaturalLanguage(req.user.id, body.text);
   }

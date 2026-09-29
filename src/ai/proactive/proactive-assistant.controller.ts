@@ -40,17 +40,14 @@ export class ProactiveAssistantController {
   async acknowledgeIntervention(@Request() req, @Param('id') id: string) {
     const intervention = await this.proactiveAssistantService.acknowledgeIntervention(
       req.user.id,
-      id,
+      id
     );
     return { success: true, intervention };
   }
 
   @Post('interventions/:id/dismiss')
   async dismissIntervention(@Request() req, @Param('id') id: string) {
-    const intervention = await this.proactiveAssistantService.dismissIntervention(
-      req.user.id,
-      id,
-    );
+    const intervention = await this.proactiveAssistantService.dismissIntervention(req.user.id, id);
     return { success: true, intervention };
   }
 
@@ -58,12 +55,12 @@ export class ProactiveAssistantController {
   async snoozeIntervention(
     @Request() req,
     @Param('id') id: string,
-    @Body() body: { minutes?: number },
+    @Body() body: { minutes?: number }
   ) {
     const intervention = await this.proactiveAssistantService.snoozeIntervention(
       req.user.id,
       id,
-      body?.minutes ?? 30,
+      body?.minutes ?? 30
     );
     return { success: true, intervention };
   }
@@ -76,7 +73,7 @@ export class ProactiveAssistantController {
   @Post('preferences')
   async updatePreferences(
     @Request() req,
-    @Body() body: Partial<UserProactivePreferences>,
+    @Body() body: Partial<UserProactivePreferences>
   ): Promise<UserProactivePreferences> {
     return this.proactiveAssistantService.updateProactivePreferences(req.user.id, body ?? {});
   }

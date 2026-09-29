@@ -1,8 +1,4 @@
-import {
-  CircuitBreaker,
-  CircuitBreakerRegistry,
-  isBreakingFailure,
-} from './provider-health';
+import { CircuitBreaker, CircuitBreakerRegistry, isBreakingFailure } from './provider-health';
 
 /**
  * The breaker exists to stop amplifying an outage, and just as importantly to
@@ -10,7 +6,11 @@ import {
  * these tests: availability failures must trip, credential failures must not.
  */
 function makeBreaker(
-  overrides: Partial<{ failureThreshold: number; cooldownMs: number; successThreshold: number }> = {},
+  overrides: Partial<{
+    failureThreshold: number;
+    cooldownMs: number;
+    successThreshold: number;
+  }> = {},
   clock = { time: 0 }
 ) {
   const breaker = new CircuitBreaker('Test', {

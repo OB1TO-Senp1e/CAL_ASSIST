@@ -30,7 +30,7 @@ export class DailyExperienceService {
     private readonly commitmentEngine: CommitmentEngineService,
     private readonly proactiveAssistant: ProactiveAssistantService,
     private readonly meetingIntelligence: MeetingIntelligenceService,
-    private readonly timeCompiler: TimeCompilerService,
+    private readonly timeCompiler: TimeCompilerService
   ) {}
 
   async generateMorningBriefing(userId: string, date: Date, config: any): Promise<MorningBriefing> {
@@ -39,32 +39,53 @@ export class DailyExperienceService {
     const dayEnd = new Date(date);
     dayEnd.setHours(23, 59, 59, 999);
 
-    const [
+    const [events, tasks, commitments, realityCheck, proactiveCheck, userPreferences] =
+      await Promise.all([
+        this.prisma.event.findMany({
+          where: {
+            userId,
+            startDate: { gte: dayStart, lte: dayEnd },
+            status: { in: ['CONFIRMED', 'TENTATIVE'] },
+          },
+          orderBy: { startDate: 'asc' },
+        }),
+        this.prisma.task.findMany({
+          where: {
+            userId,
+            status: { in: ['PENDING', 'IN_PROGRESS'] },
+            dueDate: { gte: dayStart, lte: dayEnd },
+          },
+          orderBy: { priority: 'desc' },
+        }),
+        this.prisma.commitment.findMany({
+          where: {
+            userId,
+            status: { in: ['PENDING', 'IN_PROGRESS'] },
+            deadline: { gte: dayStart, lte: dayEnd },
+          },
+          orderBy: { deadline: 'asc' },
+        }),
+        this.realityEngine.runRealityCheck({
+          userId,
+          timeRange: { start: dayStart.toISOString(), end: dayEnd.toISOString() },
+          includeResolved: false,
+        }),
+        this.proactiveAssistant.runProactiveCheck({
+          userId,
+          timeRange: { start: dayStart.toISOString(), end: dayEnd.toISOString() },
+          limit: 10,
+        }),
+        this.prisma.preference.findMany({ where: { userId } }),
+      ]);
+
+    const items = await this.generateBriefingItems(
+      userId,
       events,
       tasks,
       commitments,
       realityCheck,
-      proactiveCheck,
-      userPreferences,
-    ] = await Promise.all([
-      this.prisma.event.findMany({
-        where: { userId, startDate: { gte: dayStart, lte: dayEnd }, status: { in: ['CONFIRMED', 'TENTATIVE'] } },
-        orderBy: { startDate: 'asc' },
-      }),
-      this.prisma.task.findMany({
-        where: { userId, status: { in: ['PENDING', 'IN_PROGRESS'] }, dueDate: { gte: dayStart, lte: dayEnd } },
-        orderBy: { priority: 'desc' },
-      }),
-      this.prisma.commitment.findMany({
-        where: { userId, status: { in: ['PENDING', 'IN_PROGRESS'] }, deadline: { gte: dayStart, lte: dayEnd } },
-        orderBy: { deadline: 'asc' },
-      }),
-      this.realityEngine.runRealityCheck({ userId, timeRange: { start: dayStart.toISOString(), end: dayEnd.toISOString() }, includeResolved: false }),
-      this.proactiveAssistant.runProactiveCheck({ userId, timeRange: { start: dayStart.toISOString(), end: dayEnd.toISOString() }, limit: 10 }),
-      this.prisma.preference.findMany({ where: { userId } }),
-    ]);
-
-    const items = await this.generateBriefingItems(userId, events, tasks, commitments, realityCheck, proactiveCheck);
+      proactiveCheck
+    );
     const schedule = this.buildSchedule(events, tasks);
     const risks = this.assessRisks(realityCheck, proactiveCheck, commitments);
     const preparation = this.generatePreparationRequirements(events, tasks, commitments);
@@ -78,7 +99,7 @@ export class DailyExperienceService {
       generatedAt: new Date().toISOString(),
       timezone: config.timezone || 'UTC',
       summary,
-      items: items.filter(i => this.matchesBriefingLength(i, config.briefingLength)),
+      items: items.filter((i) => this.matchesBriefingLength(i, config.briefingLength)),
       schedule,
       risks,
       preparationRequirements: preparation,
@@ -93,12 +114,12 @@ export class DailyExperienceService {
     tasks: any[],
     commitments: any[],
     realityCheck: any,
-    proactiveCheck: any,
+    proactiveCheck: any
   ): Promise<any[]> {
     const items: any[] = [];
 
     // Priority tasks due today
-    const highPriorityTasks = tasks.filter(t => t.priority >= 8).slice(0, 3);
+    const highPriorityTasks = tasks.filter((t) => t.priority >= 8).slice(0, 3);
     for (const task of highPriorityTasks) {
       items.push({
         id: `task_${task.id}`,
@@ -119,7 +140,9 @@ export class DailyExperienceService {
     todayStart.setHours(0, 0, 0, 0);
     const todayEnd = new Date();
     todayEnd.setHours(23, 59, 59, 999);
-    const todayMeetings = events.filter(e => e.startDate >= todayStart && e.startDate <= todayEnd);
+    const todayMeetings = events.filter(
+      (e) => e.startDate >= todayStart && e.startDate <= todayEnd
+    );
     for (const meeting of todayMeetings.slice(0, 3)) {
       const prepTime = 15;
       items.push({
@@ -139,7 +162,7 @@ export class DailyExperienceService {
     // Commitments due today
     const commitmentEnd = new Date();
     commitmentEnd.setHours(23, 59, 59, 999);
-    const todayCommitments = commitments.filter(c => new Date(c.deadline) <= commitmentEnd);
+    const todayCommitments = commitments.filter((c) => new Date(c.deadline) <= commitmentEnd);
     for (const commitment of todayCommitments.slice(0, 2)) {
       items.push({
         id: `commit_${commitment.id}`,
@@ -162,7 +185,11 @@ export class DailyExperienceService {
         description: deviation.description,
         priority: deviation.severity === 'CRITICAL' ? 'URGENT' : 'HIGH',
         category: 'RISK',
-        relatedEntity: { type: deviation.entityType, id: deviation.entityId, title: deviation.title },
+        relatedEntity: {
+          type: deviation.entityType,
+          id: deviation.entityId,
+          title: deviation.title,
+        },
         actionable: true,
         estimatedImpact: deviation.severity === 'CRITICAL' ? 'HIGH' : 'MEDIUM',
       });
@@ -176,7 +203,13 @@ export class DailyExperienceService {
         description: intervention.description,
         priority: intervention.priority,
         category: intervention.type === 'CALENDAR_OVERLOAD' ? 'SCHEDULE_CONFLICT' : 'RISK',
-        relatedEntity: intervention.affectedEntities?.[0] ? { type: intervention.affectedEntities[0].type, id: intervention.affectedEntities[0].id, title: intervention.affectedEntities[0].title } : undefined,
+        relatedEntity: intervention.affectedEntities?.[0]
+          ? {
+              type: intervention.affectedEntities[0].type,
+              id: intervention.affectedEntities[0].id,
+              title: intervention.affectedEntities[0].title,
+            }
+          : undefined,
         actionable: intervention.action !== 'NO_ACTION',
         estimatedImpact: intervention.priority === 'URGENT' ? 'HIGH' : 'MEDIUM',
       });
@@ -201,7 +234,16 @@ export class DailyExperienceService {
     type ScheduleItem = {
       id: string;
       title: string;
-      type: 'FOCUS' | 'MEETING' | 'TRAVEL' | 'BREAK' | 'PERSONAL' | 'BUFFER' | 'ADMIN' | 'DEEP_WORK' | 'SHALLOW_WORK';
+      type:
+        | 'FOCUS'
+        | 'MEETING'
+        | 'TRAVEL'
+        | 'BREAK'
+        | 'PERSONAL'
+        | 'BUFFER'
+        | 'ADMIN'
+        | 'DEEP_WORK'
+        | 'SHALLOW_WORK';
       startTime: string;
       endTime: string;
       location?: string;
@@ -209,7 +251,7 @@ export class DailyExperienceService {
       isFixed: boolean;
     };
 
-    const schedule: ScheduleItem[] = [...events].map(e => ({
+    const schedule: ScheduleItem[] = [...events].map((e) => ({
       id: e.id,
       title: e.title,
       type: 'MEETING' as const,
@@ -221,7 +263,7 @@ export class DailyExperienceService {
     }));
 
     // Add time-blocked tasks
-    const timeBlockedTasks = tasks.filter(t => t.timeBlocks?.length > 0);
+    const timeBlockedTasks = tasks.filter((t) => t.timeBlocks?.length > 0);
     for (const task of timeBlockedTasks) {
       for (const block of task.timeBlocks || []) {
         schedule.push({
@@ -237,7 +279,9 @@ export class DailyExperienceService {
       }
     }
 
-    return schedule.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+    return schedule.sort(
+      (a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
+    );
   }
 
   private assessRisks(realityCheck: any, proactiveCheck: any, commitments: any[]) {
@@ -268,7 +312,7 @@ export class DailyExperienceService {
     }
 
     // Overdue commitments
-    const overdue = commitments.filter(c => new Date(c.deadline) < new Date());
+    const overdue = commitments.filter((c) => new Date(c.deadline) < new Date());
     for (const c of overdue.slice(0, 2)) {
       risks.push({
         id: `overdue_${c.id}`,
@@ -287,7 +331,10 @@ export class DailyExperienceService {
     const requirements: any[] = [];
 
     for (const event of events) {
-      if (event.startDate > new Date() && event.startDate < new Date(Date.now() + 24 * 60 * 60 * 1000)) {
+      if (
+        event.startDate > new Date() &&
+        event.startDate < new Date(Date.now() + 24 * 60 * 60 * 1000)
+      ) {
         requirements.push({
           entityType: 'EVENT',
           entityId: event.id,
@@ -299,7 +346,12 @@ export class DailyExperienceService {
       }
     }
 
-    const urgentTasks = tasks.filter(t => t.priority >= 8 && t.dueDate && new Date(t.dueDate) < new Date(Date.now() + 24 * 60 * 60 * 1000));
+    const urgentTasks = tasks.filter(
+      (t) =>
+        t.priority >= 8 &&
+        t.dueDate &&
+        new Date(t.dueDate) < new Date(Date.now() + 24 * 60 * 60 * 1000)
+    );
     for (const task of urgentTasks.slice(0, 3)) {
       requirements.push({
         entityType: 'TASK',
@@ -321,8 +373,10 @@ export class DailyExperienceService {
     morningStart.setHours(9, 0, 0, 0);
 
     // Find first available 2-hour window in morning
-    const morningMeetings = events.filter(e => 
-      e.startDate >= morningStart && e.startDate < new Date(morningStart.getTime() + 4 * 60 * 60 * 1000)
+    const morningMeetings = events.filter(
+      (e) =>
+        e.startDate >= morningStart &&
+        e.startDate < new Date(morningStart.getTime() + 4 * 60 * 60 * 1000)
     );
 
     if (morningMeetings.length === 0) {
@@ -339,8 +393,10 @@ export class DailyExperienceService {
     // Afternoon focus block
     const afternoonStart = new Date(now);
     afternoonStart.setHours(14, 0, 0, 0);
-    const afternoonMeetings = events.filter(e => 
-      e.startDate >= afternoonStart && e.startDate < new Date(afternoonStart.getTime() + 3 * 60 * 60 * 1000)
+    const afternoonMeetings = events.filter(
+      (e) =>
+        e.startDate >= afternoonStart &&
+        e.startDate < new Date(afternoonStart.getTime() + 3 * 60 * 60 * 1000)
     );
 
     if (afternoonMeetings.length <= 1) {
@@ -358,24 +414,32 @@ export class DailyExperienceService {
   }
 
   private calculateMetrics(events: any[], tasks: any[]) {
-    const meetingMinutes = events.reduce((sum, e) => sum + (e.endDate.getTime() - e.startDate.getTime()) / 60000, 0);
+    const meetingMinutes = events.reduce(
+      (sum, e) => sum + (e.endDate.getTime() - e.startDate.getTime()) / 60000,
+      0
+    );
     const focusMinutes = tasks.reduce((sum, t) => sum + (t.estimatedDurationMin || 60), 0);
     const totalMinutes = meetingMinutes + focusMinutes;
     const workHours = 8 * 60;
 
     return {
-      totalScheduledHours: Math.round(totalMinutes / 60 * 10) / 10,
-      focusHours: Math.round(focusMinutes / 60 * 10) / 10,
-      meetingHours: Math.round(meetingMinutes / 60 * 10) / 10,
-      breakHours: Math.round((workHours - totalMinutes) / 60 * 10) / 10,
+      totalScheduledHours: Math.round((totalMinutes / 60) * 10) / 10,
+      focusHours: Math.round((focusMinutes / 60) * 10) / 10,
+      meetingHours: Math.round((meetingMinutes / 60) * 10) / 10,
+      breakHours: Math.round(((workHours - totalMinutes) / 60) * 10) / 10,
       utilizationRate: Math.round((totalMinutes / workHours) * 100) / 100,
     };
   }
 
-  private generateMorningSummary(items: any[], risks: any[], schedule: any[], metrics: any): string {
-    const urgentCount = items.filter(i => i.priority === 'URGENT').length;
-    const highCount = items.filter(i => i.priority === 'HIGH').length;
-    const criticalRisks = risks.filter(r => r.level === 'CRITICAL').length;
+  private generateMorningSummary(
+    items: any[],
+    risks: any[],
+    schedule: any[],
+    metrics: any
+  ): string {
+    const urgentCount = items.filter((i) => i.priority === 'URGENT').length;
+    const highCount = items.filter((i) => i.priority === 'HIGH').length;
+    const criticalRisks = risks.filter((r) => r.level === 'CRITICAL').length;
 
     return `Good morning! You have ${schedule.length} scheduled items (${metrics.meetingHours}h meetings, ${metrics.focusHours}h focus). ${urgentCount} urgent items, ${highCount} high-priority items. ${criticalRisks > 0 ? `${criticalRisks} critical risk(s) detected.` : 'No critical risks.'} ${metrics.utilizationRate > 0.85 ? 'Schedule is heavily utilized.' : metrics.utilizationRate < 0.5 ? 'Light schedule with room for deep work.' : 'Balanced schedule.'}`;
   }
@@ -399,44 +463,61 @@ export class DailyExperienceService {
         orderBy: { startDate: 'asc' },
       }),
       this.prisma.event.findMany({
-        where: { userId, startDate: { gte: dayStart, lte: dayEnd }, status: { in: ['CONFIRMED', 'TENTATIVE'] } },
+        where: {
+          userId,
+          startDate: { gte: dayStart, lte: dayEnd },
+          status: { in: ['CONFIRMED', 'TENTATIVE'] },
+        },
         orderBy: { startDate: 'asc' },
       }),
     ]);
 
-    const allBlocks = [...timeBlocks, ...events].sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+    const allBlocks = [...timeBlocks, ...events].sort(
+      (a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime()
+    );
 
-    const current = allBlocks.find(b => b.startDate <= now && b.endDate >= now);
-    const next = allBlocks.find(b => b.startDate > now);
+    const current = allBlocks.find((b) => b.startDate <= now && b.endDate >= now);
+    const next = allBlocks.find((b) => b.startDate > now);
 
     const scheduleChanges = await this.getRecentScheduleChanges(userId);
 
     return {
-      current: current ? {
-        id: current.id,
-        title: current.title,
-        type: 'blockType' in current ? (current.blockType || 'MEETING') : 'MEETING',
-        startTime: current.startDate.toISOString(),
-        endTime: current.endDate.toISOString(),
-        progressPercent: Math.round(((now.getTime() - current.startDate.getTime()) / (current.endDate.getTime() - current.startDate.getTime())) * 100),
-        timeRemainingMinutes: Math.round((current.endDate.getTime() - now.getTime()) / 60000),
-      } : undefined,
-      next: next ? {
-        id: next.id,
-        title: next.title,
-        type: 'blockType' in next ? (next.blockType || 'MEETING') : 'MEETING',
-        startTime: next.startDate.toISOString(),
-        endTime: next.endDate.toISOString(),
-        location: 'location' in next ? next.location : undefined,
-        prepTimeMinutes: 10,
-      } : undefined,
-      upcomingToday: allBlocks.filter(b => b.startDate > now).slice(0, 5).map(b => ({
-        id: b.id,
-        title: b.title,
-        type: 'blockType' in b ? (b.blockType || 'MEETING') : 'MEETING',
-        startTime: b.startDate.toISOString(),
-        endTime: b.endDate.toISOString(),
-      })),
+      current: current
+        ? {
+            id: current.id,
+            title: current.title,
+            type: 'blockType' in current ? current.blockType || 'MEETING' : 'MEETING',
+            startTime: current.startDate.toISOString(),
+            endTime: current.endDate.toISOString(),
+            progressPercent: Math.round(
+              ((now.getTime() - current.startDate.getTime()) /
+                (current.endDate.getTime() - current.startDate.getTime())) *
+                100
+            ),
+            timeRemainingMinutes: Math.round((current.endDate.getTime() - now.getTime()) / 60000),
+          }
+        : undefined,
+      next: next
+        ? {
+            id: next.id,
+            title: next.title,
+            type: 'blockType' in next ? next.blockType || 'MEETING' : 'MEETING',
+            startTime: next.startDate.toISOString(),
+            endTime: next.endDate.toISOString(),
+            location: 'location' in next ? next.location : undefined,
+            prepTimeMinutes: 10,
+          }
+        : undefined,
+      upcomingToday: allBlocks
+        .filter((b) => b.startDate > now)
+        .slice(0, 5)
+        .map((b) => ({
+          id: b.id,
+          title: b.title,
+          type: 'blockType' in b ? b.blockType || 'MEETING' : 'MEETING',
+          startTime: b.startDate.toISOString(),
+          endTime: b.endDate.toISOString(),
+        })),
       contextualReminders: [],
       scheduleChanges: [],
       replanningSuggestions: [],
@@ -451,14 +532,20 @@ export class DailyExperienceService {
       take: 10,
     });
 
-    return changes.map(c => ({
+    return changes.map((c) => ({
       id: c.id,
       changeType: c.changeType,
       entityType: c.entityType,
       entityId: c.entityId,
       title: c.entityType + (c.entityId ? ` ${c.entityId}` : ''),
-      oldTime: c.oldData && typeof c.oldData === 'object' && 'start' in c.oldData ? { start: c.oldData.start as string, end: c.oldData.end as string } : undefined,
-      newTime: c.newData && typeof c.newData === 'object' && 'start' in c.newData ? { start: c.newData.start as string, end: c.newData.end as string } : undefined,
+      oldTime:
+        c.oldData && typeof c.oldData === 'object' && 'start' in c.oldData
+          ? { start: c.oldData.start as string, end: c.oldData.end as string }
+          : undefined,
+      newTime:
+        c.newData && typeof c.newData === 'object' && 'start' in c.newData
+          ? { start: c.newData.start as string, end: c.newData.end as string }
+          : undefined,
       reason: c.reason,
       requiresAction: false,
     }));
@@ -473,30 +560,51 @@ export class DailyExperienceService {
     const [events, tasks, commitments, timeBlocks, scheduleChanges] = await Promise.all([
       this.prisma.event.findMany({ where: { userId, startDate: { gte: dayStart, lte: dayEnd } } }),
       this.prisma.task.findMany({ where: { userId, dueDate: { gte: dayStart, lte: dayEnd } } }),
-      this.prisma.commitment.findMany({ where: { userId, deadline: { gte: dayStart, lte: dayEnd } } }),
-      this.prisma.timeBlock.findMany({ where: { userId, startDate: { gte: dayStart, lte: dayEnd } } }),
-      this.prisma.scheduleChange.findMany({ where: { userId, createdAt: { gte: dayStart, lte: dayEnd } } }),
+      this.prisma.commitment.findMany({
+        where: { userId, deadline: { gte: dayStart, lte: dayEnd } },
+      }),
+      this.prisma.timeBlock.findMany({
+        where: { userId, startDate: { gte: dayStart, lte: dayEnd } },
+      }),
+      this.prisma.scheduleChange.findMany({
+        where: { userId, createdAt: { gte: dayStart, lte: dayEnd } },
+      }),
     ]);
 
-    const completedTasks = tasks.filter(t => t.status === 'COMPLETED');
-    const completedBlocks = timeBlocks.filter(b => b.status === 'COMPLETED');
-    const totalScheduled = timeBlocks.reduce((sum, b) => sum + (b.endDate.getTime() - b.startDate.getTime()) / 60000, 0);
-    const completedMinutes = completedBlocks.reduce((sum, b) => sum + (b.endDate.getTime() - b.startDate.getTime()) / 60000, 0);
+    const completedTasks = tasks.filter((t) => t.status === 'COMPLETED');
+    const completedBlocks = timeBlocks.filter((b) => b.status === 'COMPLETED');
+    const totalScheduled = timeBlocks.reduce(
+      (sum, b) => sum + (b.endDate.getTime() - b.startDate.getTime()) / 60000,
+      0
+    );
+    const completedMinutes = completedBlocks.reduce(
+      (sum, b) => sum + (b.endDate.getTime() - b.startDate.getTime()) / 60000,
+      0
+    );
 
-    const unfinishedTasks = tasks.filter(t => t.status !== 'COMPLETED' && t.status !== 'CANCELLED');
-    const unfinishedWork = unfinishedTasks.map(t => ({
+    const unfinishedTasks = tasks.filter(
+      (t) => t.status !== 'COMPLETED' && t.status !== 'CANCELLED'
+    );
+    const unfinishedWork = unfinishedTasks.map((t) => ({
       id: t.id,
       title: t.title,
       type: 'TASK' as const,
       originalPlan: `${t.estimatedDurationMin || 60} minutes planned`,
-      actualProgress: t.actualDurationMin ? `${t.actualDurationMin} minutes completed` : 'Not started',
+      actualProgress: t.actualDurationMin
+        ? `${t.actualDurationMin} minutes completed`
+        : 'Not started',
       remainingMinutes: Math.max(0, (t.estimatedDurationMin || 60) - (t.actualDurationMin || 0)),
       recommendedAction: this.getRecommendedActionForUnfinished(t),
-      reason: t.status === 'BLOCKED' ? 'Blocked by dependency' : t.status === 'IN_PROGRESS' ? 'In progress but not completed' : 'Not started',
+      reason:
+        t.status === 'BLOCKED'
+          ? 'Blocked by dependency'
+          : t.status === 'IN_PROGRESS'
+            ? 'In progress but not completed'
+            : 'Not started',
     }));
 
-    const commitments_due = commitments.filter(c => c.deadline <= new Date(dayEnd));
-    const commitments_today = commitments_due.map(c => ({
+    const commitments_due = commitments.filter((c) => c.deadline <= new Date(dayEnd));
+    const commitments_today = commitments_due.map((c) => ({
       id: c.id,
       object: c.title,
       deadline: c.deadline.toISOString(),
@@ -513,8 +621,21 @@ export class DailyExperienceService {
     tomorrowEnd.setHours(23, 59, 59, 999);
 
     const [tomorrowEvents, tomorrowTasks] = await Promise.all([
-      this.prisma.event.findMany({ where: { startDate: { gte: tomorrowStart, lte: tomorrowEnd }, status: { in: ['CONFIRMED', 'TENTATIVE'] } }, orderBy: { startDate: 'asc' } }),
-      this.prisma.task.findMany({ where: { dueDate: { gte: tomorrowStart, lte: tomorrowEnd }, status: { in: ['PENDING', 'IN_PROGRESS'] } }, orderBy: { priority: 'desc' }, take: 5 }),
+      this.prisma.event.findMany({
+        where: {
+          startDate: { gte: tomorrowStart, lte: tomorrowEnd },
+          status: { in: ['CONFIRMED', 'TENTATIVE'] },
+        },
+        orderBy: { startDate: 'asc' },
+      }),
+      this.prisma.task.findMany({
+        where: {
+          dueDate: { gte: tomorrowStart, lte: tomorrowEnd },
+          status: { in: ['PENDING', 'IN_PROGRESS'] },
+        },
+        orderBy: { priority: 'desc' },
+        take: 5,
+      }),
     ]);
 
     const scheduleAdjustments = await this.generateScheduleAdjustments(userId, date, {
@@ -528,13 +649,18 @@ export class DailyExperienceService {
       date: date.toISOString(),
       generatedAt: new Date().toISOString(),
       timezone: 'UTC',
-      summary: `Day complete: ${completedTasks.length}/${tasks.length} tasks done, ${Math.round(completedMinutes / 60 * 10) / 10}h of ${Math.round(timeBlocks.reduce((sum, b) => sum + (b.endDate.getTime() - b.startDate.getTime()) / 60000, 0) / 60 * 10) / 10}h completed.`,
+      summary: `Day complete: ${completedTasks.length}/${tasks.length} tasks done, ${Math.round((completedMinutes / 60) * 10) / 10}h of ${Math.round((timeBlocks.reduce((sum, b) => sum + (b.endDate.getTime() - b.startDate.getTime()) / 60000, 0) / 60) * 10) / 10}h completed.`,
       completion: {
         totalScheduledMinutes: Math.round(totalScheduled),
         completedMinutes: Math.round(completedMinutes),
-        completionRate: totalScheduled > 0 ? Math.round((completedMinutes / totalScheduled) * 100) / 100 : 0,
-        focusMinutesCompleted: completedBlocks.filter(b => b.blockType === 'FOCUS').reduce((sum, b) => sum + (b.endDate.getTime() - b.startDate.getTime()) / 60000, 0),
-        meetingMinutesCompleted: completedBlocks.filter(b => b.blockType === 'MEETING').reduce((sum, b) => sum + (b.endDate.getTime() - b.startDate.getTime()) / 60000, 0),
+        completionRate:
+          totalScheduled > 0 ? Math.round((completedMinutes / totalScheduled) * 100) / 100 : 0,
+        focusMinutesCompleted: completedBlocks
+          .filter((b) => b.blockType === 'FOCUS')
+          .reduce((sum, b) => sum + (b.endDate.getTime() - b.startDate.getTime()) / 60000, 0),
+        meetingMinutesCompleted: completedBlocks
+          .filter((b) => b.blockType === 'MEETING')
+          .reduce((sum, b) => sum + (b.endDate.getTime() - b.startDate.getTime()) / 60000, 0),
         tasksCompleted: completedTasks.length,
         tasksTotal: tasks.length,
       },
@@ -542,10 +668,30 @@ export class DailyExperienceService {
       commitments: commitments_today,
       tomorrowPreview: {
         date: tomorrow.toISOString(),
-        totalScheduledHours: Math.round((tomorrowEvents.reduce((sum, e) => sum + (e.endDate.getTime() - e.startDate.getTime()) / 60000, 0) + tomorrowTasks.reduce((sum, t) => sum + (t.estimatedDurationMin || 60), 0)) / 60 * 10) / 10,
-        focusHours: Math.round(tomorrowTasks.reduce((sum, t) => sum + (t.estimatedDurationMin || 60), 0) / 60 * 10) / 10,
-        meetingHours: Math.round(tomorrowEvents.reduce((sum, e) => sum + (e.endDate.getTime() - e.startDate.getTime()) / 60000, 0) / 60 * 10) / 10,
-        keyMeetings: tomorrowEvents.slice(0, 3).map(e => ({
+        totalScheduledHours:
+          Math.round(
+            ((tomorrowEvents.reduce(
+              (sum, e) => sum + (e.endDate.getTime() - e.startDate.getTime()) / 60000,
+              0
+            ) +
+              tomorrowTasks.reduce((sum, t) => sum + (t.estimatedDurationMin || 60), 0)) /
+              60) *
+              10
+          ) / 10,
+        focusHours:
+          Math.round(
+            (tomorrowTasks.reduce((sum, t) => sum + (t.estimatedDurationMin || 60), 0) / 60) * 10
+          ) / 10,
+        meetingHours:
+          Math.round(
+            (tomorrowEvents.reduce(
+              (sum, e) => sum + (e.endDate.getTime() - e.startDate.getTime()) / 60000,
+              0
+            ) /
+              60) *
+              10
+          ) / 10,
+        keyMeetings: tomorrowEvents.slice(0, 3).map((e) => ({
           id: e.id,
           title: e.title,
           startTime: e.startDate.toISOString(),
@@ -553,8 +699,18 @@ export class DailyExperienceService {
           prepRequired: true,
         })),
         topPriorities: [
-          ...tomorrowTasks.slice(0, 2).map(t => ({ title: t.title, type: 'TASK' as const, estimatedMinutes: t.estimatedDurationMin || 60, reason: `Priority ${t.priority}` })),
-          ...tomorrowEvents.slice(0, 1).map(e => ({ title: e.title, type: 'MEETING_PREP' as const, estimatedMinutes: 15, reason: 'Meeting preparation' })),
+          ...tomorrowTasks.slice(0, 2).map((t) => ({
+            title: t.title,
+            type: 'TASK' as const,
+            estimatedMinutes: t.estimatedDurationMin || 60,
+            reason: `Priority ${t.priority}`,
+          })),
+          ...tomorrowEvents.slice(0, 1).map((e) => ({
+            title: e.title,
+            type: 'MEETING_PREP' as const,
+            estimatedMinutes: 15,
+            reason: 'Meeting preparation',
+          })),
         ],
         recommendedFirstBlock: {
           startTime: new Date(tomorrow.setHours(9, 0, 0, 0)).toISOString(),
@@ -576,18 +732,24 @@ export class DailyExperienceService {
     return 'RESCHEDULE_TOMORROW';
   }
 
-  private async generateScheduleAdjustments(userId: string, date: Date, context?: {
-    unfinishedTasks?: any[];
-    overdueCommitments?: any[];
-    tomorrowEvents?: any[];
-    tomorrowTasks?: any[];
-  }): Promise<Array<{
-    id: string;
-    description: string;
-    reason: string;
-    impact: 'LOW' | 'MEDIUM' | 'HIGH';
-    requiresConfirmation: boolean;
-  }>> {
+  private async generateScheduleAdjustments(
+    userId: string,
+    date: Date,
+    context?: {
+      unfinishedTasks?: any[];
+      overdueCommitments?: any[];
+      tomorrowEvents?: any[];
+      tomorrowTasks?: any[];
+    }
+  ): Promise<
+    Array<{
+      id: string;
+      description: string;
+      reason: string;
+      impact: 'LOW' | 'MEDIUM' | 'HIGH';
+      requiresConfirmation: boolean;
+    }>
+  > {
     const adjustments: Array<{
       id: string;
       description: string;
@@ -599,18 +761,24 @@ export class DailyExperienceService {
     // 1) Unfinished high-priority work carries into tomorrow and needs room.
     const carried = (context?.unfinishedTasks ?? []).filter((t) => t.priority >= 7);
     if (carried.length > 0) {
-      const minutes = carried.reduce((sum, t) => sum + ((t.estimatedDurationMin ?? 60) - (t.actualDurationMin ?? 0)), 0);
+      const minutes = carried.reduce(
+        (sum, t) => sum + ((t.estimatedDurationMin ?? 60) - (t.actualDurationMin ?? 0)),
+        0
+      );
       adjustments.push({
         id: `adj_carry_${date.toISOString().slice(0, 10)}`,
         description: `Reserve ${Math.max(30, Math.round(minutes / 60) * 60)} minutes tomorrow for ${carried.length} high-priority task${carried.length > 1 ? 's' : ''} carried over from today`,
-        reason: 'Carried-over high-priority work needs protected time before new commitments fill the day.',
+        reason:
+          'Carried-over high-priority work needs protected time before new commitments fill the day.',
         impact: minutes >= 120 ? 'HIGH' : 'MEDIUM',
         requiresConfirmation: true,
       });
     }
 
     // 2) Overdue commitments: guard the next free morning block.
-    const overdue = (context?.overdueCommitments ?? []).filter((c) => new Date(c.deadline) < new Date());
+    const overdue = (context?.overdueCommitments ?? []).filter(
+      (c) => new Date(c.deadline) < new Date()
+    );
     if (overdue.length > 0) {
       adjustments.push({
         id: `adj_overdue_${date.toISOString().slice(0, 10)}`,
@@ -622,11 +790,12 @@ export class DailyExperienceService {
     }
 
     // 3) Back-to-back tomorrow morning: suggest a buffer.
-    const tomorrow = (context?.tomorrowEvents ?? []).slice().sort(
-      (a, b) => a.startDate.getTime() - b.startDate.getTime(),
-    );
+    const tomorrow = (context?.tomorrowEvents ?? [])
+      .slice()
+      .sort((a, b) => a.startDate.getTime() - b.startDate.getTime());
     for (let i = 1; i < tomorrow.length; i += 1) {
-      const gapMinutes = (tomorrow[i].startDate.getTime() - tomorrow[i - 1].endDate.getTime()) / 60000;
+      const gapMinutes =
+        (tomorrow[i].startDate.getTime() - tomorrow[i - 1].endDate.getTime()) / 60000;
       if (gapMinutes >= 0 && gapMinutes < 15) {
         adjustments.push({
           id: `adj_buffer_${tomorrow[i].id}`,
@@ -641,13 +810,16 @@ export class DailyExperienceService {
 
     // 4) Tomorrow overloaded (>70% of working hours committed): warn.
     const tomorrowLoad =
-      (context?.tomorrowEvents ?? []).reduce((sum, e) => sum + (e.endDate.getTime() - e.startDate.getTime()) / 60000, 0) +
+      (context?.tomorrowEvents ?? []).reduce(
+        (sum, e) => sum + (e.endDate.getTime() - e.startDate.getTime()) / 60000,
+        0
+      ) +
       (context?.tomorrowTasks ?? []).reduce((sum, t) => sum + (t.estimatedDurationMin ?? 60), 0);
     if (tomorrowLoad > 0.7 * 8 * 60) {
       adjustments.push({
         id: `adj_overload_${(context?.tomorrowEvents?.[0]?.startDate ?? date).toISOString().slice(0, 10)}`,
         description: 'Tomorrow is over 70% committed; consider deferring a lower-priority task',
-        reason: `Scheduled events plus task estimates total ${Math.round(tomorrowLoad / 60 * 10) / 10}h against an 8h working day.`,
+        reason: `Scheduled events plus task estimates total ${Math.round((tomorrowLoad / 60) * 10) / 10}h against an 8h working day.`,
         impact: 'MEDIUM',
         requiresConfirmation: true,
       });

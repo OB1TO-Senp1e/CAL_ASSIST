@@ -42,13 +42,13 @@ export class TimeCompilerController {
   constructor(
     private readonly timeCompilerService: TimeCompilerService,
     private readonly inputLoader: SchedulingInputLoader,
-    private readonly proposalStore: ScheduleProposalStore,
+    private readonly proposalStore: ScheduleProposalStore
   ) {}
 
   @Post('compile')
   async compileSchedule(
     @Request() req,
-    @Body() body: CompileScheduleRequest,
+    @Body() body: CompileScheduleRequest
   ): Promise<CompileScheduleResponse> {
     const request = CompileScheduleSchema.parse(body);
     const input = await this.inputLoader.load(req.user.id, request);
@@ -63,7 +63,7 @@ export class TimeCompilerController {
   @Post('compile-and-apply')
   async compileAndApply(
     @Request() req,
-    @Body() body: CompileScheduleRequest,
+    @Body() body: CompileScheduleRequest
   ): Promise<CompileScheduleResponse> {
     const request = CompileScheduleSchema.parse(body);
     const input = await this.inputLoader.load(req.user.id, request);
@@ -77,10 +77,7 @@ export class TimeCompilerController {
   }
 
   @Get('proposals')
-  async getProposals(
-    @Request() req,
-    @Query('limit') limit?: string,
-  ): Promise<ScheduleProposal[]> {
+  async getProposals(@Request() req, @Query('limit') limit?: string): Promise<ScheduleProposal[]> {
     const parsed = Number(limit);
     return this.proposalStore.list(req.user.id, Number.isFinite(parsed) ? parsed : 20);
   }
@@ -91,10 +88,7 @@ export class TimeCompilerController {
   }
 
   @Patch('proposals/:id/apply')
-  async applyProposal(
-    @Request() req,
-    @Param('id') id: string,
-  ): Promise<ScheduleProposal> {
+  async applyProposal(@Request() req, @Param('id') id: string): Promise<ScheduleProposal> {
     return this.proposalStore.apply(req.user.id, id);
   }
 
@@ -103,7 +97,7 @@ export class TimeCompilerController {
   async setProposalStatus(
     @Request() req,
     @Param('id') id: string,
-    @Body() body: { status: 'APPLIED' | 'REJECTED' },
+    @Body() body: { status: 'APPLIED' | 'REJECTED' }
   ): Promise<ScheduleProposal> {
     const status = body?.status;
     if (status !== 'APPLIED' && status !== 'REJECTED') {

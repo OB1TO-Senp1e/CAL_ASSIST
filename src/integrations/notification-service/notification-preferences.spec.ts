@@ -26,7 +26,7 @@ describe('notification preferences', () => {
 
     it('rejects a non-boolean channel flag', () => {
       expect(NotificationPreferencesSchema.safeParse({ email: { enabled: 'yes' } }).success).toBe(
-        false,
+        false
       );
     });
 
@@ -34,7 +34,7 @@ describe('notification preferences', () => {
       expect(
         NotificationPreferencesSchema.safeParse({
           email: { enabled: true, address: 'nope' },
-        }).success,
+        }).success
       ).toBe(false);
     });
 
@@ -42,7 +42,7 @@ describe('notification preferences', () => {
       expect(
         NotificationPreferencesSchema.safeParse({
           workingHours: { enabled: true, days: [9] },
-        }).success,
+        }).success
       ).toBe(false);
     });
 
@@ -98,14 +98,14 @@ describe('notification preferences', () => {
   describe('normalisePreferencesUpdate', () => {
     it('keeps muteUntil as a stable ISO string', () => {
       expect(normalisePreferencesUpdate({ muteUntil: '2026-10-01T00:00:00Z' }).muteUntil).toBe(
-        '2026-10-01T00:00:00.000Z',
+        '2026-10-01T00:00:00.000Z'
       );
     });
 
     it('accepts epoch milliseconds', () => {
       const epoch = Date.UTC(2026, 9, 1);
       expect(normalisePreferencesUpdate({ muteUntil: epoch }).muteUntil).toBe(
-        '2026-10-01T00:00:00.000Z',
+        '2026-10-01T00:00:00.000Z'
       );
     });
 

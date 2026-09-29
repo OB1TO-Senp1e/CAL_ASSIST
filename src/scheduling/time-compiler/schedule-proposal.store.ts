@@ -75,7 +75,7 @@ export class ScheduleProposalStore {
   async setStatus(
     userId: string,
     externalId: string,
-    status: 'APPLIED' | 'REJECTED',
+    status: 'APPLIED' | 'REJECTED'
   ): Promise<ScheduleProposal> {
     const row = await this.getOwned(userId, externalId);
     const proposal = this.hydrate(row);
@@ -180,4 +180,3 @@ export class ScheduleProposalStore {
 function isApplicableBlock(block: ScheduledBlock): boolean {
   return !block.isFixed && (block.type === 'TASK' || block.type === 'FOCUS');
 }
-

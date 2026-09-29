@@ -43,7 +43,7 @@ export class GoogleMapsTravelTimeProvider implements TravelTimeProvider {
   private assertConfigured(): void {
     if (!this.apiKey) {
       throw new ServiceUnavailableException(
-        'Travel time is unavailable: GOOGLE_MAPS_API_KEY is not configured',
+        'Travel time is unavailable: GOOGLE_MAPS_API_KEY is not configured'
       );
     }
   }
@@ -61,11 +61,17 @@ export class GoogleMapsTravelTimeProvider implements TravelTimeProvider {
       key: this.apiKey,
     });
     if (request.departureTime) {
-      params.set('departure_time', String(Math.floor(new Date(request.departureTime).getTime() / 1000)));
+      params.set(
+        'departure_time',
+        String(Math.floor(new Date(request.departureTime).getTime() / 1000))
+      );
       params.set('traffic_model', 'best_guess');
     }
     if (request.arrivalTime) {
-      params.set('arrival_time', String(Math.floor(new Date(request.arrivalTime).getTime() / 1000)));
+      params.set(
+        'arrival_time',
+        String(Math.floor(new Date(request.arrivalTime).getTime() / 1000))
+      );
     }
     const avoid = [
       request.avoidTolls && 'tolls',
@@ -81,7 +87,9 @@ export class GoogleMapsTravelTimeProvider implements TravelTimeProvider {
       const data: any = await response.json();
 
       if (data.status !== 'OK' || !data.routes?.length) {
-        throw new Error(`Directions API error: ${data.status} - ${data.error_message || 'No routes found'}`);
+        throw new Error(
+          `Directions API error: ${data.status} - ${data.error_message || 'No routes found'}`
+        );
       }
 
       const route = data.routes[0];
@@ -89,7 +97,9 @@ export class GoogleMapsTravelTimeProvider implements TravelTimeProvider {
 
       return {
         durationMinutes: Math.round(leg.duration.value / 60),
-        durationInTrafficMinutes: leg.duration_in_traffic ? Math.round(leg.duration_in_traffic.value / 60) : undefined,
+        durationInTrafficMinutes: leg.duration_in_traffic
+          ? Math.round(leg.duration_in_traffic.value / 60)
+          : undefined,
         distanceMeters: leg.distance.value,
         distanceKilometers: leg.distance.value / 1000,
         startAddress: leg.start_address,
@@ -117,13 +127,16 @@ export class GoogleMapsTravelTimeProvider implements TravelTimeProvider {
 
   async getRouteMatrix(request: RouteMatrixRequest): Promise<any> {
     this.assertConfigured();
-    const origins = request.origins.map(o => this.formatLocation(o)).join('|');
-    const destinations = request.destinations.map(d => this.formatLocation(d)).join('|');
+    const origins = request.origins.map((o) => this.formatLocation(o)).join('|');
+    const destinations = request.destinations.map((d) => this.formatLocation(d)).join('|');
     const mode = this.mapTravelMode(request.mode);
 
     const params = new URLSearchParams({ origins, destinations, mode, key: this.apiKey });
     if (request.departureTime) {
-      params.set('departure_time', String(Math.floor(new Date(request.departureTime).getTime() / 1000)));
+      params.set(
+        'departure_time',
+        String(Math.floor(new Date(request.departureTime).getTime() / 1000))
+      );
     }
 
     const url = `${this.baseUrl}/distancematrix/json?${params.toString()}`;
@@ -137,11 +150,13 @@ export class GoogleMapsTravelTimeProvider implements TravelTimeProvider {
       }
 
       return {
-        rows: data.rows.map((row: any) => row.elements.map((element: any) => ({
-          durationMinutes: element.duration ? Math.round(element.duration.value / 60) : null,
-          distanceMeters: element.distance ? element.distance.value : null,
-          status: element.status,
-        }))),
+        rows: data.rows.map((row: any) =>
+          row.elements.map((element: any) => ({
+            durationMinutes: element.duration ? Math.round(element.duration.value / 60) : null,
+            distanceMeters: element.distance ? element.distance.value : null,
+            status: element.status,
+          }))
+        ),
         provider: this.provider,
       };
     } catch (error: any) {
@@ -192,13 +207,23 @@ export class GoogleMapsTravelTimeProvider implements TravelTimeProvider {
             shortName: comp.short_name,
             types: comp.types,
           })),
-          geometry: result.geometry ? {
-            location: { lat: result.geometry.location.lat, lng: result.geometry.location.lng },
-            viewport: result.geometry.viewport ? {
-              northeast: { lat: result.geometry.viewport.northeast.lat, lng: result.geometry.viewport.northeast.lng },
-              southwest: { lat: result.geometry.viewport.southwest.lat, lng: result.geometry.viewport.southwest.lng },
-            } : undefined,
-          } : undefined,
+          geometry: result.geometry
+            ? {
+                location: { lat: result.geometry.location.lat, lng: result.geometry.location.lng },
+                viewport: result.geometry.viewport
+                  ? {
+                      northeast: {
+                        lat: result.geometry.viewport.northeast.lat,
+                        lng: result.geometry.viewport.northeast.lng,
+                      },
+                      southwest: {
+                        lat: result.geometry.viewport.southwest.lat,
+                        lng: result.geometry.viewport.southwest.lng,
+                      },
+                    }
+                  : undefined,
+              }
+            : undefined,
         })),
         provider: this.provider,
       };
@@ -217,7 +242,8 @@ export class GoogleMapsTravelTimeProvider implements TravelTimeProvider {
     const params = new URLSearchParams({ key: this.apiKey });
 
     if (request.query) params.append('query', request.query);
-    if (request.location) params.append('location', `${request.location.latitude},${request.location.longitude}`);
+    if (request.location)
+      params.append('location', `${request.location.latitude},${request.location.longitude}`);
     if (request.radius) params.append('radius', request.radius.toString());
     if (request.type) params.append('type', request.type);
     if (request.keyword) params.append('keyword', request.keyword);
@@ -264,7 +290,8 @@ export class GoogleMapsTravelTimeProvider implements TravelTimeProvider {
     this.assertConfigured();
     const params = new URLSearchParams({
       place_id: placeId,
-      fields: 'name,formatted_address,geometry,types,formatted_phone_number,website,opening_hours,rating,photos',
+      fields:
+        'name,formatted_address,geometry,types,formatted_phone_number,website,opening_hours,rating,photos',
       key: this.apiKey,
     });
 
@@ -318,11 +345,16 @@ export class GoogleMapsTravelTimeProvider implements TravelTimeProvider {
 
   private mapTravelMode(mode: TravelMode): string {
     switch (mode) {
-      case 'WALKING': return 'walking';
-      case 'BICYCLING': return 'bicycling';
-      case 'TRANSIT': return 'transit';
-      case 'FLIGHT': return 'driving'; // Google Maps doesn't have flight mode
-      default: return 'driving';
+      case 'WALKING':
+        return 'walking';
+      case 'BICYCLING':
+        return 'bicycling';
+      case 'TRANSIT':
+        return 'transit';
+      case 'FLIGHT':
+        return 'driving'; // Google Maps doesn't have flight mode
+      default:
+        return 'driving';
     }
   }
 }

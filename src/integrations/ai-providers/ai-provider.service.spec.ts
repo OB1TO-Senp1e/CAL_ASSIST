@@ -119,7 +119,6 @@ describe('AiProviderService provider selection', () => {
     expect(ollama.generate).toHaveBeenCalledTimes(2);
   });
 
-
   it('fails fast with circuit_open when every provider is tripped', async () => {
     process.env.AI_PROVIDER = 'ollama';
     const alwaysFail = async () => {
@@ -145,9 +144,7 @@ describe('AiProviderService provider selection', () => {
     expect(surfaced.retryable).toBe(true);
     expect(surfaced.message).toMatch(/circuit is open/);
     // Nothing new hit the network once both circuits were open.
-    expect(openai.generate.mock.calls.length + ollama.generate.mock.calls.length).toBe(
-      callsBefore
-    );
+    expect(openai.generate.mock.calls.length + ollama.generate.mock.calls.length).toBe(callsBefore);
   });
 
   it('never trips a breaker on a 401, because bad credentials are not an outage', async () => {
@@ -258,4 +255,3 @@ describe('AiProviderService embed degradation', () => {
     expect(view[0].capabilities?.embeddings).toBe(true);
   });
 });
-

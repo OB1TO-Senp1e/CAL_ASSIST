@@ -15,7 +15,7 @@ describe('CalendarConnectionService public shape', () => {
       {} as any,
       {} as any,
       { sign: () => 'jwt', verify: () => ({}) } as any,
-      { encrypt: (v: any) => v, decrypt: (v: any) => v } as any,
+      { encrypt: (v: any) => v, decrypt: (v: any) => v } as any
     );
 
   const collectKeys = (node: any): Set<string> => {

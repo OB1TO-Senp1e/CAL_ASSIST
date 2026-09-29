@@ -119,18 +119,33 @@ export abstract class BaseCalendarAdapter implements CalendarAdapter {
   }
 
   protected sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   // Abstract methods to be implemented by subclasses
   abstract getAuthUrl(userId: string, state: string, options?: CalendarAuthUrlOptions): string;
   abstract handleCallback(code: string, codeVerifier?: string): Promise<CalendarCallbackResult>;
-  abstract refreshAccessToken(refreshToken: string): Promise<{ accessToken: string; expiresAt: Date }>;
-  abstract createEvent(accessToken: string, event: CalendarEvent): Promise<{ externalId: string; externalETag: string }>;
-  abstract updateEvent(accessToken: string, externalId: string, event: Partial<CalendarEvent>): Promise<{ externalETag: string }>;
+  abstract refreshAccessToken(
+    refreshToken: string
+  ): Promise<{ accessToken: string; expiresAt: Date }>;
+  abstract createEvent(
+    accessToken: string,
+    event: CalendarEvent
+  ): Promise<{ externalId: string; externalETag: string }>;
+  abstract updateEvent(
+    accessToken: string,
+    externalId: string,
+    event: Partial<CalendarEvent>
+  ): Promise<{ externalETag: string }>;
   abstract deleteEvent(accessToken: string, externalId: string): Promise<void>;
-  abstract getEvent(accessToken: string, externalId: string): Promise<(CalendarEvent & { externalETag: string }) | null>;
-  abstract listEvents(accessToken: string, options: { syncToken?: string; timeMin?: string; timeMax?: string }): Promise<{
+  abstract getEvent(
+    accessToken: string,
+    externalId: string
+  ): Promise<(CalendarEvent & { externalETag: string }) | null>;
+  abstract listEvents(
+    accessToken: string,
+    options: { syncToken?: string; timeMin?: string; timeMax?: string }
+  ): Promise<{
     events: Array<CalendarEvent & { externalId: string; externalETag: string }>;
     nextSyncToken?: string;
   }>;

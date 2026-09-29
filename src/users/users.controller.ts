@@ -32,10 +32,7 @@ export class UsersController {
    * is declared before the dynamic ':id' routes on purpose.
    */
   @Delete('me')
-  async deleteOwnAccount(
-    @Request() req,
-    @Body() body: { confirm?: string }
-  ) {
+  async deleteOwnAccount(@Request() req, @Body() body: { confirm?: string }) {
     await this.accountDeletion.requestDeleteBySelf(req.user.id, body?.confirm ?? '');
     return { success: true, message: 'Account and all associated data deleted.' };
   }

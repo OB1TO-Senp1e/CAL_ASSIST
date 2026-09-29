@@ -105,7 +105,7 @@ describe('permission storage (Stage 4k)', () => {
         createdAt: new Date('2026-01-01T00:00:00Z'),
         updatedAt: new Date('2026-01-01T00:00:00Z'),
         ...data,
-      }),
+      })
     );
     const service = makeService({ autonomyPolicy: { create } });
 
@@ -125,9 +125,7 @@ describe('permission storage (Stage 4k)', () => {
     const data = create.mock.calls[0][0].data;
     expect(data.name).toBe('Assistant');
     expect(data.enabledScopes).toEqual(['CALENDAR']);
-    expect(data.protectedEntities).toEqual([
-      { type: 'EVENT', id: 'e1', reason: 'board meeting' },
-    ]);
+    expect(data.protectedEntities).toEqual([{ type: 'EVENT', id: 'e1', reason: 'board meeting' }]);
     expect(JSON.stringify(data)).not.toContain('calassistPolicy');
     expect(policy.id).toBe('pol1');
     expect(policy.autonomyLevel).toBe('AUTO_EXECUTE_LOW_RISK');
@@ -155,10 +153,10 @@ describe('permission DTO contracts', () => {
       CheckPermissionInputSchema.safeParse({
         action: 'CREATE_EVENT',
         scope: 'CALENDAR',
-      }).success,
+      }).success
     ).toBe(true);
     expect(
-      CheckPermissionInputSchema.safeParse({ action: 'DROP_DATABASE', scope: 'CALENDAR' }).success,
+      CheckPermissionInputSchema.safeParse({ action: 'DROP_DATABASE', scope: 'CALENDAR' }).success
     ).toBe(false);
     expect(CheckPermissionInputSchema.safeParse({ scope: 'CALENDAR' }).success).toBe(false);
   });
@@ -184,14 +182,14 @@ describe('permission DTO contracts', () => {
         scope: 'CALENDAR',
         decision: 'ALLOW',
         expiresAt: 'next tuesday',
-      }).success,
+      }).success
     ).toBe(false);
     expect(
       GrantPermissionInputSchema.safeParse({
         action: 'CREATE_EVENT',
         scope: 'CALENDAR',
         decision: 'MAYBE',
-      }).success,
+      }).success
     ).toBe(false);
   });
 
@@ -217,7 +215,7 @@ describe('permission DTO contracts', () => {
         name: 'X',
         autonomyLevel: 'SUGGEST',
         timeRestrictions: [{ startTime: '25:00', endTime: '26:00', days: [8] }],
-      }).success,
+      }).success
     ).toBe(false);
   });
 });

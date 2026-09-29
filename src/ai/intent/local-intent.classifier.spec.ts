@@ -117,7 +117,7 @@ describe('local-intent.classifier', () => {
 
     it('is conflict-first when a prompt mentions conflicts and availability', () => {
       expect(classifyLocally('check for conflicts in my availability').type).toBe(
-        'CHECK_CONFLICTS',
+        'CHECK_CONFLICTS'
       );
     });
 
@@ -129,7 +129,7 @@ describe('local-intent.classifier', () => {
 
     it('reports high confidence for explicit commands', () => {
       expect(classifyLocally('Create project redesign website').confidence).toBeGreaterThanOrEqual(
-        0.9,
+        0.9
       );
     });
   });

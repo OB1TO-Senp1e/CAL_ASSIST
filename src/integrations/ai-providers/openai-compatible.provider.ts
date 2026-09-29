@@ -149,10 +149,7 @@ export abstract class OpenAiCompatibleProvider implements AIProviderInterface {
   }
 
   /** Probe legs are advisory: log at debug and keep the declared capability. */
-  protected async tryProbe(
-    test: () => Promise<boolean>,
-    fallback: boolean
-  ): Promise<boolean> {
+  protected async tryProbe(test: () => Promise<boolean>, fallback: boolean): Promise<boolean> {
     try {
       return await test();
     } catch (error) {
@@ -163,7 +160,6 @@ export abstract class OpenAiCompatibleProvider implements AIProviderInterface {
       return fallback;
     }
   }
-
 
   /**
    * A missing key is a configuration defect, not an outage: it reports
@@ -301,8 +297,7 @@ export abstract class OpenAiCompatibleProvider implements AIProviderInterface {
   async generateStructured(prompt: string, options?: GenerateOptions): Promise<any> {
     const content = await this.generate(prompt, {
       ...options,
-      temperature:
-        options?.temperature ?? this.config.defaultStructuredTemperature ?? 0.3,
+      temperature: options?.temperature ?? this.config.defaultStructuredTemperature ?? 0.3,
     });
     return extractJson(content, this.config.providerName, {
       empty: this.config.emptyJsonError,
@@ -320,14 +315,11 @@ export abstract class OpenAiCompatibleProvider implements AIProviderInterface {
     this.assertConfigured('embed');
     const capabilities = this.getCapabilities();
     if (!capabilities.embeddings || !this.config.embeddingModel) {
-      throw new AiProviderError(
-        `${this.config.providerName} does not support embeddings`,
-        {
-          provider: this.config.providerName,
-          kind: 'unsupported',
-          retryable: false,
-        }
-      );
+      throw new AiProviderError(`${this.config.providerName} does not support embeddings`, {
+        provider: this.config.providerName,
+        kind: 'unsupported',
+        retryable: false,
+      });
     }
 
     const result = await embedding({

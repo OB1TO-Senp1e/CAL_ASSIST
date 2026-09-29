@@ -26,7 +26,7 @@ export class RealityEngineController {
   async quickRealityCheck(
     @Request() req,
     @Query('includeResolved') includeResolved?: string,
-    @Query('entityTypes') entityTypes?: string,
+    @Query('entityTypes') entityTypes?: string
   ) {
     return this.realityEngineService.runRealityCheck({
       userId: req.user.id,
@@ -37,7 +37,7 @@ export class RealityEngineController {
               .split(',')
               .map((t) => t.trim().toUpperCase())
               .filter((t) =>
-                ['TASK', 'EVENT', 'GOAL', 'PROJECT', 'COMMITMENT', 'TIME_BLOCK'].includes(t),
+                ['TASK', 'EVENT', 'GOAL', 'PROJECT', 'COMMITMENT', 'TIME_BLOCK'].includes(t)
               ) as RealityCheckInput['entityTypes'],
           }
         : {}),
@@ -78,12 +78,12 @@ export class RealityEngineController {
   async resolveDeviation(
     @Request() req,
     @Param('id') id: string,
-    @Body() body: { resolution?: string },
+    @Body() body: { resolution?: string }
   ) {
     const state = await this.realityEngineService.resolveDeviation(
       req.user.id,
       id,
-      body?.resolution,
+      body?.resolution
     );
     return { success: true, deviationId: id, resolvedAt: state.resolvedAt };
   }
@@ -99,12 +99,12 @@ export class RealityEngineController {
   async setRecommendationStatus(
     @Request() req,
     @Param('id') id: string,
-    @Body() body: { status: 'ACCEPTED' | 'REJECTED' },
+    @Body() body: { status: 'ACCEPTED' | 'REJECTED' }
   ) {
     const state = await this.realityEngineService.setRecommendationStatus(
       req.user.id,
       id,
-      body?.status,
+      body?.status
     );
     return { success: true, recommendationId: id, status: state.status };
   }

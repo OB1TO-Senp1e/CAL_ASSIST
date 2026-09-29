@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  NotFoundException,
-  BadRequestException,
-} from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../common/services/prisma.service';
 import { AiProviderService } from '../../integrations/ai-providers/ai-provider.service';
 import {
@@ -158,9 +153,7 @@ export class RulesEngineService {
       orderBy: { priority: 'desc' },
     });
 
-    let mapped = rules
-      .filter((rule) => !!this.isRuleRow(rule))
-      .map((r) => this.mapToRule(r));
+    let mapped = rules.filter((rule) => !!this.isRuleRow(rule)).map((r) => this.mapToRule(r));
 
     if (filters?.type) {
       mapped = mapped.filter((r) => r.type === filters.type);
@@ -262,7 +255,6 @@ export class RulesEngineService {
           severity: 'HIGH',
         };
       }
-
     }
 
     if (cond1.scope === 'GLOBAL' && cond2.scope === 'GLOBAL') {
@@ -326,11 +318,7 @@ export class RulesEngineService {
 
   private isRuleRow(rule: { conditions: unknown }): boolean {
     const conditions = rule.conditions;
-    return Boolean(
-      conditions &&
-      typeof conditions === 'object' &&
-      'ruleType' in conditions
-    );
+    return Boolean(conditions && typeof conditions === 'object' && 'ruleType' in conditions);
   }
 
   /**
@@ -361,7 +349,7 @@ export class RulesEngineService {
       resolvedAt: Date | null;
       resolution: string | null;
     },
-    ruleNames?: Map<string, string>,
+    ruleNames?: Map<string, string>
   ): RuleConflict {
     return {
       id: row.conflictKey,
@@ -401,9 +389,11 @@ export class RulesEngineService {
    * back as stringified JSON entries inside conditions.resolvedConflicts.
    */
   async reconcileConflicts(userId: string): Promise<void> {
-    const rules = (await this.prisma.autonomyRule.findMany({
-      where: { userId },
-    })).filter((rule) => this.isRuleRow(rule));
+    const rules = (
+      await this.prisma.autonomyRule.findMany({
+        where: { userId },
+      })
+    ).filter((rule) => this.isRuleRow(rule));
 
     const detected: Array<{
       conflictKey: string;
@@ -521,10 +511,12 @@ export class RulesEngineService {
     input: Record<string, any>,
     trigger: RuleTrigger
   ): Promise<RulesEnforcementSummary> {
-    const rules = (await this.prisma.autonomyRule.findMany({
-      where: { userId, isActive: true },
-      orderBy: { priority: 'desc' },
-    })).filter((rule) => !!this.isRuleRow(rule));
+    const rules = (
+      await this.prisma.autonomyRule.findMany({
+        where: { userId, isActive: true },
+        orderBy: { priority: 'desc' },
+      })
+    ).filter((rule) => !!this.isRuleRow(rule));
 
     const results: RuleEnforcementResult[] = [];
     const appliedAdjustments: RulesEnforcementSummary['appliedAdjustments'] = [];
@@ -563,9 +555,8 @@ export class RulesEngineService {
       }
 
       const storedConditions = rule.conditions as Record<string, unknown>;
-      const triggerCount = typeof storedConditions.triggerCount === 'number'
-        ? storedConditions.triggerCount + 1
-        : 1;
+      const triggerCount =
+        typeof storedConditions.triggerCount === 'number' ? storedConditions.triggerCount + 1 : 1;
       await this.prisma.autonomyRule.update({
         where: { id: rule.id },
         data: {

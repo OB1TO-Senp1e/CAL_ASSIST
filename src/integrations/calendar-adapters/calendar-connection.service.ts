@@ -101,7 +101,7 @@ export class CalendarConnectionService {
   createOAuthState(userId: string, provider: string): string {
     return this.jwt.sign(
       { sub: userId, calProvider: provider.toUpperCase(), purpose: 'calendar_oauth' },
-      { expiresIn: '10m' },
+      { expiresIn: '10m' }
     );
   }
 
@@ -156,7 +156,12 @@ export class CalendarConnectionService {
     });
   }
 
-  async handleCallback(userId: string, provider: string, code: string, state?: string): Promise<void> {
+  async handleCallback(
+    userId: string,
+    provider: string,
+    code: string,
+    state?: string
+  ): Promise<void> {
     const adapter = this.getAdapter(provider);
     if (!adapter) {
       throw new Error(`Unsupported calendar provider: ${provider}`);

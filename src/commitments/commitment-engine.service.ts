@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  NotFoundException,
-  BadRequestException,
-} from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../common/services/prisma.service';
 import { AiProviderService } from '../integrations/ai-providers/ai-provider.service';
 import { RealityEngineService } from '../scheduling/reality-engine/reality-engine.service';
@@ -33,7 +28,7 @@ export class CommitmentEngineService {
     private readonly prisma: PrismaService,
     private readonly aiProvider: AiProviderService,
     private readonly realityEngine: RealityEngineService,
-    private readonly schedulingEngine: SchedulingEngineService,
+    private readonly schedulingEngine: SchedulingEngineService
   ) {}
 
   async createCommitment(userId: string, input: CreateCommitmentInput): Promise<Commitment> {
@@ -71,7 +66,7 @@ export class CommitmentEngineService {
    */
   private defaultReminders(
     userId: string,
-    deadline: Date,
+    deadline: Date
   ): Array<{
     userId: string;
     timeType: 'DAYS_BEFORE' | 'HOURS_BEFORE';
@@ -90,9 +85,7 @@ export class CommitmentEngineService {
       timeValue: number;
       method: 'APP';
       isActive: true;
-    }> = [
-      { userId, timeType: 'HOURS_BEFORE', timeValue: 2, method: 'APP', isActive: true },
-    ];
+    }> = [{ userId, timeType: 'HOURS_BEFORE', timeValue: 2, method: 'APP', isActive: true }];
 
     if (hoursUntilDeadline > 24) {
       reminders.unshift({
@@ -168,8 +161,10 @@ export class CommitmentEngineService {
   async searchCommitments(userId: string, input: SearchCommitmentsInput): Promise<Commitment[]> {
     const where: any = { userId };
 
-    if (input.statuses?.length) where.status = { in: input.statuses.map((s) => this.toPrismaStatus(s)) };
-    if (input.sources?.length) where.source = { in: input.sources.map((s) => this.toPrismaSource(s)) };
+    if (input.statuses?.length)
+      where.status = { in: input.statuses.map((s) => this.toPrismaStatus(s)) };
+    if (input.sources?.length)
+      where.source = { in: input.sources.map((s) => this.toPrismaSource(s)) };
     if (input.dateFrom || input.dateTo) {
       where.deadline = {};
       if (input.dateFrom) where.deadline.gte = new Date(input.dateFrom);
@@ -183,10 +178,12 @@ export class CommitmentEngineService {
       take: input.limit,
     });
 
-    const results = await Promise.all(commitments.map(async (commitment) => ({
-      commitment: this.mapToCommitment(commitment),
-      risk: input.hasRisk ? await this.assessRisk(userId, commitment.id) : undefined,
-    })));
+    const results = await Promise.all(
+      commitments.map(async (commitment) => ({
+        commitment: this.mapToCommitment(commitment),
+        risk: input.hasRisk ? await this.assessRisk(userId, commitment.id) : undefined,
+      }))
+    );
     return results
       .filter(({ risk }) => !input.hasRisk || (risk && risk.riskLevel !== 'NONE'))
       .map(({ commitment }) => commitment);
@@ -202,7 +199,7 @@ export class CommitmentEngineService {
     const bySource: Record<string, number> = {};
     const scored = commitments.filter(
       (c): c is typeof c & { confidence: number } =>
-        c.confidence !== null && c.confidence !== undefined,
+        c.confidence !== null && c.confidence !== undefined
     );
 
     for (const c of commitments) {
@@ -210,8 +207,12 @@ export class CommitmentEngineService {
       bySource[c.source] = (bySource[c.source] || 0) + 1;
     }
 
-    const overdue = commitments.filter(c => c.status === 'OVERDUE' || (c.deadline < new Date() && c.status !== 'COMPLETED' && c.status !== 'CANCELLED'));
-    const pending = commitments.filter(c => c.status === 'PENDING' || c.status === 'IN_PROGRESS');
+    const overdue = commitments.filter(
+      (c) =>
+        c.status === 'OVERDUE' ||
+        (c.deadline < new Date() && c.status !== 'COMPLETED' && c.status !== 'CANCELLED')
+    );
+    const pending = commitments.filter((c) => c.status === 'PENDING' || c.status === 'IN_PROGRESS');
     const highRisk = risks.filter((r) => ['HIGH', 'CRITICAL'].includes(r.riskLevel));
 
     const pendingSorted = [...pending].sort((a, b) => a.deadline.getTime() - b.deadline.getTime());
@@ -354,36 +355,52 @@ Rules:
       riskFactors.push('OVERDUE');
       riskLevel = 'CRITICAL';
       details.push('Commitment is overdue');
-      suggestedActions.push({ type: 'ESCALATE', description: 'Immediate action required', priority: 'HIGH' });
+      suggestedActions.push({
+        type: 'ESCALATE',
+        description: 'Immediate action required',
+        priority: 'HIGH',
+      });
     } else if (hoursUntilDeadline <= 24) {
       riskFactors.push('DEADLINE_APPROACHING');
       riskLevel = this.maxRisk(riskLevel, 'HIGH');
       details.push(`Deadline in ${hoursUntilDeadline.toFixed(1)} hours`);
-      suggestedActions.push({ type: 'ALLOCATE_TIME', description: 'Allocate time today', priority: 'HIGH' });
+      suggestedActions.push({
+        type: 'ALLOCATE_TIME',
+        description: 'Allocate time today',
+        priority: 'HIGH',
+      });
     } else if (hoursUntilDeadline <= 72) {
       riskFactors.push('DEADLINE_APPROACHING');
       riskLevel = this.maxRisk(riskLevel, 'MEDIUM');
       details.push(`Deadline in ${daysUntilDeadline.toFixed(1)} days`);
-      suggestedActions.push({ type: 'ALLOCATE_TIME', description: 'Schedule time this week', priority: 'MEDIUM' });
+      suggestedActions.push({
+        type: 'ALLOCATE_TIME',
+        description: 'Schedule time this week',
+        priority: 'MEDIUM',
+      });
     }
 
     const timeBlocks = await this.prisma.timeBlock.findMany({
       where: {
         userId,
-        OR: [
-          { commitmentId },
-          { relatedCommitmentId: commitmentId },
-        ],
+        OR: [{ commitmentId }, { relatedCommitmentId: commitmentId }],
       },
     });
 
-    const allocatedMinutes = timeBlocks.reduce((sum, b) => sum + (b.endDate.getTime() - b.startDate.getTime()) / 60000, 0);
+    const allocatedMinutes = timeBlocks.reduce(
+      (sum, b) => sum + (b.endDate.getTime() - b.startDate.getTime()) / 60000,
+      0
+    );
 
     if (allocatedMinutes === 0) {
       riskFactors.push('NO_TIME_ALLOCATED');
       riskLevel = this.maxRisk(riskLevel, 'HIGH');
       details.push('No time allocated for this commitment');
-      suggestedActions.push({ type: 'ALLOCATE_TIME', description: 'Schedule dedicated time block', priority: 'HIGH' });
+      suggestedActions.push({
+        type: 'ALLOCATE_TIME',
+        description: 'Schedule dedicated time block',
+        priority: 'HIGH',
+      });
     }
 
     const otherCommitments = await this.prisma.commitment.findMany({
@@ -399,7 +416,11 @@ Rules:
       riskFactors.push('CONFLICTING_COMMITMENT');
       riskLevel = this.maxRisk(riskLevel, 'MEDIUM');
       details.push(`${otherCommitments.length} other commitments before same deadline`);
-      suggestedActions.push({ type: 'RESCHEDULE', description: 'Reprioritize commitments', priority: 'MEDIUM' });
+      suggestedActions.push({
+        type: 'RESCHEDULE',
+        description: 'Reprioritize commitments',
+        priority: 'MEDIUM',
+      });
     }
 
     const postpones = await this.prisma.scheduleChange.count({
@@ -414,7 +435,11 @@ Rules:
       riskFactors.push('REPEATEDLY_POSTPONED');
       riskLevel = this.maxRisk(riskLevel, 'HIGH');
       details.push(`Rescheduled ${postpones} times`);
-      suggestedActions.push({ type: 'CANCEL', description: 'Consider cancelling or delegating', priority: 'MEDIUM' });
+      suggestedActions.push({
+        type: 'CANCEL',
+        description: 'Consider cancelling or delegating',
+        priority: 'MEDIUM',
+      });
     }
 
     // A commitment the extractor was unsure about is one the user should confirm
@@ -423,7 +448,9 @@ Rules:
     if (commitment.confidence !== null && commitment.confidence < LOW_CONFIDENCE_THRESHOLD) {
       riskFactors.push('LOW_CONFIDENCE');
       riskLevel = this.maxRisk(riskLevel, 'MEDIUM');
-      details.push(`Only ${(commitment.confidence * 100).toFixed(0)}% confident this was extracted correctly`);
+      details.push(
+        `Only ${(commitment.confidence * 100).toFixed(0)}% confident this was extracted correctly`
+      );
       suggestedActions.push({
         type: 'ESCALATE',
         description: 'Confirm the wording, deadline and person before relying on this',
@@ -446,7 +473,10 @@ Rules:
     return riskData;
   }
 
-  private maxRisk(current: CommitmentRisk['riskLevel'], newRisk: CommitmentRisk['riskLevel']): CommitmentRisk['riskLevel'] {
+  private maxRisk(
+    current: CommitmentRisk['riskLevel'],
+    newRisk: CommitmentRisk['riskLevel']
+  ): CommitmentRisk['riskLevel'] {
     const levels = ['NONE', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
     return levels.indexOf(newRisk) > levels.indexOf(current) ? newRisk : current;
   }
@@ -454,7 +484,7 @@ Rules:
   private generateRecommendation(
     riskLevel: CommitmentRisk['riskLevel'],
     factors: CommitmentRisk['riskFactors'],
-    commitment: { title: string; deadline: Date },
+    commitment: { title: string; deadline: Date }
   ): string {
     if (riskLevel === 'CRITICAL') {
       return `URGENT: "${commitment.title}" is overdue. Immediate action required.`;
@@ -502,7 +532,11 @@ Rules:
 
     for (const commitment of commitments) {
       for (const reminder of commitment.reminders) {
-        const triggerAt = this.reminderTriggerAt(reminder.timeType, reminder.timeValue, commitment.deadline);
+        const triggerAt = this.reminderTriggerAt(
+          reminder.timeType,
+          reminder.timeValue,
+          commitment.deadline
+        );
         if (!triggerAt || triggerAt > now) continue;
 
         const title =
@@ -546,11 +580,7 @@ Rules:
   }
 
   /** Converts a relative Reminder row into the instant it should fire. */
-  private reminderTriggerAt(
-    timeType: string,
-    timeValue: number,
-    deadline: Date,
-  ): Date | null {
+  private reminderTriggerAt(timeType: string, timeValue: number, deadline: Date): Date | null {
     const trigger = new Date(deadline);
     switch (timeType) {
       case 'MINUTES_BEFORE':
@@ -576,10 +606,7 @@ Rules:
    * `suggestedTaskId` become the related-entity link so the commitment stays
    * attached to whatever it was promised against.
    */
-  private toCreateInput(
-    ec: ExtractedCommitment,
-    source: CommitmentSource,
-  ): CreateCommitmentInput {
+  private toCreateInput(ec: ExtractedCommitment, source: CommitmentSource): CreateCommitmentInput {
     const related = ec.suggestedProjectId
       ? ({ relatedEntityType: 'PROJECT', relatedEntityId: ec.suggestedProjectId } as const)
       : ec.suggestedTaskId
@@ -622,7 +649,7 @@ Rules:
       object: c.title,
       description: c.description ?? undefined,
       deadline: c.deadline.toISOString(),
-      status: c.status === 'MISSED' ? 'OVERDUE' : c.status as CommitmentStatus,
+      status: c.status === 'MISSED' ? 'OVERDUE' : (c.status as CommitmentStatus),
       source: this.fromPrismaSource(c.source),
       person: c.person ?? undefined,
       personEmail: c.personEmail ?? undefined,
@@ -640,9 +667,7 @@ Rules:
    * because the linked row may live outside the schema. Anything unrecognised is
    * dropped rather than passed through, so the `Commitment` type stays honest.
    */
-  private toRelatedEntityType(
-    value: string | null,
-  ): Commitment['relatedEntityType'] {
+  private toRelatedEntityType(value: string | null): Commitment['relatedEntityType'] {
     if (!value) return undefined;
     const parsed = CommitmentRelatedEntityTypeSchema.safeParse(value);
     return parsed.success ? parsed.data : undefined;
@@ -676,7 +701,9 @@ Rules:
     }
   }
 
-  private toPrismaStatus(status: CommitmentStatus): 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'OVERDUE' | 'CANCELLED' | 'MISSED' {
+  private toPrismaStatus(
+    status: CommitmentStatus
+  ): 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'OVERDUE' | 'CANCELLED' | 'MISSED' {
     return status;
   }
 }

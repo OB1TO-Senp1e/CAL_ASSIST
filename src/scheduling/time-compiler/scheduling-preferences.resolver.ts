@@ -38,7 +38,7 @@ export class SchedulingPreferencesResolver {
 
   resolve(
     request: CompileScheduleRequest,
-    rows: Array<{ key: string; valueJson: string }>,
+    rows: Array<{ key: string; valueJson: string }>
   ): SchedulingPreferences {
     return { ...this.defaults(), ...this.fromStored(rows), ...(request.preferences ?? {}) };
   }
@@ -47,7 +47,9 @@ export class SchedulingPreferencesResolver {
    * `context-engine` stores working hours as `working_hours: { start, end, days }`
    * and everything else under `scheduling_preferences`. Read both shapes.
    */
-  private fromStored(rows: Array<{ key: string; valueJson: string }>): Partial<SchedulingPreferences> {
+  private fromStored(
+    rows: Array<{ key: string; valueJson: string }>
+  ): Partial<SchedulingPreferences> {
     const out: Partial<SchedulingPreferences> = {};
 
     for (const row of rows) {
@@ -71,10 +73,18 @@ export class SchedulingPreferencesResolver {
 
       if (row.key === 'scheduling_preferences') {
         const allowed: Array<keyof SchedulingPreferences> = [
-          'workingHoursStart', 'workingHoursEnd', 'preferredFocusBlockDuration',
-          'maxFocusBlockDuration', 'minBreakDuration', 'maxDailyHours',
-          'preferredBreakInterval', 'energyPeakHours', 'bufferBetweenTasks',
-          'travelBufferDefault', 'protectFocusTime', 'allowWeekendScheduling',
+          'workingHoursStart',
+          'workingHoursEnd',
+          'preferredFocusBlockDuration',
+          'maxFocusBlockDuration',
+          'minBreakDuration',
+          'maxDailyHours',
+          'preferredBreakInterval',
+          'energyPeakHours',
+          'bufferBetweenTasks',
+          'travelBufferDefault',
+          'protectFocusTime',
+          'allowWeekendScheduling',
           'taskOrderingStrategy',
         ];
         for (const key of allowed) {

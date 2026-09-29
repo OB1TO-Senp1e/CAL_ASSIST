@@ -56,10 +56,12 @@ const baseRow = (overrides: Partial<FakeRow> = {}): FakeRow => ({
 const futureDeadline = (daysFromNow = 30) =>
   new Date(Date.now() + daysFromNow * 86_400_000).toISOString();
 
-function makeService(options: {
-  rows?: FakeRow[];
-  extractResponse?: unknown;
-} = {}) {
+function makeService(
+  options: {
+    rows?: FakeRow[];
+    extractResponse?: unknown;
+  } = {}
+) {
   const rows = options.rows ?? [];
   const created: FakeRow[] = [];
 
@@ -69,23 +71,23 @@ function makeService(options: {
         const row: FakeRow = baseRow({
           ...data,
           id: `cmt_${created.length + 1}`,
-          deadline:
-            data.deadline instanceof Date ? data.deadline : new Date(data.deadline),
+          deadline: data.deadline instanceof Date ? data.deadline : new Date(data.deadline),
         });
         created.push(row);
         rows.push(row);
         return { ...row, reminders: data.reminders?.create ?? [] };
       }),
-      findFirst: jest.fn(async ({ where }: any) =>
-        rows.find(
-          (r) =>
-            r.userId === where.userId &&
-            (where.id === undefined || r.id === where.id) &&
-            (where.title === undefined || r.title === where.title) &&
-            (where.deadline === undefined ||
-              r.deadline.getTime() === new Date(where.deadline).getTime()) &&
-            (where.source === undefined || r.source === where.source),
-        ) ?? null,
+      findFirst: jest.fn(
+        async ({ where }: any) =>
+          rows.find(
+            (r) =>
+              r.userId === where.userId &&
+              (where.id === undefined || r.id === where.id) &&
+              (where.title === undefined || r.title === where.title) &&
+              (where.deadline === undefined ||
+                r.deadline.getTime() === new Date(where.deadline).getTime()) &&
+              (where.source === undefined || r.source === where.source)
+          ) ?? null
       ),
       findMany: jest.fn(async () => rows.slice()),
       update: jest.fn(async ({ where, data }: any) => {
@@ -106,14 +108,13 @@ function makeService(options: {
     prisma as any,
     aiProvider as any,
     {} as any,
-    {} as any,
+    {} as any
   );
 
   return { service, prisma, aiProvider, created, rows };
 }
 
 describe('commitment metadata persistence (Stage 4f)', () => {
-
   describe('getCommitment / updateCommitment', () => {
     it('reads stored metadata back out', async () => {
       const rows = [baseRow({ person: 'Sam', confidence: 0.9 })];
@@ -250,7 +251,6 @@ describe('commitment metadata persistence (Stage 4f)', () => {
     });
   });
 
-
   describe('CreateCommitmentInputSchema', () => {
     it('accepts the metadata the extractors produce', () => {
       const parsed = CreateCommitmentInputSchema.safeParse({
@@ -273,7 +273,7 @@ describe('commitment metadata persistence (Stage 4f)', () => {
           object: 'x',
           deadline: futureDeadline(),
           confidence: 1.4,
-        }).success,
+        }).success
       ).toBe(false);
     });
 
@@ -283,7 +283,7 @@ describe('commitment metadata persistence (Stage 4f)', () => {
           object: 'x',
           deadline: futureDeadline(),
           relatedEntityType: 'INVOICE',
-        }).success,
+        }).success
       ).toBe(false);
     });
   });

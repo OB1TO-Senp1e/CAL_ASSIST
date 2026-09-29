@@ -1,10 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../common/services/prisma.service';
-import {
-  MeetingPreparationResult,
-  PostMeetingResult,
-} from './meeting-intelligence.types';
+import { MeetingPreparationResult, PostMeetingResult } from './meeting-intelligence.types';
 
 export type MeetingArtifactKind = 'PREPARATION' | 'POST_MEETING';
 
@@ -23,7 +20,7 @@ export class MeetingArtifactStore {
     userId: string,
     meetingId: string,
     meetingTitle: string | undefined,
-    result: MeetingPreparationResult,
+    result: MeetingPreparationResult
   ): Promise<void> {
     await this.prisma.meetingArtifact.upsert({
       where: {
@@ -51,7 +48,7 @@ export class MeetingArtifactStore {
     userId: string,
     meetingId: string,
     meetingTitle: string | undefined,
-    result: PostMeetingResult,
+    result: PostMeetingResult
   ): Promise<void> {
     await this.prisma.meetingArtifact.upsert({
       where: {
@@ -82,7 +79,7 @@ export class MeetingArtifactStore {
     });
     if (!row) {
       throw new NotFoundException(
-        `No ${kind === 'PREPARATION' ? 'preparation' : 'post-meeting result'} saved for meeting ${meetingId}`,
+        `No ${kind === 'PREPARATION' ? 'preparation' : 'post-meeting result'} saved for meeting ${meetingId}`
       );
     }
     return row.payload as unknown as T;

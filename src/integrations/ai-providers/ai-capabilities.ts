@@ -65,7 +65,10 @@ function envFlag(name: string, fallback: boolean): boolean {
  * direction is expensive (false → we never use a feature we have; true → every
  * agent step errors). An env flag beats a guess and beats a release.
  */
-function applyEnvOverrides(key: AiProviderKey, base: AiProviderCapabilities): AiProviderCapabilities {
+function applyEnvOverrides(
+  key: AiProviderKey,
+  base: AiProviderCapabilities
+): AiProviderCapabilities {
   const upper = key.toUpperCase();
   return {
     ...base,
@@ -88,10 +91,7 @@ export function normalizeProviderKey(name: string): AiProviderKey | undefined {
 }
 
 /** Static defaults + env overrides, for a provider that has not been probed. */
-export function defaultCapabilities(
-  name: string,
-  modelOverride?: string
-): AiProviderCapabilities {
+export function defaultCapabilities(name: string, modelOverride?: string): AiProviderCapabilities {
   const key = normalizeProviderKey(name);
   const base = key
     ? DEFAULT_CAPABILITIES[key]
@@ -157,4 +157,3 @@ export class CapabilityCache {
 }
 
 export const defaultCapabilityCache = new CapabilityCache();
-

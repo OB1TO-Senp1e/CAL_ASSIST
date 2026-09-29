@@ -20,7 +20,7 @@ import { CalendarSyncService } from './calendar-sync.service';
 export class CalendarController {
   constructor(
     private readonly connectionService: CalendarConnectionService,
-    private readonly syncService: CalendarSyncService,
+    private readonly syncService: CalendarSyncService
   ) {}
 
   @Get('connections')
@@ -93,7 +93,7 @@ export class CalendarController {
   async setCalendarVisibility(
     @Request() req,
     @Param('id') id: string,
-    @Body() body: { isVisible: boolean },
+    @Body() body: { isVisible: boolean }
   ) {
     if (typeof body?.isVisible !== 'boolean') {
       throw new BadRequestException('isVisible must be a boolean');

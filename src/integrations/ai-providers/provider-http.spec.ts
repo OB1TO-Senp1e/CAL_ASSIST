@@ -77,13 +77,18 @@ describe('provider-http withRetry', () => {
     process.env.AI_RETRY_BASE_DELAY_MS = '0';
     process.env.AI_RETRY_MAX_DELAY_MS = '0';
     let calls = 0;
-    const value = await withRetry('Test', 'op', async () => {
-      calls += 1;
-      if (calls < 3) {
-        throw new AiProviderError('boom', { provider: 'Test', kind: 'timeout', retryable: true });
-      }
-      return 'ok';
-    }, 2);
+    const value = await withRetry(
+      'Test',
+      'op',
+      async () => {
+        calls += 1;
+        if (calls < 3) {
+          throw new AiProviderError('boom', { provider: 'Test', kind: 'timeout', retryable: true });
+        }
+        return 'ok';
+      },
+      2
+    );
     expect(value).toBe('ok');
     expect(calls).toBe(3);
   });
@@ -91,10 +96,15 @@ describe('provider-http withRetry', () => {
   it('does not retry a hard failure', async () => {
     let calls = 0;
     await expect(
-      withRetry('Test', 'op', async () => {
-        calls += 1;
-        throw new AiProviderError('denied', { provider: 'Test', kind: 'auth', retryable: false });
-      }, 2)
+      withRetry(
+        'Test',
+        'op',
+        async () => {
+          calls += 1;
+          throw new AiProviderError('denied', { provider: 'Test', kind: 'auth', retryable: false });
+        },
+        2
+      )
     ).rejects.toThrow('denied');
     expect(calls).toBe(1);
   });
@@ -102,9 +112,14 @@ describe('provider-http withRetry', () => {
   it('stamps the final attempt count onto the surfaced error', async () => {
     process.env.AI_RETRY_BASE_DELAY_MS = '0';
     await expect(
-      withRetry('Test', 'op', async () => {
-        throw new AiProviderError('down', { provider: 'Test', kind: 'network', retryable: true });
-      }, 1)
+      withRetry(
+        'Test',
+        'op',
+        async () => {
+          throw new AiProviderError('down', { provider: 'Test', kind: 'network', retryable: true });
+        },
+        1
+      )
     ).rejects.toMatchObject({ attempts: 2, kind: 'network' });
   });
 });
@@ -256,9 +271,11 @@ describe('provider-http payload parsing', () => {
     expect(
       parseUsage({ usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } })
     ).toEqual({ promptTokens: 10, completionTokens: 5, totalTokens: 15 });
-    expect(
-      parseUsage({ usage: { input_tokens: 3, output_tokens: 4, total_tokens: 7 } })
-    ).toEqual({ promptTokens: 3, completionTokens: 4, totalTokens: 7 });
+    expect(parseUsage({ usage: { input_tokens: 3, output_tokens: 4, total_tokens: 7 } })).toEqual({
+      promptTokens: 3,
+      completionTokens: 4,
+      totalTokens: 7,
+    });
     expect(parseUsage({ usage: { prompt_tokens: 2 } })).toEqual({
       promptTokens: 2,
       completionTokens: 0,
@@ -307,6 +324,3 @@ describe('provider-http payload parsing', () => {
     ).toThrow('Ollama returned no JSON value');
   });
 });
-
-
-

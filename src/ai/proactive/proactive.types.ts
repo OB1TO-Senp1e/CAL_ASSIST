@@ -15,12 +15,7 @@ export const InterventionTypeSchema = z.enum([
 
 export type InterventionType = z.infer<typeof InterventionTypeSchema>;
 
-export const InterventionPrioritySchema = z.enum([
-  'LOW',
-  'MEDIUM',
-  'HIGH',
-  'URGENT',
-]);
+export const InterventionPrioritySchema = z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']);
 
 export type InterventionPriority = z.infer<typeof InterventionPrioritySchema>;
 
@@ -51,16 +46,20 @@ export const InterventionSchema = z.object({
   title: z.string(),
   description: z.string(),
   reason: z.string(),
-  affectedEntities: z.array(z.object({
-    type: z.enum(['TASK', 'EVENT', 'COMMITMENT', 'GOAL', 'PROJECT', 'TIME_BLOCK']),
-    id: z.string(),
-    title: z.string(),
-  })),
+  affectedEntities: z.array(
+    z.object({
+      type: z.enum(['TASK', 'EVENT', 'COMMITMENT', 'GOAL', 'PROJECT', 'TIME_BLOCK']),
+      id: z.string(),
+      title: z.string(),
+    })
+  ),
   action: InterventionActionSchema,
   actionDetails: z.record(z.any()).default({}),
   estimatedEffortMinutes: z.number().int().nonnegative().default(0),
   confidence: z.number().min(0).max(1).default(1.0),
-  status: z.enum(['ACTIVE', 'ACKNOWLEDGED', 'DISMISSED', 'ACTED_UPON', 'EXPIRED']).default('ACTIVE'),
+  status: z
+    .enum(['ACTIVE', 'ACKNOWLEDGED', 'DISMISSED', 'ACTED_UPON', 'EXPIRED'])
+    .default('ACTIVE'),
   createdAt: z.string().datetime(),
   expiresAt: z.string().datetime().optional().nullable(),
   acknowledgedAt: z.string().datetime().optional().nullable(),
@@ -73,10 +72,12 @@ export type Intervention = z.infer<typeof InterventionSchema>;
 
 export const ProactiveCheckInputSchema = z.object({
   userId: z.string(),
-  timeRange: z.object({
-    start: z.string().datetime(),
-    end: z.string().datetime(),
-  }).optional(),
+  timeRange: z
+    .object({
+      start: z.string().datetime(),
+      end: z.string().datetime(),
+    })
+    .optional(),
   interventionTypes: z.array(InterventionTypeSchema).optional(),
   minPriority: InterventionPrioritySchema.optional(),
   limit: z.number().int().positive().default(10),
@@ -103,10 +104,12 @@ export const UserProactivePreferencesSchema = z.object({
   userId: z.string(),
   enabled: z.boolean().default(true),
   checkIntervalMinutes: z.number().int().positive().default(60),
-  quietHours: z.object({
-    start: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/),
-    end: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/),
-  }).optional(),
+  quietHours: z
+    .object({
+      start: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/),
+      end: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/),
+    })
+    .optional(),
   enabledTypes: z.array(InterventionTypeSchema).default([]),
   minPriority: InterventionPrioritySchema.default('MEDIUM'),
   maxInterventionsPerCheck: z.number().int().positive().default(5),
@@ -125,11 +128,15 @@ export const InterventionTemplateSchema = z.object({
   reasonTemplate: z.string(),
   defaultAction: InterventionActionSchema,
   defaultPriority: InterventionPrioritySchema,
-  conditions: z.array(z.object({
-    field: z.string(),
-    operator: z.enum(['GREATER_THAN', 'LESS_THAN', 'EQUALS', 'CONTAINS']),
-    value: z.any(),
-  })).default([]),
+  conditions: z
+    .array(
+      z.object({
+        field: z.string(),
+        operator: z.enum(['GREATER_THAN', 'LESS_THAN', 'EQUALS', 'CONTAINS']),
+        value: z.any(),
+      })
+    )
+    .default([]),
 });
 
 export type InterventionTemplate = z.infer<typeof InterventionTemplateSchema>;

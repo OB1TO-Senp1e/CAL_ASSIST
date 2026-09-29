@@ -114,14 +114,12 @@ describe('AssistantOrchestratorService parsed tool payloads', () => {
       entities: { title: 'planning, designing, execution' },
       originalText: 'Create tasks for planning, designing, and execution',
     } as ParsedIntent;
-    const actions = [
-      action('create_task'),
-      action('create_task'),
-      action('create_task'),
-    ].map((item, index) => ({
-      ...item,
-      input: { title: ['Planning', 'Designing', 'Execution'][index] },
-    }));
+    const actions = [action('create_task'), action('create_task'), action('create_task')].map(
+      (item, index) => ({
+        ...item,
+        input: { title: ['Planning', 'Designing', 'Execution'][index] },
+      })
+    );
 
     const enriched = service['enrichActionsWithParsedEntities'](intent, actions);
 

@@ -78,8 +78,14 @@ export const NotificationPreferencesSchema = z.object({
   workingHours: z
     .object({
       enabled: z.boolean(),
-      start: z.string().regex(/^\d{2}:\d{2}$/, 'expected HH:mm').optional(),
-      end: z.string().regex(/^\d{2}:\d{2}$/, 'expected HH:mm').optional(),
+      start: z
+        .string()
+        .regex(/^\d{2}:\d{2}$/, 'expected HH:mm')
+        .optional(),
+      end: z
+        .string()
+        .regex(/^\d{2}:\d{2}$/, 'expected HH:mm')
+        .optional(),
       days: z.array(z.number().int().min(0).max(6)).optional(),
     })
     .optional(),

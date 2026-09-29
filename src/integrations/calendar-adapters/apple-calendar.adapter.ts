@@ -230,7 +230,11 @@ export class AppleCalendarAdapter extends BaseCalendarAdapter {
   }
 
   async deleteEvent(accessToken: string, externalId: string): Promise<void> {
-    await this.request<void>('DELETE', `/calendar/v1/calendars/primary/events/${externalId}`, accessToken);
+    await this.request<void>(
+      'DELETE',
+      `/calendar/v1/calendars/primary/events/${externalId}`,
+      accessToken
+    );
   }
 
   async getEvent(

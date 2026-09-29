@@ -1,11 +1,7 @@
 import { Controller, Post, Body, UseGuards, Request, Get, Param } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { SimulationEngineService } from './simulation-engine.service';
-import {
-  SimulationInput,
-  QuickSimulationInput,
-  ApplySimulationInput,
-} from './simulation.types';
+import { SimulationInput, QuickSimulationInput, ApplySimulationInput } from './simulation.types';
 
 @Controller('simulation')
 @UseGuards(JwtAuthGuard)
@@ -23,7 +19,7 @@ export class SimulationEngineController {
   @Post('compare')
   async runComparison(@Request() req, @Body() body: { scenarios: SimulationInput[] }) {
     return this.simulationEngine.runComparison(
-      body.scenarios.map(s => ({ ...s, userId: req.user.id }))
+      body.scenarios.map((s) => ({ ...s, userId: req.user.id }))
     );
   }
 

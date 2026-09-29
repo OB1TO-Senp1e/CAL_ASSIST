@@ -1,8 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import {
-  OpenAiCompatibleProvider,
-  OpenAiCompatibleConfig,
-} from './openai-compatible.provider';
+import { OpenAiCompatibleProvider, OpenAiCompatibleConfig } from './openai-compatible.provider';
 
 @Injectable()
 export class NemotronNimProvider extends OpenAiCompatibleProvider {

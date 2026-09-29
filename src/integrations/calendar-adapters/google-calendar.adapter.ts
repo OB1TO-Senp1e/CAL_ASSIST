@@ -61,10 +61,7 @@ export class GoogleCalendarAdapter extends BaseCalendarAdapter {
     return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
   }
 
-  async handleCallback(
-    code: string,
-    codeVerifier?: string
-  ): Promise<CalendarCallbackResult> {
+  async handleCallback(code: string, codeVerifier?: string): Promise<CalendarCallbackResult> {
     return this.executeWithRetry(async () => {
       const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
         method: 'POST',
@@ -95,11 +92,7 @@ export class GoogleCalendarAdapter extends BaseCalendarAdapter {
         .split(' ')
         .map((s) => s.trim())
         .filter(Boolean);
-      const requiredScopes = [
-        'https://www.googleapis.com/auth/calendar.events',
-        'openid',
-        'email',
-      ];
+      const requiredScopes = ['https://www.googleapis.com/auth/calendar.events', 'openid', 'email'];
       const missing = requiredScopes.filter((s) => !grantedScopes.includes(s));
       if (missing.length > 0) {
         throw new Error(
@@ -328,17 +321,12 @@ export class GoogleCalendarAdapter extends BaseCalendarAdapter {
     webhookConfig: WebhookConfig & { channelId?: string }
   ): Promise<string> {
     const channelId = webhookConfig.channelId || crypto.randomUUID();
-    await this.request<any>(
-      'POST',
-      '/calendars/primary/events/watch',
-      accessToken,
-      {
-        id: channelId,
-        type: 'web_hook',
-        address: webhookConfig.webhookUrl,
-        token: webhookConfig.channelToken,
-      }
-    );
+    await this.request<any>('POST', '/calendars/primary/events/watch', accessToken, {
+      id: channelId,
+      type: 'web_hook',
+      address: webhookConfig.webhookUrl,
+      token: webhookConfig.channelToken,
+    });
     return channelId;
   }
 

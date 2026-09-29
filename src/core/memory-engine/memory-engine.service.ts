@@ -328,8 +328,12 @@ export class MemoryEngineService {
       .filter((term) => term.length > 2);
 
     const scored = memories.map((m) => {
-      const haystack = `${m.content ?? ''} ${m.description ?? ''} ${(m.tags ?? []).join(' ')}`.toLowerCase();
-      const overlaps = terms.reduce((count, term) => (haystack.includes(term) ? count + 1 : count), 0);
+      const haystack =
+        `${m.content ?? ''} ${m.description ?? ''} ${(m.tags ?? []).join(' ')}`.toLowerCase();
+      const overlaps = terms.reduce(
+        (count, term) => (haystack.includes(term) ? count + 1 : count),
+        0
+      );
       return { memory: m, overlaps, createdAt: m.createdAt.getTime() };
     });
 
@@ -416,7 +420,8 @@ export class MemoryEngineService {
       severity: c.severity as 'LOW' | 'MEDIUM' | 'HIGH',
       detectedAt: c.detectedAt.toISOString(),
       resolvedAt: c.resolvedAt?.toISOString() || null,
-      resolution: c.resolution as 'KEEP_FIRST' | 'KEEP_SECOND' | 'MERGE' | 'DELETE_BOTH' | 'MANUAL' | undefined,
+      resolution: c.resolution as
+        'KEEP_FIRST' | 'KEEP_SECOND' | 'MERGE' | 'DELETE_BOTH' | 'MANUAL' | undefined,
     }));
   }
 

@@ -21,7 +21,7 @@ const SCHEDULABLE_TASK_STATUSES = ['PENDING', 'IN_PROGRESS'];
 export class SchedulingInputLoader {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly preferences: SchedulingPreferencesResolver,
+    private readonly preferences: SchedulingPreferencesResolver
   ) {}
 
   /**
@@ -55,8 +55,8 @@ export class SchedulingInputLoader {
       taskWhere.goalId = request.goalId;
     }
 
-    const [tasks, events, availabilityRules, constraints, preferenceRows, user] =
-      await Promise.all([
+    const [tasks, events, availabilityRules, constraints, preferenceRows, user] = await Promise.all(
+      [
         this.prisma.task.findMany({
           where: taskWhere,
           include: { dependencies: { select: { dependsOnId: true } } },
@@ -89,7 +89,8 @@ export class SchedulingInputLoader {
           where: { id: userId },
           select: { timezone: true },
         }),
-      ]);
+      ]
+    );
 
     return {
       userId,
@@ -213,7 +214,9 @@ export class SchedulingInputLoader {
 }
 
 /** Compiler block type -> Prisma `TimeBlockType`. */
-export function toPrismaBlockType(type: string): 'FOCUS' | 'MEETING' | 'TRAVEL' | 'BREAK' | 'BUFFER' | 'ROUTINE' {
+export function toPrismaBlockType(
+  type: string
+): 'FOCUS' | 'MEETING' | 'TRAVEL' | 'BREAK' | 'BUFFER' | 'ROUTINE' {
   switch (type) {
     case 'MEETING':
       return 'MEETING';

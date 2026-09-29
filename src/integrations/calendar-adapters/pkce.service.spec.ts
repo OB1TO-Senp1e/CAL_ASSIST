@@ -6,7 +6,8 @@ import { PkceService, stateIdFor } from './pkce.service';
 loadEnv();
 
 const databaseUrl =
-  process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/calassist?schema=public';
+  process.env.DATABASE_URL ||
+  'postgresql://postgres:postgres@localhost:5432/calassist?schema=public';
 const dbReachable = process.env.DB_REACHABLE === '1';
 
 let db: PrismaClient;

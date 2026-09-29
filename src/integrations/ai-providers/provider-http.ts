@@ -294,7 +294,7 @@ export function extractContent(message: any): string {
   // Some endpoints return content parts arrays: [{ type: 'text', text: '...' }].
   if (Array.isArray(content)) {
     return content
-      .map((part: any) => (typeof part === 'string' ? part : part?.text ?? ''))
+      .map((part: any) => (typeof part === 'string' ? part : (part?.text ?? '')))
       .join('');
   }
   if (typeof message?.reasoning_content === 'string') return message.reasoning_content;
@@ -316,11 +316,14 @@ export function extractJson(
 ): unknown {
   const trimmed = (text ?? '').trim();
   if (!trimmed) {
-    throw new AiProviderError(messages?.empty ?? `${provider} returned an empty structured response`, {
-      provider,
-      kind: 'empty',
-      retryable: false,
-    });
+    throw new AiProviderError(
+      messages?.empty ?? `${provider} returned an empty structured response`,
+      {
+        provider,
+        kind: 'empty',
+        retryable: false,
+      }
+    );
   }
 
   const unfenced = trimmed
@@ -341,15 +344,12 @@ export function extractJson(
     }
   }
 
-  throw new AiProviderError(
-    messages?.parse ?? `${provider} returned no parseable JSON value`,
-    {
-      provider,
-      kind: 'parse',
-      retryable: false,
-      cause: trimmed.slice(0, 200),
-    }
-  );
+  throw new AiProviderError(messages?.parse ?? `${provider} returned no parseable JSON value`, {
+    provider,
+    kind: 'parse',
+    retryable: false,
+    cause: trimmed.slice(0, 200),
+  });
 }
 
 /**
@@ -431,7 +431,6 @@ export interface ChatCompletionOutcome {
   model: string;
   attempts: number;
 }
-
 
 /**
  * One chat-completion round trip with timeout + retry + full response parsing.
@@ -563,4 +562,3 @@ export async function embedding(
     model: typeof data?.model === 'string' ? data.model : args.model,
   };
 }
-

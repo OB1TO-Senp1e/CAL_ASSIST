@@ -76,7 +76,10 @@ describe('MemoryEngineService search degradation', () => {
     const embed = jest.fn(async () => [1, 0]);
     const { service, metrics } = build(rows, embed);
 
-    const results = await service.searchMemories('user_1', searchInput({ query: 'standup', limit: 5 }));
+    const results = await service.searchMemories(
+      'user_1',
+      searchInput({ query: 'standup', limit: 5 })
+    );
 
     // m1 is the only memory with a vector aligned to the query embedding, so it
     // must rank first; the rest follow with a score of 0.
@@ -94,7 +97,10 @@ describe('MemoryEngineService search degradation', () => {
     });
     const { service, metrics } = build(rows, embed);
 
-    const results = await service.searchMemories('user_1', searchInput({ query: 'standup', limit: 5 }));
+    const results = await service.searchMemories(
+      'user_1',
+      searchInput({ query: 'standup', limit: 5 })
+    );
 
     // m2 matches "standup" and is newer than m1; m3 is newest of all but matches
     // nothing, so keyword overlap must outrank recency.
@@ -106,7 +112,10 @@ describe('MemoryEngineService search degradation', () => {
     const embed = jest.fn(async () => []);
     const { service, metrics } = build(rows, embed);
 
-    const results = await service.searchMemories('user_1', searchInput({ query: 'italian', limit: 5 }));
+    const results = await service.searchMemories(
+      'user_1',
+      searchInput({ query: 'italian', limit: 5 })
+    );
 
     expect(results[0].id).toBe('m3');
     expect(metrics.recordMemoryRecencyFallback).toHaveBeenCalledWith('search');
@@ -144,9 +153,9 @@ describe('MemoryEngineService search degradation', () => {
     });
     const { service } = build(rows, embed);
 
-    await expect(service.searchMemories('user_1', searchInput({ query: 'standup' }))).rejects.toThrow(
-      'bug not outage'
-    );
+    await expect(
+      service.searchMemories('user_1', searchInput({ query: 'standup' }))
+    ).rejects.toThrow('bug not outage');
   });
 
   it('keeps plain listing behaviour when no query is given', async () => {
@@ -172,7 +181,10 @@ describe('MemoryEngineService search degradation', () => {
     } as unknown as PrismaService;
     const service = new MemoryEngineService(prisma, { embed } as unknown as AiProviderService);
 
-    const results = await service.searchMemories('user_1', searchInput({ query: 'standup', limit: 5 }));
+    const results = await service.searchMemories(
+      'user_1',
+      searchInput({ query: 'standup', limit: 5 })
+    );
     expect(results.length).toBeGreaterThan(0);
   });
 });

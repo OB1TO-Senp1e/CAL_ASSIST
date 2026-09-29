@@ -27,7 +27,7 @@ import {
 export class MeetingIntelligenceController {
   constructor(
     private readonly meetingIntelligenceService: MeetingIntelligenceService,
-    private readonly artifacts: MeetingArtifactStore,
+    private readonly artifacts: MeetingArtifactStore
   ) {}
 
   @Post('prepare')
@@ -55,7 +55,7 @@ export class MeetingIntelligenceController {
     const result = await this.artifacts.load<PostMeetingResult>(
       req.user.id,
       meetingId,
-      'POST_MEETING',
+      'POST_MEETING'
     );
     return { meetingId, actionItems: result.actionItems ?? [] };
   }
@@ -65,7 +65,7 @@ export class MeetingIntelligenceController {
     const result = await this.artifacts.load<PostMeetingResult>(
       req.user.id,
       meetingId,
-      'POST_MEETING',
+      'POST_MEETING'
     );
     return { meetingId, commitments: result.commitments ?? [] };
   }
@@ -75,7 +75,7 @@ export class MeetingIntelligenceController {
     const result = await this.artifacts.load<PostMeetingResult>(
       req.user.id,
       meetingId,
-      'POST_MEETING',
+      'POST_MEETING'
     );
     return { meetingId, deadlines: result.deadlines ?? [] };
   }
@@ -85,7 +85,7 @@ export class MeetingIntelligenceController {
     const result = await this.artifacts.load<PostMeetingResult>(
       req.user.id,
       meetingId,
-      'POST_MEETING',
+      'POST_MEETING'
     );
     return { meetingId, followUps: result.followUps ?? [] };
   }

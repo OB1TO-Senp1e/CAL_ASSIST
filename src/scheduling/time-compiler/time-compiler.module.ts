@@ -18,4 +18,3 @@ import { PrismaService } from '../../common/services/prisma.service';
   exports: [TimeCompilerService, SchedulingInputLoader, ScheduleProposalStore],
 })
 export class TimeCompilerModule {}
-

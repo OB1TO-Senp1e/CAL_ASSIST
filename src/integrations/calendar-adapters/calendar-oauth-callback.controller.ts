@@ -22,7 +22,7 @@ export class CalendarOAuthCallbackController {
   constructor(
     private readonly connectionService: CalendarConnectionService,
     private readonly syncService: CalendarSyncService,
-    private readonly config: ConfigService,
+    private readonly config: ConfigService
   ) {}
 
   @Get(':provider')
@@ -30,7 +30,7 @@ export class CalendarOAuthCallbackController {
     @Param('provider') provider: string,
     @Query('code') code: string,
     @Query('state') state: string,
-    @Res() res: Response,
+    @Res() res: Response
   ) {
     const clientUrl = this.config.get<string>('CLIENT_URL') || 'http://localhost:5173';
     const target = new URL('/integrations', clientUrl);

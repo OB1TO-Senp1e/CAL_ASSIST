@@ -40,7 +40,7 @@ export class CalendarController {
   @HttpCode(HttpStatus.CREATED)
   async createEvent(
     @Request() req,
-    @Body(new ZodValidationPipe(CreateEventSchema)) body: CreateEventRequest,
+    @Body(new ZodValidationPipe(CreateEventSchema)) body: CreateEventRequest
   ) {
     return this.calendarService.createEvent(req.user.id, body);
   }
@@ -55,7 +55,7 @@ export class CalendarController {
   @Get()
   async getEvents(
     @Request() req,
-    @Query() query: CalendarQueryOptions & { timeMin?: string; timeMax?: string },
+    @Query() query: CalendarQueryOptions & { timeMin?: string; timeMax?: string }
   ) {
     const { timeMin, timeMax, ...rest } = query;
     return this.calendarService.getEvents(req.user.id, {
@@ -147,7 +147,7 @@ export class CalendarController {
   async updateEvent(
     @Request() req,
     @Param('id') id: string,
-    @Body(new ZodValidationPipe(UpdateEventSchema)) body: UpdateEventRequest,
+    @Body(new ZodValidationPipe(UpdateEventSchema)) body: UpdateEventRequest
   ) {
     return this.calendarService.updateEvent(req.user.id, id, body);
   }
@@ -156,7 +156,7 @@ export class CalendarController {
   async moveEvent(
     @Request() req,
     @Param('id') id: string,
-    @Body(new ZodValidationPipe(MoveEventSchema)) body: MoveEventRequest,
+    @Body(new ZodValidationPipe(MoveEventSchema)) body: MoveEventRequest
   ) {
     return this.calendarService.moveEvent(req.user.id, id, body);
   }
@@ -165,7 +165,7 @@ export class CalendarController {
   async resizeEvent(
     @Request() req,
     @Param('id') id: string,
-    @Body(new ZodValidationPipe(ResizeEventSchema)) body: ResizeEventRequest,
+    @Body(new ZodValidationPipe(ResizeEventSchema)) body: ResizeEventRequest
   ) {
     return this.calendarService.resizeEvent(req.user.id, id, body);
   }
@@ -173,7 +173,7 @@ export class CalendarController {
   @Post('bulk')
   async bulkAction(
     @Request() req,
-    @Body(new ZodValidationPipe(BulkEventSchema)) body: BulkEventRequest,
+    @Body(new ZodValidationPipe(BulkEventSchema)) body: BulkEventRequest
   ) {
     return this.calendarService.bulkAction(req.user.id, body);
   }

@@ -108,7 +108,10 @@ export class RealityEngineService {
     };
   }
 
-  private applyState(deviation: Deviation, state?: { acknowledgedAt: Date | null; resolvedAt: Date | null }): Deviation {
+  private applyState(
+    deviation: Deviation,
+    state?: { acknowledgedAt: Date | null; resolvedAt: Date | null }
+  ): Deviation {
     if (!state) return deviation;
     return {
       ...deviation,
@@ -140,7 +143,7 @@ export class RealityEngineService {
   async resolveDeviation(
     userId: string,
     deviationId: string,
-    resolution?: string,
+    resolution?: string
   ): Promise<DeviationState> {
     const parts = deviationId.split('_');
     const now = new Date();
@@ -826,7 +829,7 @@ export class RealityEngineService {
   private async generateRecommendations(
     userId: string,
     deviations: Deviation[],
-    impactAnalyses: ImpactAnalysis[],
+    impactAnalyses: ImpactAnalysis[]
   ): Promise<Recommendation[]> {
     const recommendations: Recommendation[] = [];
 
@@ -853,7 +856,7 @@ export class RealityEngineService {
   /** Overlays persisted accept/reject status onto freshly generated recommendations. */
   private async applyRecommendationStates(
     userId: string,
-    recommendations: Recommendation[],
+    recommendations: Recommendation[]
   ): Promise<Recommendation[]> {
     if (!recommendations.length) return recommendations;
 
@@ -876,7 +879,7 @@ export class RealityEngineService {
   async setRecommendationStatus(
     userId: string,
     recommendationId: string,
-    status: 'ACCEPTED' | 'REJECTED',
+    status: 'ACCEPTED' | 'REJECTED'
   ): Promise<RecommendationState> {
     // Ids are `rec:<deviationId>:<TYPE>[#n]`; recover the deviation for lookup.
     const parts = recommendationId.split(':');

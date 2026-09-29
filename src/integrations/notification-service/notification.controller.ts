@@ -118,7 +118,7 @@ export class NotificationController {
   async updatePreferences(
     @Request() req,
     @Body(new ZodValidationPipe(NotificationPreferencesSchema))
-    body: NotificationPreferencesUpdate,
+    body: NotificationPreferencesUpdate
   ) {
     return this.notificationService.updatePreferences(req.user.id, body);
   }
@@ -127,7 +127,7 @@ export class NotificationController {
   async patchPreferences(
     @Request() req,
     @Body(new ZodValidationPipe(NotificationPreferencesSchema))
-    body: NotificationPreferencesUpdate,
+    body: NotificationPreferencesUpdate
   ) {
     return this.notificationService.updatePreferences(req.user.id, body);
   }

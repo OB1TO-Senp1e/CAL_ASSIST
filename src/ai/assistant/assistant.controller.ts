@@ -97,11 +97,7 @@ export class AssistantController {
     }
 
     const { conversationId, message } = parsed.data;
-    const result = await this.orchestrator.processMessage(
-      req.user.id,
-      message,
-      conversationId
-    );
+    const result = await this.orchestrator.processMessage(req.user.id, message, conversationId);
 
     // The orchestrator persisted both turns, so it reports the stored ids. No
     // global "latest assistant message" guess, which would misattribute the turn
@@ -133,12 +129,7 @@ export class AssistantController {
       return { message: 'Invalid confirm request.', confidence: 0 };
     }
     const { actionId, confirmed, modifiedInput } = parsed.data;
-    return this.orchestrator.confirmAction(
-      req.user.id,
-      actionId,
-      confirmed,
-      modifiedInput
-    );
+    return this.orchestrator.confirmAction(req.user.id, actionId, confirmed, modifiedInput);
   }
 
   @Get('conversations')
