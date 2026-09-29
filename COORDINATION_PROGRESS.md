@@ -21,10 +21,10 @@ Iteration counter: **0.** C-00 drafted, spec-reconciled, **stopped at the gate**
 
 | ID | Item | Status | Evidence (file:line + command output) |
 |----|------|--------|----------------------------------------|
-| C-00 | Repo/architecture audit vs. spec, decisions recorded before any code | **GATE CLEARED — AWAITING SIGN-OFF** | `docs/coordination-audit.md`. G1 closed; §3 citations re-verified in pass 2 (20 wrong citations corrected — audit §3.2). G2 resolved by the user: option (a), commit not stash — fresh-clone verification in flight. |
+| C-00 | Repo/architecture audit vs. spec, decisions recorded before any code | **GATE CLEARED — AWAITING SIGN-OFF** | `docs/coordination-audit.md`. G1 closed; §3 citations re-verified in pass 2 (20 wrong citations corrected — audit §3.2). G2 resolved by the user: option (a), commit not stash — fresh-clone verification **green** (44 suites / 358 tests on a clean clone of `8d5e510`). |
 | C-01+ | Not started | **BLOCKED** | No work begins until the C-00 gate is cleared and the user approves. |
 
-## Gate — closed, verification in flight
+## Gate — closed, fresh-clone verification green
 
 | # | Blocker | Detail | Who resolves |
 |---|---------|--------|--------------|
@@ -82,6 +82,9 @@ scratch under the new `.tmp-spec/` ignore rule.
 
 1. ~~User places the spec at `docs/specs/...`~~ — **done** (G1 closed).
 2. ~~User picks G2 (branch base: a, b, or c)~~ — **done: option (a), commit not stash.** R3 fix committed alone first (`f04c4e2`), then infra/app/tests/docs coarse commits. Nothing stashed, reset, or discarded; the 4 deleted visual-check PNGs stay uncommitted by instruction.
-3. **Fresh-clone verification** of the cleaned branch tip — `git clone` (nothing copied from the working tree), then `npm ci`, `npm run build`, `npm test`. All must be green.
+3. ~~**Fresh-clone verification** of the cleaned branch tip~~ — **DONE, GREEN.** Clone of `8d5e510` at
+   `d:\CAL_ASS_V1\_freshclone` (nothing copied in): `npm ci` exit 0 (1118 pkgs); `npm run build` exit 0 —
+   **after** `npx prisma generate`, which bare `npm ci` does not run (no `prepare` script; CI already does
+   this, so pre-existing, not a G2 regression); `npm test` exit 0 — **44 suites / 358 tests passed**.
 4. Then, and only then: create `feat/cross-functional-coordination` from the cleaned tip and request gate approval. §3 rows and §5 risks R1–R13 are reconciled against spec text.
 5. **No further code, no branch, no migration** until the gate is approved.

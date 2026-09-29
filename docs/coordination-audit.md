@@ -8,7 +8,7 @@
 | Target phase | `TARGET_PHASE=1` |
 | Iteration | 0 (C-00) — spec reconciliation, **pass 2**: every `Spec ref` re-verified against spec text |
 | Spec | `docs/specs/CAL_ASSIST_Upgrade_Implementation_Specification.html` — 99 lines / 19,898 B, read in full |
-| Status | **SPEC-REVIEWED — GATE CLEARED** (G1 + G2 closed; fresh-clone verification of the cleaned tip pending; see §1) |
+| Status | **SPEC-REVIEWED — GATE CLEARED** (G1 + G2 closed; fresh-clone verification green — see §7/§8) |
 
 ## 1. Pre-conditions, and what that means for this document
 
@@ -63,7 +63,9 @@ carrying the dirty worktree onto the new branch, and (c) branching from `origin/
 
 **Branch-base rule for C-01:** `feat/cross-functional-coordination` is created **from the cleaned tip**,
 but only after a **fresh clone** of that branch (nothing copied from the working tree) passes `npm ci`,
-`npm run build` and `npm test`. Results are recorded in `COORDINATION_PROGRESS.md`.
+`npm run build` and `npm test`. **Done — clone of `8d5e510` is green** (`npm test`: 44 suites / 358 tests);
+`build` required `npx prisma generate` first, a pre-existing gap in bare `npm ci` (see §7 "Fresh clone").
+Results are recorded in `COORDINATION_PROGRESS.md`.
 
 **The R3 fix is now committed in isolation, so the risk this paragraph described is gone.** `f04c4e2`
 contains **only** `email-notification.provider.ts` + `email-notification.spec.ts` — it can be reviewed or
@@ -433,7 +435,7 @@ register the module in `src/app.module.ts` (`:50-116`); keep `PrismaService` inj
 | Lint (scoped) | `npx eslint --quiet src/<new paths>` | 0 errors |
 | Prometheus rules | `docker run --rm -v ${PWD}/prometheus:/etc/prometheus prom/prometheus:v2.52.0 promtool check rules /etc/prometheus/alerts.yml` | SUCCESS |
 | Docs-only iteration | §7 scope above writes **only** `COORDINATION_PROGRESS.md` + `docs/coordination-audit.md` | no `src/` change, no branch, no migration. **Exception, already made and committed:** the **R3** fix is now `f04c4e2` (provider + spec only); the G2 (a) decision further committed the pre-existing 83-path worktree — see §1 G2 and §5 R13 |
-| Fresh clone | `git clone` of the branch, `npm ci`, `npm run build`, `npm test` | all green **before** `feat/cross-functional-coordination` is created from the cleaned tip |
+| Fresh clone | `git clone` of the branch, `npm ci`, `npm run build`, `npm test` | all green **before** `feat/cross-functional-coordination` is created from the cleaned tip. **Result: PASS** with one finding — bare `npm ci && npm run build` fails with TS2339 (`PrismaService.user` missing) because `npm ci` does not generate the Prisma client; `npx prisma generate` between `npm ci` and `build` fixes it (this is exactly what `.github/workflows/ci-cd.yml` already does at L63–64/L104–105/L163–164, and the repo has no `prepare` script, so this is pre-existing, not caused by the G2 commits) |
 
 ## 8. Sign-off checklist — C-00 gate
 
@@ -441,7 +443,9 @@ register the module in `src/app.module.ts` (`:50-116`); keep `PrismaService` inj
 - [x] G2: branch base chosen — **(a) commit, not stash** (executed: coarse commits over `6304ef6`, R3 alone first)
 - [x] Every `PROVISIONAL` row in §3 re-checked against spec text (marker retired; 20 wrong citations corrected — §3.2)
 - [x] §5 risks R1–R13 either resolved or explicitly accepted as out of scope (all closed; **R13 closed by the G2 (a) commits**)
-- [ ] Fresh-clone verification (`npm ci` / `npm run build` / `npm test`) green on a clean clone of the branch
+- [x] Fresh-clone verification green on a clean clone of the tip `8d5e510`: `npm ci` (1118 pkgs),
+      `npx prisma generate` (required — see §7 "Fresh clone" row), `npm run build` (exit 0),
+      `npm test` (**44/44 suites, 358/358 tests**, exit 0)
 - [ ] `feat/cross-functional-coordination` created **only** from the verified cleaned tip
 - [ ] D1–D8 confirmed, or amended with reasons
 - [ ] Phase 1 in-scope / out-of-scope list agreed
