@@ -27,6 +27,7 @@ export class MetricsService implements OnModuleInit {
   readonly aiTokensTotal: Counter;
   readonly aiFallbacksTotal: Counter;
   readonly aiCircuitState: Gauge;
+  readonly throttlerRedisFallbacksTotal: Counter;
 
   constructor() {
     this.registry = new Registry();
@@ -111,6 +112,12 @@ export class MetricsService implements OnModuleInit {
       labelNames: ['provider'],
       registers: [this.registry],
     });
+
+    this.throttlerRedisFallbacksTotal = new Counter({
+      name: 'calassist_throttler_redis_fallback_total',
+      help: 'Rate-limit checks served by the per-process fallback after Redis errors',
+      registers: [this.registry],
+    });
   }
 
   onModuleInit() {
@@ -182,12 +189,7 @@ export class MetricsService implements OnModuleInit {
     this.aiFallbacksTotal.inc({ scope: 'orchestrator', operation, reason });
   }
 
-  recordAiTokens(
-    provider: string,
-    model: string,
-    operation: string,
-    usage: AiTokenCounts
-  ): void {
+  recordAiTokens(provider: string, model: string, operation: string, usage: AiTokenCounts): void {
     const labels = { provider, model, operation };
     this.aiTokensTotal.inc({ ...labels, direction: 'prompt' }, usage.promptTokens);
     this.aiTokensTotal.inc({ ...labels, direction: 'completion' }, usage.completionTokens);
@@ -197,6 +199,10 @@ export class MetricsService implements OnModuleInit {
   setAiCircuitState(provider: string, state: 'closed' | 'half_open' | 'open'): void {
     const value = state === 'closed' ? 0 : state === 'half_open' ? 1 : 2;
     this.aiCircuitState.set({ provider }, value);
+  }
+
+  recordThrottlerRedisFallback(): void {
+    this.throttlerRedisFallbacksTotal.inc();
   }
 
   observeAiDuration(provider: string, operation: string, durationSeconds: number): void {

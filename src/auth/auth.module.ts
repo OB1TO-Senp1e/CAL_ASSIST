@@ -9,6 +9,7 @@ import { AuthController } from './auth.controller';
 import { UsersModule } from '../users/users.module';
 import { PrismaService } from '../common/services/prisma.service';
 import { GoogleStrategy } from './google.strategy';
+import { DevelopmentOnlyGuard } from '../common/guards/development-only.guard';
 
 @Module({
   imports: [
@@ -26,7 +27,14 @@ import { GoogleStrategy } from './google.strategy';
       }),
     }),
   ],
-  providers: [AuthService, LocalStrategy, JwtStrategy, GoogleStrategy, PrismaService],
+  providers: [
+    AuthService,
+    LocalStrategy,
+    JwtStrategy,
+    GoogleStrategy,
+    PrismaService,
+    DevelopmentOnlyGuard,
+  ],
   controllers: [AuthController],
   exports: [AuthService, JwtModule, PassportModule],
 })

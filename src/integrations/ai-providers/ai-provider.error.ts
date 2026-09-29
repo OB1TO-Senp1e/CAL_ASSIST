@@ -28,6 +28,8 @@ export type AiProviderErrorKind =
   | 'empty'
   /** The provider's circuit is open; the request was never attempted. */
   | 'circuit_open'
+  /** The shared per-provider concurrency limit is full; the provider was not called. */
+  | 'capacity'
   /** The provider does not support the requested capability. */
   | 'unsupported'
   /** C6: the call carries Google-sourced content and the user has not consented. */
@@ -104,7 +106,7 @@ export class AiProviderError extends Error {
       error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError');
     const kind: AiProviderErrorKind = isAbort
       ? 'timeout'
-      : fallback.kind ?? (error instanceof TypeError ? 'network' : 'http');
+      : (fallback.kind ?? (error instanceof TypeError ? 'network' : 'http'));
     return new AiProviderError(`${provider}: ${message}`, {
       provider,
       kind,

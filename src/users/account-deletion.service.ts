@@ -75,6 +75,8 @@ const USER_ID_TABLES: Array<keyof PrismaService> = [
   'goal',
   'event',
   'calendar',
+  'calendarOAuthPkce',
+  'calendarPushChannel',
   'calendarConnection',
   'preference',
   'profile',

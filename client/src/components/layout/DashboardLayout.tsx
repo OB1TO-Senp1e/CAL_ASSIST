@@ -1,6 +1,6 @@
 import { Suspense, useEffect, useRef } from 'react';
-import { Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { X } from 'lucide-react';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Menu, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useHotkeys } from '@/lib/hotkeys';
 import { AssistantPanel } from '@/components/assistant/AssistantPanel';
@@ -10,6 +10,55 @@ import { RouteFallback } from './RouteFallback';
 import { ALL_NAV_ITEMS } from './nav-config';
 import { ShellProvider, useShell } from './shell-context';
 import { Sidebar, SidebarContent } from './Sidebar';
+
+const MOBILE_PRIMARY_HREFS = ['/', '/calendar', '/tasks', '/assistant'];
+const MOBILE_PRIMARY_ITEMS = MOBILE_PRIMARY_HREFS.map((href) =>
+  ALL_NAV_ITEMS.find((item) => item.href === href),
+).filter((item) => item !== undefined);
+
+function MobileNavigation() {
+  const location = useLocation();
+  const { mobileNavOpen, setMobileNavOpen } = useShell();
+
+  return (
+    <nav
+      aria-label="Mobile navigation"
+      className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md md:hidden"
+    >
+      <div className="grid h-14 grid-cols-5">
+        {MOBILE_PRIMARY_ITEMS.map((item) => {
+          const Icon = item.icon;
+          const active = item.href === '/' ? location.pathname === '/' : location.pathname.startsWith(item.href);
+          return (
+            <NavLink
+              key={item.href}
+              to={item.href}
+              end={item.href === '/'}
+              aria-current={active ? 'page' : undefined}
+              className={cn(
+                'flex min-w-0 flex-col items-center justify-center gap-1 text-[10px] transition-colors',
+                active ? 'text-primary' : 'text-muted-foreground',
+              )}
+            >
+              <Icon className="size-4" strokeWidth={active ? 2.25 : 1.75} />
+              <span className="max-w-full truncate">{item.name}</span>
+            </NavLink>
+          );
+        })}
+        <button
+          type="button"
+          onClick={() => setMobileNavOpen(true)}
+          aria-label="Open more navigation"
+          aria-expanded={mobileNavOpen}
+          className="flex min-w-0 flex-col items-center justify-center gap-1 text-[10px] text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <Menu className="size-4" />
+          <span>More</span>
+        </button>
+      </div>
+    </nav>
+  );
+}
 
 /**
  * App shell: [sidebar | page | assistant]. Three columns on desktop; on mobile
@@ -94,12 +143,13 @@ function ShellFrame() {
         </div>
       </div>
 
-      <main className="flex min-w-0 flex-1 flex-col">
+      <main className="flex min-w-0 flex-1 flex-col pb-14 md:pb-0">
         <Suspense fallback={<RouteFallback />}>
           <Outlet />
         </Suspense>
       </main>
 
+      <MobileNavigation />
       <AssistantPanel />
       <CommandCenter />
     </div>

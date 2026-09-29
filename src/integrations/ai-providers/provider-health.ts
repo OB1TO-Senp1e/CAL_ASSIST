@@ -22,6 +22,7 @@ const NON_BREAKING_KINDS: ReadonlySet<AiProviderErrorKind> = new Set<AiProviderE
   // The endpoint genuinely does not implement the feature; retrying or waiting
   // changes nothing, and the caller has a capability check instead.
   'unsupported',
+  'capacity',
   // A 200 with junk content is a model-quality problem, not availability. The
   // agent loop repairs it; it is not a reason to stop sending traffic.
   'parse',
@@ -184,7 +185,6 @@ export class CircuitBreaker {
   }
 }
 
-
 /**
  * Whether breaker enforcement is active. Read on every check rather than cached,
  * because the registry itself is module-level and constructed before `.env`.
@@ -266,4 +266,3 @@ export class CircuitBreakerRegistry {
  * probe script and any non-DI caller observe the same state as the app.
  */
 export const defaultCircuitBreakerRegistry = new CircuitBreakerRegistry();
-

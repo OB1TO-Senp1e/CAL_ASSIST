@@ -19,6 +19,7 @@ import {
   circuitBreakerEnabled,
   defaultCircuitBreakerRegistry,
 } from './provider-health';
+import { RedisAiProtectionService } from './redis-ai-protection.service';
 
 /** Which provider actually served a call, for logs, metrics and the probe script. */
 export interface AiProviderOutcome<T> {
@@ -61,6 +62,7 @@ export class AiProviderService implements AIProviderInterface, OnModuleInit {
   // C6: consent gate. Optional so specs/scripts keep constructing this with
   // three args; when absent, gated calls fail CLOSED (see assertConsent).
   private readonly consentGate: AiConsentGate | null;
+  private readonly sharedProtection: RedisAiProtectionService | null;
 
   constructor(
     private readonly openAIProvider: OpenAIProvider,
@@ -68,13 +70,15 @@ export class AiProviderService implements AIProviderInterface, OnModuleInit {
     private readonly nemotronNimProvider: NemotronNimProvider,
     @Optional() metrics?: MetricsService,
     @Optional() breakers?: CircuitBreakerRegistry,
-    @Optional() @Inject(AI_CONSENT_GATE) consentGate?: AiConsentGate
+    @Optional() @Inject(AI_CONSENT_GATE) consentGate?: AiConsentGate,
+    @Optional() sharedProtection?: RedisAiProtectionService
   ) {
     this.defaultProvider = openAIProvider;
     this.fallbackProvider = ollamaProvider;
     this.metrics = metrics ?? null;
     this.breakers = breakers ?? defaultCircuitBreakerRegistry;
     this.consentGate = consentGate ?? null;
+    this.sharedProtection = sharedProtection ?? null;
   }
 
   /**
@@ -82,7 +86,10 @@ export class AiProviderService implements AIProviderInterface, OnModuleInit {
    * before the user explicitly consented. Fail-closed: a gated call without a
    * userId, or with no gate wired, is blocked.
    */
-  private async assertConsent(options: GenerateOptions | undefined, operation: string): Promise<void> {
+  private async assertConsent(
+    options: GenerateOptions | undefined,
+    operation: string
+  ): Promise<void> {
     if (!options?.includesGoogleData) return;
     const userId = options.userId;
     if (!userId) {
@@ -92,10 +99,11 @@ export class AiProviderService implements AIProviderInterface, OnModuleInit {
       );
     }
     if (!this.consentGate) {
-      throw new AiProviderError(
-        `AI ${operation} blocked: consent gate is not configured`,
-        { provider: 'consent-gate', kind: 'consent_required', retryable: false }
-      );
+      throw new AiProviderError(`AI ${operation} blocked: consent gate is not configured`, {
+        provider: 'consent-gate',
+        kind: 'consent_required',
+        retryable: false,
+      });
     }
     if (!(await this.consentGate.hasConsent(userId))) {
       throw new AiProviderError(
@@ -151,21 +159,13 @@ export class AiProviderService implements AIProviderInterface, OnModuleInit {
   }
 
   private recordUsage(report: AiUsageReport): void {
-    this.metrics?.recordAiTokens(
-      report.provider,
-      report.model,
-      report.operation,
-      report.usage
-    );
+    this.metrics?.recordAiTokens(report.provider, report.model, report.operation, report.usage);
   }
 
   /** Keeps the circuit-state gauge truthful after every recorded outcome. */
   private syncCircuitGauge(providerName: string): void {
     if (!this.metrics) return;
-    this.metrics.setAiCircuitState(
-      providerName,
-      this.breakers.get(providerName).snapshot().state
-    );
+    this.metrics.setAiCircuitState(providerName, this.breakers.get(providerName).snapshot().state);
   }
 
   /**
@@ -178,7 +178,6 @@ export class AiProviderService implements AIProviderInterface, OnModuleInit {
       ? [this.defaultProvider, this.fallbackProvider]
       : [this.defaultProvider];
   }
-
 
   /**
    * Runs one provider verb across the selection chain.
@@ -202,36 +201,56 @@ export class AiProviderService implements AIProviderInterface, OnModuleInit {
     const quiet = new Set<AiProviderErrorKind>(options.quietKinds ?? []);
     let lastError: AiProviderError | undefined;
     let anyAllowed = false;
+    let sharedCircuitDenied = false;
 
     // The breaker is asked *inside* the loop, never as an upfront filter:
     // `allowRequest()` consumes the single half-open probe slot, so checking the
     // fallback before deciding not to call it would burn its probe and leave the
     // breaker permanently unable to recover.
     for (const provider of chain) {
+      if (
+        this.sharedProtection &&
+        !(await this.sharedProtection.allowRequest(provider.providerName))
+      ) {
+        sharedCircuitDenied = true;
+        this.logger.debug(`${provider.providerName} skipped for ${operation}: shared circuit open`);
+        continue;
+      }
       if (!this.breakers.allow(provider.providerName)) {
         this.logger.debug(`${provider.providerName} skipped for ${operation}: circuit open`);
         continue;
       }
       anyAllowed = true;
       const started = Date.now();
-      try {
-        const value = await call(provider);
-        this.breakers.recordSuccess(provider.providerName);
-        this.metrics?.incrementAiRequests(provider.providerName, operation, 'success');
-        this.metrics?.observeAiDuration(provider.providerName, operation, (Date.now() - started) / 1000);
+      const permit = await this.sharedProtection?.acquireCapacity(provider.providerName);
+      if (this.sharedProtection && !permit) {
+        const aiError = new AiProviderError(
+          `${provider.providerName} concurrency capacity is full`,
+          { provider: provider.providerName, kind: 'capacity', retryable: true }
+        );
+        lastError = aiError;
+        this.metrics?.incrementAiRequests(provider.providerName, operation, 'error');
+        this.metrics?.recordAiError(provider.providerName, operation, aiError.kind);
         this.syncCircuitGauge(provider.providerName);
-        const servedByFallback = provider !== chain[0];
-        if (servedByFallback) {
-          this.metrics?.recordFallbackProviderSwitch(operation, chain[0].providerName, provider.providerName);
-        }
-        return { value, provider: provider.providerName, usedFallback: servedByFallback };
+        continue;
+      }
+
+      let value: T;
+      try {
+        value = await call(provider);
       } catch (error) {
+        await permit?.release();
         const aiError = AiProviderError.from(provider.providerName, error, { kind: 'http' });
         lastError = aiError;
         this.breakers.recordFailure(provider.providerName, aiError.kind);
+        await this.sharedProtection?.recordFailure(provider.providerName, aiError.kind);
         this.metrics?.incrementAiRequests(provider.providerName, operation, 'error');
         this.metrics?.recordAiError(provider.providerName, operation, aiError.kind);
-        this.metrics?.observeAiDuration(provider.providerName, operation, (Date.now() - started) / 1000);
+        this.metrics?.observeAiDuration(
+          provider.providerName,
+          operation,
+          (Date.now() - started) / 1000
+        );
         this.syncCircuitGauge(provider.providerName);
         if (aiError.kind === 'timeout') {
           this.metrics?.recordAiTimeout(provider.providerName, operation);
@@ -246,7 +265,28 @@ export class AiProviderService implements AIProviderInterface, OnModuleInit {
             }, attempts=${aiError.attempts}): ${aiError.message}`
           );
         }
+        continue;
       }
+
+      await permit?.release();
+      await this.sharedProtection?.recordSuccess(provider.providerName);
+      this.breakers.recordSuccess(provider.providerName);
+      this.metrics?.incrementAiRequests(provider.providerName, operation, 'success');
+      this.metrics?.observeAiDuration(
+        provider.providerName,
+        operation,
+        (Date.now() - started) / 1000
+      );
+      this.syncCircuitGauge(provider.providerName);
+      const servedByFallback = provider !== chain[0];
+      if (servedByFallback) {
+        this.metrics?.recordFallbackProviderSwitch(
+          operation,
+          chain[0].providerName,
+          provider.providerName
+        );
+      }
+      return { value, provider: provider.providerName, usedFallback: servedByFallback };
     }
 
     // Nothing was even attempted because every breaker refused: report that
@@ -257,9 +297,9 @@ export class AiProviderService implements AIProviderInterface, OnModuleInit {
       this.metrics?.recordAiCircuitRejected(primary.providerName, operation);
       this.syncCircuitGauge(primary.providerName);
       throw new AiProviderError(
-        `${primary.providerName} circuit is open; retry in ${Math.ceil(
-          snapshot.retryAfterMs / 1000
-        )}s`,
+        sharedCircuitDenied
+          ? `${primary.providerName} shared circuit is open`
+          : `${primary.providerName} circuit is open; retry in ${Math.ceil(snapshot.retryAfterMs / 1000)}s`,
         {
           provider: primary.providerName,
           kind: 'circuit_open',

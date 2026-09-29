@@ -51,6 +51,48 @@ export function validateRedirectUris(
   return problems;
 }
 
+export function validateProductionSecrets(
+  get: (name: string) => string | undefined,
+  isProduction: boolean
+): string[] {
+  if (!isProduction) return [];
+
+  const problems: string[] = [];
+  for (const name of ['JWT_SECRET', 'SESSION_SECRET']) {
+    const value = get(name) ?? '';
+    if (value.length < 32 || isPlaceholderSecret(value)) {
+      problems.push(`${name} must be explicitly set to at least 32 characters`);
+    }
+  }
+
+  if (get('SESSION_COOKIE_SECURE') !== 'true') {
+    problems.push('SESSION_COOKIE_SECURE must be true in production');
+  }
+
+  const oauthKey = get('OAUTH_TOKEN_KEY') ?? '';
+  const decodedKey = Buffer.from(oauthKey, 'base64');
+  if (
+    decodedKey.length !== 32 ||
+    decodedKey.toString('base64') !== oauthKey ||
+    decodedKey.every((byte) => byte === 0)
+  ) {
+    problems.push('OAUTH_TOKEN_KEY must be a base64-encoded 32-byte key in production');
+  }
+
+  return problems;
+}
+
+function isPlaceholderSecret(value: string): boolean {
+  const normalized = value.trim();
+  return (
+    normalized.length < 32 ||
+    /^(.)\1+$/.test(normalized) ||
+    /(^|[-_\s])(your|change(?:[-_\s]?me)?|placeholder|example|sample|dummy|default|replace(?:[-_\s]?me)?|insert|test|password|secret|local-development)([-_\s]|$)/i.test(
+      normalized
+    )
+  );
+}
+
 @Injectable()
 export class ProductionConfigValidator implements OnModuleInit {
   private readonly logger = new Logger(ProductionConfigValidator.name);
@@ -59,7 +101,11 @@ export class ProductionConfigValidator implements OnModuleInit {
 
   onModuleInit(): void {
     const isProduction = this.config.get<string>('NODE_ENV') === 'production';
-    const problems = validateRedirectUris((name) => this.config.get<string>(name), isProduction);
+    const get = (name: string): string | undefined => this.config.get<string>(name);
+    const problems = [
+      ...validateRedirectUris(get, isProduction),
+      ...validateProductionSecrets(get, isProduction),
+    ];
     if (problems.length > 0) {
       const message = `Insecure OAuth redirect configuration for production: ${problems.join('; ')}`;
       this.logger.error(message);

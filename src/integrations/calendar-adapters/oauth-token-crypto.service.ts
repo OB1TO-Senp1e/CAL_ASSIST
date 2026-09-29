@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  OnModuleInit,
-  ServiceUnavailableException,
-} from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 
@@ -34,6 +29,7 @@ const KEY_BYTES = 32;
 export class OAuthTokenCryptoService implements OnModuleInit {
   private readonly logger = new Logger(OAuthTokenCryptoService.name);
   private key: Buffer | null = null;
+  private decryptionKeys: Buffer[] = [];
   private readonly isProduction: boolean;
 
   constructor(private readonly config: ConfigService) {
@@ -43,6 +39,12 @@ export class OAuthTokenCryptoService implements OnModuleInit {
   onModuleInit(): void {
     const raw = this.config.get<string>('OAUTH_TOKEN_KEY');
     this.key = this.parseKey(raw);
+    const previousKeys = this.parsePreviousKeys(
+      this.config.get<string>('OAUTH_TOKEN_PREVIOUS_KEYS')
+    );
+    this.decryptionKeys = this.key
+      ? [this.key, ...previousKeys.filter((previous) => !previous.equals(this.key!))]
+      : [];
     if (!this.key) {
       const message =
         'OAUTH_TOKEN_KEY is missing or not a base64-encoded 32-byte key. ' +
@@ -68,8 +70,21 @@ export class OAuthTokenCryptoService implements OnModuleInit {
     } catch {
       return null;
     }
-    if (buf.length !== KEY_BYTES) return null;
+    if (buf.length !== KEY_BYTES || buf.toString('base64') !== raw) return null;
     return buf;
+  }
+
+  private parsePreviousKeys(raw: string | undefined): Buffer[] {
+    if (!raw?.trim()) return [];
+    return raw.split(',').map((value) => {
+      const key = this.parseKey(value.trim());
+      if (!key) {
+        throw new Error(
+          'OAUTH_TOKEN_PREVIOUS_KEYS must be a comma-separated list of base64-encoded 32-byte keys'
+        );
+      }
+      return key;
+    });
   }
 
   /** True when this process has a usable key loaded. */
@@ -110,7 +125,7 @@ export class OAuthTokenCryptoService implements OnModuleInit {
   decrypt(stored: string | null | undefined): string | null | undefined {
     if (stored === null || stored === undefined) return stored;
     if (!OAuthTokenCryptoService.isEncrypted(stored)) return stored;
-    if (!this.key) {
+    if (this.decryptionKeys.length === 0) {
       throw new ServiceUnavailableException(
         'OAuth token encryption key is not configured; cannot decrypt stored token.'
       );
@@ -122,8 +137,54 @@ export class OAuthTokenCryptoService implements OnModuleInit {
     const iv = packed.subarray(0, IV_BYTES);
     const authTag = packed.subarray(IV_BYTES, IV_BYTES + TAG_BYTES);
     const ciphertext = packed.subarray(IV_BYTES + TAG_BYTES);
-    const decipher = createDecipheriv('aes-256-gcm', this.key, iv);
+    for (const key of this.decryptionKeys) {
+      try {
+        return this.decryptWithKey(key, iv, authTag, ciphertext);
+      } catch {
+        // Try the configured previous keys before surfacing a decryption error.
+      }
+    }
+    throw new Error('Unable to decrypt stored OAuth token with configured key ring.');
+  }
+
+  private decryptWithKey(key: Buffer, iv: Buffer, authTag: Buffer, ciphertext: Buffer): string {
+    const decipher = createDecipheriv('aes-256-gcm', key, iv);
     decipher.setAuthTag(authTag);
     return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8');
+  }
+
+  needsReencryption(stored: string | null | undefined): boolean {
+    if (stored === null || stored === undefined) return false;
+    if (!OAuthTokenCryptoService.isEncrypted(stored)) return true;
+    if (!this.key) {
+      throw new ServiceUnavailableException(
+        'OAuth token encryption key is not configured; cannot rotate stored token.'
+      );
+    }
+
+    const packed = Buffer.from(stored.slice(PREFIX.length), 'base64');
+    if (packed.length < IV_BYTES + TAG_BYTES) {
+      throw new Error('Stored OAuth token is malformed (too short).');
+    }
+    try {
+      this.decryptWithKey(
+        this.key,
+        packed.subarray(0, IV_BYTES),
+        packed.subarray(IV_BYTES, IV_BYTES + TAG_BYTES),
+        packed.subarray(IV_BYTES + TAG_BYTES)
+      );
+      return false;
+    } catch {
+      this.decrypt(stored);
+      return true;
+    }
+  }
+
+  /** Re-encrypts a stored token with the active key; use only in controlled rotation. */
+  reencrypt(stored: string | null | undefined): string | null | undefined {
+    if (stored === null || stored === undefined) return stored;
+    if (!this.needsReencryption(stored)) return stored;
+    const plaintext = this.decrypt(stored);
+    return this.encrypt(plaintext);
   }
 }
