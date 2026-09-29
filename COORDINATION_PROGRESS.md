@@ -17,12 +17,16 @@ Repo: `d:\CAL_ASS_V1\CAL_ASSIST` · Branch: `feat/cross-functional-coordination`
 
 ## Iteration status
 
-Iteration counter: **0 CLOSED.** C-00 spec-reconciled, fresh-clone verified, and **signed off** by the user (D1–D8 as proposed + Phase 1 scope). Coordination branch created from `21e6997`; no code yet.
+Iteration counter: **1 CLOSED.** C-00 signed off (D1–D8 as proposed + Phase 1 scope). **C-01 (coordination
+substrate) delivered** on `feat/cross-functional-coordination`: `src/coordination/` module with outbox +
+lease-based claim + shutdown-aware worker + Zod DTOs + co-located specs. The C-01 migration is **authored
+to `prisma/pending/`, NOT applied** (see the ledger row and the migration file's own deploy header).
 
 | ID | Item | Status | Evidence (file:line + command output) |
 |----|------|--------|----------------------------------------|
 | C-00 | Repo/architecture audit vs. spec, decisions recorded before any code | **CLOSED — SIGNED OFF** | `docs/coordination-audit.md`. G1 + G2 closed; fresh-clone verification green (44 suites / 358 tests on clean clone of `8d5e510`); D1–D8 confirmed as proposed + Phase 1 scope agreed; branch `feat/cross-functional-coordination` created from `21e6997` (audit §8 all checked). |
-| C-01+ | Not started | **READY — AWAITING KICKOFF** | C-00 signed off; coordination branch exists. No code, no migration until the user explicitly starts C-01. |
+| C-01 | Coordination substrate: `src/coordination/` outbox + job worker (D1) | **DELIVERED — MIGRATION NOT APPLIED** | 12 files under `src/coordination/` + `prisma/pending/20260929120000_c01_outbox_job/migration.sql`. Evidence: `npx tsc --noEmit` exit 0; `npx eslint --quiet src/coordination` exit 0; `npm test` **48/48 suites, 391/391 tests** (baseline 44/358 + 4 new suites / 33 tests); `npm run build` exit 0. Claim = `$queryRaw` `SELECT ... FOR UPDATE SKIP LOCKED` + leasing `UPDATE` inside ONE `$transaction` (`outbox.store.ts` `claimOne`). Zero new production deps; no `@nestjs/schedule` (the worker is a self-scheduled `setTimeout`). Worker **default OFF** (`COORDINATION_WORKER_ENABLED`) because polling hits a table that does not exist until the migration ships. No Prisma schema change (option C's schema surface not started). |
+| C-02+ | Not started | **READY — AWAITING KICKOFF** | Substrate exists; handlers are still unregistered by design — a claimed job with no handler nacks `NO_HANDLER_FOR_<type>` and retries, it never crashes or loses the row. |
 
 ## Gate — closed, C-00 signed off
 
@@ -87,4 +91,29 @@ scratch under the new `.tmp-spec/` ignore rule.
    **after** `npx prisma generate`, which bare `npm ci` does not run (no `prepare` script; CI already does
    this, so pre-existing, not a G2 regression); `npm test` exit 0 — **44 suites / 358 tests passed**.
 4. ~~Create `feat/cross-functional-coordination` from the cleaned tip and request gate approval~~ — **DONE: branch created from `21e6997`; user gave full sign-off (D1–D8 as proposed + Phase 1 scope).**
-5. **No code, no migration** on `feat/cross-functional-coordination` until the user explicitly kicks off C-01.
+5. ~~No code until the user kicks off C-01~~ — **done: C-01 kicked off and delivered** (substrate, option B).
+
+## C-01 delivered state + open follow-ups (iteration 1)
+
+Shipped: `src/coordination/{coordination.module.ts, coordination.types.ts, coordination.controller.ts,
+outbox/{outbox.types.ts, outbox.store.ts, outbox.service.ts}, jobs/{job-handlers.ts, job-worker.service.ts}}`
++ 4 co-located specs. Layout follows audit §6 exactly; D1 (no `@nestjs/schedule`, no new prod dep), D2 (Zod +
+`ZodValidationPipe`), D6 (worker shares the budgeted `PrismaService` pool → `WORKER_POOL_CONNECTIONS` stays
+`0`), D7 (no email/Meet/availability code) all honoured. Deliberately **not** done in this cut: the option-C
+schema surface (`Meeting`/`MeetingParticipant`/`MeetingProposal`), the §9 permission additions, and R8/R9
+(CI on `feat/*` + lint path list — option A, still open, so **these tests are not yet enforced on this
+branch by CI**).
+
+| Follow-up | Why it is not silently closed |
+|-----------|-------------------------------|
+| **Deploy the migration** | `prisma/pending/20260929120000_c01_outbox_job/migration.sql` is authored, NOT applied — it sits outside `prisma/migrations/` precisely so `MigrationStateGuard` cannot fail production boot while undeployed. Deploying = move it into `prisma/migrations/` + `npx prisma migrate deploy`, which **touches the live DB `.env` points at** (`aws-0-ap-northeast-1.pooler.supabase.com`) and therefore needs a separate explicit yes. Only then set `COORDINATION_WORKER_ENABLED=true`. |
+| **PgBouncer vs. `SKIP LOCKED`** | `.env` `DATABASE_URL` uses `?pgbouncer=true` (Supabase transaction pooler). Row locks are transaction-scoped so the claim stays correct in principle, but Prisma interactive transactions over a transaction-pooling pooler **must be smoke-tested before enabling the worker** — use the session/direct connection if the pooler rejects them. |
+| **No FK on `OutboxJob.userId`** | Deliberate: adding a FK now would break nothing but forces a schema-model change that belongs to the option-C cut. Consequence: deleting a user leaves outbox rows behind until `src/users/account-deletion.service.ts` (or a `ON DELETE CASCADE` FK) covers the table. Recorded, not hidden. |
+| **Claim path has no real-DB test** | `SKIP LOCKED` is PostgreSQL-only (D1 forbids testing it on SQLite/emulated layers), so the 33 new specs mock the raw SQL layer and pin the SQL text. A true multi-replica claim test needs a real Postgres — local target available (`supabase_db_GRUB-POS` on `localhost:54322`). |
+| **Zero job handlers registered** | By design. `OutboxJobTypeSchema` declares `REMINDER`/`FOLLOWUP`/`CHANNEL_RENEWAL`; claiming one nacks `NO_HANDLER_FOR_<type>` and retries — no crash, no lost row. Wiring a handler is a later control point. |
+| **Worker env knobs** | `COORDINATION_WORKER_ENABLED` (default `false`), `_POLL_MS` (5000), `_BATCH_SIZE` (5), `_LEASE_SECONDS` (60), `_RETRY_SECONDS` (30) — validated at construction; out-of-range values throw instead of silently defaulting. Nothing added to `.env` in this cut. |
+
+## Next action (single, explicit)
+
+6. **Await C-02 kickoff.** Nothing further is built on `feat/cross-functional-coordination` until then;
+   the migration stays unapplied and the worker stays disabled.
