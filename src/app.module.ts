@@ -34,7 +34,6 @@ import { TravelTimeModule } from './integrations/travel-time/travel-time.module'
 import { MeetingIntelligenceModule } from './meetings/meeting-intelligence.module';
 import { DailyExperienceModule } from './daily-experience/daily-experience.module';
 import { PermissionModule } from './permissions/permission.module';
-import { CoordinationModule } from './coordination/coordination.module';
 import { SimulationEngineModule } from './scheduling/simulation-engine/simulation-engine.module';
 import { LoggingModule } from './common/logging/logging.module';
 import { AiConsentModule } from './ai/consent/ai-consent.module';
@@ -85,7 +84,6 @@ import { MetricsService } from './metrics/metrics.service';
     ProactiveAssistantModule,
     AiConsentModule,
     PermissionModule,
-    CoordinationModule,
     TravelTimeModule,
     MeetingIntelligenceModule,
     DailyExperienceModule,
