@@ -1,17 +1,20 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: calassist-postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-calassist}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-calassist}
       POSTGRES_DB: ${POSTGRES_DB:-calassist}
+      POSTGRES_MAX_CONNECTIONS: ${POSTGRES_MAX_CONNECTIONS:-100}
+    command:
+      - postgres
+      - -c
+      - max_connections=${POSTGRES_MAX_CONNECTIONS:-100}
+      - -c
+      - shared_preload_libraries=pg_stat_statements
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
+      - ./docker/postgres/init/001-pg-stat-statements.sql:/docker-entrypoint-initdb.d/001-pg-stat-statements.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-calassist} -d ${POSTGRES_DB:-calassist}"]
       interval: 10s
@@ -22,12 +25,10 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: calassist-redis
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    mem_limit: ${REDIS_MEMORY_LIMIT:-320m}
+    command: redis-server --appendonly yes --maxmemory ${REDIS_MAXMEMORY:-256mb} --maxmemory-policy noeviction
     volumes:
       - redis_data:/data
-    ports:
-      - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -36,23 +37,57 @@ services:
     networks:
       - calassist-network
 
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+    command: ["npm", "run", "prisma:migrate:deploy"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-calassist}:${POSTGRES_PASSWORD:-calassist}@postgres:5432/${POSTGRES_DB:-calassist}?schema=public
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - calassist-network
+    restart: "no"
+
   api:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: calassist-api
     environment:
-      NODE_ENV: production
+      NODE_ENV: ${NODE_ENV:-development}
       PORT: 3000
       DATABASE_URL: postgresql://${POSTGRES_USER:-calassist}:${POSTGRES_PASSWORD:-calassist}@postgres:5432/${POSTGRES_DB:-calassist}?schema=public
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      REDIS_URL: redis://redis:6379
+      REDIS_CONNECT_TIMEOUT_MS: ${REDIS_CONNECT_TIMEOUT_MS:-5000}
+      JWT_SECRET: ${JWT_SECRET:-}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      SESSION_SECRET: ${SESSION_SECRET:-}
+      OAUTH_TOKEN_KEY: ${OAUTH_TOKEN_KEY:-}
+      OAUTH_TOKEN_PREVIOUS_KEYS: ${OAUTH_TOKEN_PREVIOUS_KEYS:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-local-development-client-id}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-local-development-client-secret}
+      GOOGLE_LOGIN_CALLBACK_URL: ${GOOGLE_LOGIN_CALLBACK_URL:-http://localhost:8080/auth/google/callback}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-}
+      MICROSOFT_REDIRECT_URI: ${MICROSOFT_REDIRECT_URI:-}
+      APPLE_REDIRECT_URI: ${APPLE_REDIRECT_URI:-}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3001}
       THROTTLE_TTL: 60000
       THROTTLE_LIMIT: 100
-      CACHE_TTL: 300000
-      CACHE_MAX: 1000
+      DATABASE_POOL_MAX: ${DATABASE_POOL_MAX:-10}
+      API_REPLICA_COUNT: ${API_REPLICA_COUNT:-2}
+      WORKER_POOL_CONNECTIONS: ${WORKER_POOL_CONNECTIONS:-0}
+      POSTGRES_MAX_CONNECTIONS: ${POSTGRES_MAX_CONNECTIONS:-100}
+      DATABASE_CONNECTION_HEADROOM: ${DATABASE_CONNECTION_HEADROOM:-20}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      SESSION_COOKIE_SAME_SITE: ${SESSION_COOKIE_SAME_SITE:-lax}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-${FRONTEND_URL:-http://localhost:3001}}
+      EXPOSE_INSTANCE_ID: ${EXPOSE_INSTANCE_ID:-false}
       LOG_LEVEL: info
       AI_PROVIDER: ${AI_PROVIDER:-openai}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
@@ -78,22 +113,205 @@ services:
       AI_CIRCUIT_FAILURE_THRESHOLD: ${AI_CIRCUIT_FAILURE_THRESHOLD:-3}
       AI_CIRCUIT_COOLDOWN_MS: ${AI_CIRCUIT_COOLDOWN_MS:-30000}
       AI_CIRCUIT_SUCCESS_THRESHOLD: ${AI_CIRCUIT_SUCCESS_THRESHOLD:-1}
+      AI_CIRCUIT_PROBE_LEASE_MS: ${AI_CIRCUIT_PROBE_LEASE_MS:-60000}
+      AI_PROVIDER_MAX_CONCURRENCY: ${AI_PROVIDER_MAX_CONCURRENCY:-10}
+      AI_PROVIDER_CAPACITY_LEASE_MS: ${AI_PROVIDER_CAPACITY_LEASE_MS:-120000}
+      AI_PROVIDER_QUOTA_LIMIT: ${AI_PROVIDER_QUOTA_LIMIT:-120}
+      AI_PROVIDER_QUOTA_WINDOW_MS: ${AI_PROVIDER_QUOTA_WINDOW_MS:-60000}
       AI_PROBE_ENABLED: ${AI_PROBE_ENABLED:-false}
-    ports:
-      - "3000:3000"
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health/live"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health/ready"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
     networks:
       - calassist-network
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    mem_limit: 1g
+    cpus: 1.0
+    deploy:
+      replicas: 2
+    labels:
+      - "traefik.enable=true"
+      - "traefik.constraint-label=${COMPOSE_PROJECT_NAME:-cal_assist}"
+      - "traefik.docker.network=${COMPOSE_PROJECT_NAME:-cal_assist}_calassist-network"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME:-cal_assist}-api.rule=Host(`${PUBLIC_HOST:-localhost}`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME:-cal_assist}-api.entrypoints=websecure"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME:-cal_assist}-api.tls=true"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME:-cal_assist}-api.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME:-cal_assist}-api.middlewares=${COMPOSE_PROJECT_NAME:-cal_assist}-api-security,${COMPOSE_PROJECT_NAME:-cal_assist}-api-buffer,${COMPOSE_PROJECT_NAME:-cal_assist}-api-resilience"
+      - "traefik.http.services.${COMPOSE_PROJECT_NAME:-cal_assist}-api.loadbalancer.server.port=3000"
+      - "traefik.http.services.${COMPOSE_PROJECT_NAME:-cal_assist}-api.loadbalancer.healthcheck.path=/health/ready"
+      - "traefik.http.services.${COMPOSE_PROJECT_NAME:-cal_assist}-api.loadbalancer.healthcheck.interval=10s"
+      - "traefik.http.services.${COMPOSE_PROJECT_NAME:-cal_assist}-api.loadbalancer.healthcheck.timeout=3s"
+      - "traefik.http.middlewares.${COMPOSE_PROJECT_NAME:-cal_assist}-api-security.headers.contentTypeNosniff=true"
+      - "traefik.http.middlewares.${COMPOSE_PROJECT_NAME:-cal_assist}-api-security.headers.referrerPolicy=no-referrer"
+      - "traefik.http.middlewares.${COMPOSE_PROJECT_NAME:-cal_assist}-api-security.headers.frameDeny=true"
+      - "traefik.http.middlewares.${COMPOSE_PROJECT_NAME:-cal_assist}-api-security.headers.stsSeconds=31536000"
+      - "traefik.http.middlewares.${COMPOSE_PROJECT_NAME:-cal_assist}-api-security.headers.stsIncludeSubdomains=true"
+      - "traefik.http.middlewares.${COMPOSE_PROJECT_NAME:-cal_assist}-api-security.headers.stsPreload=true"
+      - "traefik.http.middlewares.${COMPOSE_PROJECT_NAME:-cal_assist}-api-security.headers.contentSecurityPolicy=default-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
+      - "traefik.http.middlewares.${COMPOSE_PROJECT_NAME:-cal_assist}-api-buffer.buffering.maxRequestBodyBytes=10485760"
+      - "traefik.http.middlewares.${COMPOSE_PROJECT_NAME:-cal_assist}-api-resilience.circuitbreaker.expression=NetworkErrorRatio() > 0.50"
+      # Preserve the existing unprefixed authentication and OAuth callback URLs.
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME:-cal_assist}-auth.rule=Host(`${PUBLIC_HOST:-localhost}`) && PathPrefix(`/auth`)"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME:-cal_assist}-auth.entrypoints=websecure"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME:-cal_assist}-auth.tls=true"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME:-cal_assist}-auth.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME:-cal_assist}-auth.middlewares=${COMPOSE_PROJECT_NAME:-cal_assist}-api-security,${COMPOSE_PROJECT_NAME:-cal_assist}-api-buffer,${COMPOSE_PROJECT_NAME:-cal_assist}-api-resilience"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME:-cal_assist}-auth.service=${COMPOSE_PROJECT_NAME:-cal_assist}-api"
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.client
+    user: "101:101"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8080/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+    networks:
+      - calassist-network
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 128m
+    cpus: 0.5
+    labels:
+      - "traefik.enable=true"
+      - "traefik.constraint-label=${COMPOSE_PROJECT_NAME:-cal_assist}"
+      - "traefik.docker.network=${COMPOSE_PROJECT_NAME:-cal_assist}_calassist-network"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME:-cal_assist}-web.rule=Host(`${PUBLIC_HOST:-localhost}`)"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME:-cal_assist}-web.entrypoints=websecure"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME:-cal_assist}-web.tls=true"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME:-cal_assist}-web.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME:-cal_assist}-web.priority=1"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME:-cal_assist}-web.service=${COMPOSE_PROJECT_NAME:-cal_assist}-web"
+      - "traefik.http.services.${COMPOSE_PROJECT_NAME:-cal_assist}-web.loadbalancer.server.port=8080"
+      - "traefik.http.services.${COMPOSE_PROJECT_NAME:-cal_assist}-web.loadbalancer.healthcheck.path=/"
+      - "traefik.http.services.${COMPOSE_PROJECT_NAME:-cal_assist}-web.loadbalancer.healthcheck.interval=10s"
+      - "traefik.http.services.${COMPOSE_PROJECT_NAME:-cal_assist}-web.loadbalancer.healthcheck.timeout=3s"
+
+  traefik-certs:
+    build:
+      context: ./docker/traefik-certs
+    image: calassist-traefik-certs:local
+    command:
+      - |
+        if [ ! -s /certs/dev.crt ] || [ ! -s /certs/dev.key ]; then
+          openssl req -x509 -nodes -newkey rsa:2048 -sha256 -days 365 \
+            -keyout /certs/dev.key -out /certs/dev.crt \
+            -subj "/CN=localhost" \
+            -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
+          chmod 600 /certs/dev.key
+        fi
+    volumes:
+      - traefik_certs:/certs
+    networks:
+      - calassist-network
+    restart: "no"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=8m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:0.3.0@sha256:9e4b9e7517a6b660f2cc903a19b257b1852d5b3344794e3ea334ff00ae677ac2
+    environment:
+      CONTAINERS: "1"
+      EVENTS: "1"
+      INFO: "1"
+      NETWORKS: "1"
+      PING: "1"
+      VERSION: "1"
+      POST: "0"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    networks:
+      - traefik-api
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 64
+    mem_limit: 128m
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:2375/_ping | grep -q OK"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  traefik:
+    image: traefik:v3.6
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.endpoint=tcp://docker-socket-proxy:2375"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.constraints=Label(`traefik.constraint-label`, `${COMPOSE_PROJECT_NAME:-cal_assist}`)"
+      - "--providers.docker.network=${COMPOSE_PROJECT_NAME:-cal_assist}_calassist-network"
+      - "--providers.file.directory=/etc/traefik/dynamic"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--entrypoints.web.http.redirections.entrypoint.permanent=true"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:-dev@example.invalid}"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+      - "--certificatesresolvers.letsencrypt.acme.caserver=${ACME_CA_SERVER:-https://acme-staging-v02.api.letsencrypt.org/directory}"
+      - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
+      - "--accesslog=true"
+      - "--ping=true"
+    ports:
+      - "${TRAEFIK_HTTP_PORT:-8080}:80"
+      - "${TRAEFIK_HTTPS_PORT:-8443}:443"
+    volumes:
+      - traefik_certs:/etc/traefik/certs:ro
+      - traefik_acme:/letsencrypt
+      - ./traefik/dynamic.yml:/etc/traefik/dynamic/dynamic.yml:ro
+    depends_on:
+      api:
+        condition: service_started
+      traefik-certs:
+        condition: service_completed_successfully
+      docker-socket-proxy:
+        condition: service_healthy
+    networks:
+      - calassist-network
+      - traefik-api
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 128
+    mem_limit: 256m
+    cpus: 0.5
     restart: unless-stopped
 
   # Optional: Ollama for local AI
@@ -102,8 +320,6 @@ services:
     container_name: calassist-ollama
     volumes:
       - ollama_data:/root/.ollama
-    ports:
-      - "11434:11434"
     networks:
       - calassist-network
     profiles:
@@ -119,12 +335,10 @@ services:
   # Optional: Prometheus for metrics
   prometheus:
     image: prom/prometheus:v2.52.0
-    container_name: calassist-prometheus
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
       - prometheus_data:/prometheus
-    ports:
-      - "9090:9090"
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
@@ -136,22 +350,13 @@ services:
     profiles:
       - monitoring
 
-  # Optional: Grafana for dashboards
-  grafana:
-    image: grafana/grafana:10.4.0
-    container_name: calassist-grafana
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.66.0
     environment:
-      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
-      GF_USERS_ALLOW_SIGN_UP: "false"
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
-      - ./grafana/datasources:/etc/grafana/provisioning/datasources
-    ports:
-      - "3001:3000"
+      REDIS_ADDR: redis://redis:6379
     depends_on:
-      - prometheus
+      redis:
+        condition: service_healthy
     networks:
       - calassist-network
     profiles:
@@ -162,8 +367,14 @@ volumes:
   redis_data:
   ollama_data:
   prometheus_data:
-  grafana_data:
+  traefik_certs:
+  traefik_acme:
 
 networks:
   calassist-network:
     driver: bridge
+    name: ${COMPOSE_PROJECT_NAME:-cal_assist}_calassist-network
+  traefik-api:
+    driver: bridge
+    internal: true
+    name: ${COMPOSE_PROJECT_NAME:-cal_assist}_traefik-api

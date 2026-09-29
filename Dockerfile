@@ -1,14 +1,15 @@
 # Build stage
-FROM node:20-alpine AS builder
+FROM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 AS builder
 
 WORKDIR /app
+RUN apk add --no-cache python3 make g++
 
 # Copy package files
 COPY package*.json ./
 COPY prisma ./prisma/
 
 # Install dependencies
-RUN npm ci --legacy-peer-deps
+RUN npm ci
 
 # Generate Prisma client
 RUN npx prisma generate
@@ -20,7 +21,7 @@ COPY . .
 RUN npm run build
 
 # Production stage
-FROM node:20-alpine AS production
+FROM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 AS production
 
 WORKDIR /app
 
@@ -35,8 +36,8 @@ RUN addgroup -g 1001 -S nodejs && \
 COPY package*.json ./
 
 # Install production dependencies only
-RUN npm ci --only=production --legacy-peer-deps && \
-    npm cache clean --force
+RUN npm ci --omit=dev --omit=optional --cache=/tmp/npm-cache && \
+    rm -rf /tmp/npm-cache
 
 # Copy built application from builder
 COPY --from=builder --chown=nestjs:nodejs /app/dist ./dist
@@ -51,7 +52,7 @@ EXPOSE 3000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health/live || exit 1
+  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health/ready || exit 1
 
 # Start application with dumb-init
 ENTRYPOINT ["dumb-init", "--"]
