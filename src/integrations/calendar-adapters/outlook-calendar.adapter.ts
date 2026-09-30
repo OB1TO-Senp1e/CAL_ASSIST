@@ -1,7 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { BaseCalendarAdapter } from './base-calendar.adapter';
-import { CalendarEvent, WebhookEvent } from './calendar-adapter.interface';
+import {
+  CalendarAuthUrlOptions,
+  CalendarCallbackResult,
+  CalendarEvent,
+  WebhookEvent,
+} from './calendar-adapter.interface';
 
 @Injectable()
 export class OutlookCalendarAdapter extends BaseCalendarAdapter {
@@ -28,24 +33,21 @@ export class OutlookCalendarAdapter extends BaseCalendarAdapter {
       'http://localhost:3000/api/calendar/callback/outlook';
   }
 
-  getAuthUrl(userId: string, state: string): string {
+  getAuthUrl(userId: string, state: string, _options?: CalendarAuthUrlOptions): string {
     const params = new URLSearchParams({
       client_id: this.clientId,
       redirect_uri: this.redirectUri,
       response_type: 'code',
       scope: this._scopes.join(' '),
-      state: `${userId}:${state}`,
+      // The state is the server-minted signed JWT (self-contained: it carries
+      // the user id), so it must travel verbatim to the callback.
+      state,
       prompt: 'consent',
     });
     return `https://login.microsoftonline.com/${this.tenantId}/oauth2/v2.0/authorize?${params.toString()}`;
   }
 
-  async handleCallback(code: string): Promise<{
-    accessToken: string;
-    refreshToken: string;
-    expiresAt: Date;
-    externalUserId: string;
-  }> {
+  async handleCallback(code: string): Promise<CalendarCallbackResult> {
     return this.executeWithRetry(async () => {
       const tokenResponse = await fetch(
         `https://login.microsoftonline.com/${this.tenantId}/oauth2/v2.0/token`,
@@ -78,6 +80,10 @@ export class OutlookCalendarAdapter extends BaseCalendarAdapter {
         refreshToken: tokens.refresh_token,
         expiresAt: new Date(Date.now() + (tokens.expires_in || 3600) * 1000),
         externalUserId: userInfo.mail || userInfo.userPrincipalName,
+        // Microsoft returns granted scopes on the token response.
+        scopes: String(tokens.scope || '')
+          .split(' ')
+          .filter(Boolean),
       };
     }, 'Microsoft OAuth callback');
   }
@@ -316,14 +322,8 @@ export class OutlookCalendarAdapter extends BaseCalendarAdapter {
     throw new Error('Webhook unregistration not implemented yet for Microsoft Graph');
   }
 
-  verifyWebhookSignature(payload: string, signature: string, secret: string): boolean {
-    const crypto = require('crypto');
-    const expectedSignature = crypto
-      .createHmac('sha256', secret)
-      .update(payload)
-      .digest('base64');
-    return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature));
-  }
+  // C8: the misleading verifyWebhookSignature() HMAC helper is removed — no
+  // provider here payload-signs notifications the way that check assumed.
 
   async processWebhookEvent(payload: any, signature: string): Promise<any[]> {
     // Process Microsoft Graph webhook

@@ -4,9 +4,12 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../../common/services/prisma.service';
 import { AiProviderService } from '../../integrations/ai-providers/ai-provider.service';
+import { AiProviderError } from '../../integrations/ai-providers/ai-provider.error';
+import { MetricsService } from '../../metrics/metrics.service';
 import {
   MemoryType,
   MemorySource,
@@ -33,7 +36,10 @@ export class MemoryEngineService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly aiProvider: AiProviderService
+    private readonly aiProvider: AiProviderService,
+    // Optional so the service stays constructible in tests and scripts that do
+    // not care about metrics; a missing MetricsService must not break retrieval.
+    @Optional() private readonly metrics?: MetricsService
   ) {}
 
   async createMemory(userId: string, input: CreateMemoryInput): Promise<MemoryEntry> {
@@ -236,16 +242,7 @@ export class MemoryEngineService {
     }
 
     if (validated.query) {
-      const queryEmbedding = await this.aiProvider.embed(validated.query);
-      const memories = await this.prisma.memory.findMany({ where });
-      const scored = memories.map((m) => ({
-        ...m,
-        score: this.cosineSimilarity((m.embedding as number[]) || [], queryEmbedding),
-      }));
-      return scored
-        .sort((a, b) => b.score - a.score)
-        .slice(validated.offset, validated.offset + validated.limit)
-        .map((m) => this.mapToMemoryEntry(m));
+      return this.searchByQuery(where, validated);
     }
 
     const memories = await this.prisma.memory.findMany({
@@ -256,6 +253,94 @@ export class MemoryEngineService {
     });
 
     return memories.map((m) => this.mapToMemoryEntry(m));
+  }
+
+  /**
+   * Semantic search with an explicit degradation path.
+   *
+   * `AiProviderService.embed()` no longer returns `[]` on failure, so a provider
+   * outage now reaches us as a thrown `AiProviderError`. That matters because of
+   * `cosineSimilarity()`: it returns 0 whenever either vector is empty, so the
+   * old `embed() -> [] -> score everything 0 -> sort` path silently answered a
+   * total embedding outage with "these are your most relevant memories, in
+   * whatever order the sort happened to produce". Both a real score of 0 and an
+   * outage looked like a legitimate ranking.
+   *
+   * On failure we fall back to recency + keyword overlap, which is a genuinely
+   * weaker answer but an honest one, and it is counted as a fallback so the
+   * outage is visible in metrics instead of disguised as low relevance.
+   */
+  private async searchByQuery(
+    where: any,
+    validated: { query?: string; offset: number; limit: number }
+  ): Promise<MemoryEntry[]> {
+    let queryEmbedding: number[];
+    try {
+      queryEmbedding = await this.aiProvider.embed(validated.query as string);
+    } catch (error) {
+      if (!AiProviderError.is(error)) throw error;
+      this.logger.warn(
+        `Embedding unavailable for memory search (${error.kind}); using recency fallback`
+      );
+      this.metrics?.recordMemoryRecencyFallback('search');
+      return this.searchByRecency(where, validated);
+    }
+
+    if (!queryEmbedding.length) {
+      this.metrics?.recordMemoryRecencyFallback('search');
+      return this.searchByRecency(where, validated);
+    }
+
+    const memories = await this.prisma.memory.findMany({ where });
+    const scored = memories.map((m) => ({
+      ...m,
+      score: this.cosineSimilarity((m.embedding as number[]) || [], queryEmbedding),
+    }));
+    return scored
+      .sort((a, b) => b.score - a.score)
+      .slice(validated.offset, validated.offset + validated.limit)
+      .map((m) => this.mapToMemoryEntry(m));
+  }
+
+  /**
+   * Degraded retrieval: newest first, with keyword overlap as a tie-breaker.
+   *
+   * Keyword overlap is deliberately crude (substring hits, no stemming) — it is a
+   * stopgap for the duration of an embedding outage, not a replacement for
+   * semantic search. Sorting purely by recency would surface a 2-year-old
+   * irrelevant memory over yesterday's answer to the same question whenever the
+   * query text matched.
+   */
+  private async searchByRecency(
+    where: any,
+    validated: { query?: string; offset: number; limit: number }
+  ): Promise<MemoryEntry[]> {
+    // `where` already carries the userId scope, so this path cannot widen access
+    // to another user's memories during an embedding outage.
+    const memories = await this.prisma.memory.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const terms = (validated.query ?? '')
+      .toLowerCase()
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter((term) => term.length > 2);
+
+    const scored = memories.map((m) => {
+      const haystack =
+        `${m.content ?? ''} ${m.description ?? ''} ${(m.tags ?? []).join(' ')}`.toLowerCase();
+      const overlaps = terms.reduce(
+        (count, term) => (haystack.includes(term) ? count + 1 : count),
+        0
+      );
+      return { memory: m, overlaps, createdAt: m.createdAt.getTime() };
+    });
+
+    return scored
+      .sort((a, b) => b.overlaps - a.overlaps || b.createdAt - a.createdAt)
+      .slice(validated.offset, validated.offset + validated.limit)
+      .map((m) => this.mapToMemoryEntry(m.memory));
   }
 
   async getMemoryStats(userId: string): Promise<MemoryStats> {
@@ -335,7 +420,8 @@ export class MemoryEngineService {
       severity: c.severity as 'LOW' | 'MEDIUM' | 'HIGH',
       detectedAt: c.detectedAt.toISOString(),
       resolvedAt: c.resolvedAt?.toISOString() || null,
-      resolution: c.resolution as 'KEEP_FIRST' | 'KEEP_SECOND' | 'MERGE' | 'DELETE_BOTH' | 'MANUAL' | undefined,
+      resolution: c.resolution as
+        'KEEP_FIRST' | 'KEEP_SECOND' | 'MERGE' | 'DELETE_BOTH' | 'MANUAL' | undefined,
     }));
   }
 
@@ -479,7 +565,7 @@ export class MemoryEngineService {
     });
 
     for (const existing of existingMemories) {
-      const conflict = await this.detectConflict(newMemory, existing);
+      const conflict = await this.detectConflict(userId, newMemory, existing);
       if (conflict) {
         await this.prisma.memoryConflict
           .create({
@@ -498,14 +584,18 @@ export class MemoryEngineService {
   }
 
   private async detectConflict(
+    userId: string,
     newMem: any,
     existing: any
   ): Promise<{ type: string; description: string; severity: string } | null> {
+    // C6 payload minimization: the comparison only needs the memory text and
+    // tags — never whole rows with ids, user ids, timestamps or metadata.
+    const slice = (m: any) => ({ content: m.content, category: m.category, tags: m.tags ?? [] });
     const prompt = `
 Compare these two memories for conflicts:
 
-Memory 1 (new): ${JSON.stringify(newMem)}
-Memory 2 (existing): ${JSON.stringify(existing)}
+Memory 1 (new): ${JSON.stringify(slice(newMem))}
+Memory 2 (existing): ${JSON.stringify(slice(existing))}
 
 Identify if they conflict. Types:
 - CONTRADICTION: Directly contradictory information
@@ -525,6 +615,9 @@ Return JSON:
       const response = await this.aiProvider.generateStructured(prompt, {
         temperature: 0.2,
         maxTokens: 500,
+        // C6: stored memories can derive from calendar content.
+        userId,
+        includesGoogleData: true,
       });
 
       if (response.hasConflict && response.type) {

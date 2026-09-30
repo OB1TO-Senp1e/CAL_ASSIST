@@ -47,6 +47,8 @@ export function EventDetailDialog({
   onAcceptProposal,
   onRejectProposal,
   busy,
+  canDuplicate = true,
+  canAcceptProposal = true,
 }: {
   event: CalendarEventDTO | null;
   calendars: CalendarDTO[];
@@ -59,6 +61,8 @@ export function EventDetailDialog({
   onAcceptProposal?: (event: CalendarEventDTO) => void;
   onRejectProposal?: (event: CalendarEventDTO) => void;
   busy?: boolean;
+  canDuplicate?: boolean;
+  canAcceptProposal?: boolean;
 }) {
   const calendar = useMemo(
     () => calendars.find((c) => c.id === event?.calendarId) ?? null,
@@ -190,7 +194,7 @@ export function EventDetailDialog({
         <div className="flex flex-wrap items-center gap-1.5">
           {isAi ? (
             <>
-              <Button size="sm" disabled={busy} onClick={() => onAcceptProposal?.(event)}>
+              <Button size="sm" disabled={busy || !canAcceptProposal} title={!canAcceptProposal ? 'The backend cannot persist an AI proposal as a user event yet.' : undefined} onClick={() => onAcceptProposal?.(event)}>
                 <Check />
                 Accept
               </Button>
@@ -215,7 +219,7 @@ export function EventDetailDialog({
                   Confirm
                 </Button>
               )}
-              <Button variant="ghost" size="sm" disabled={busy} onClick={() => onDuplicate?.(event)}>
+              <Button variant="ghost" size="sm" disabled={busy || !canDuplicate} title={!canDuplicate ? 'Event creation is unavailable until the backend schema is corrected.' : undefined} onClick={() => onDuplicate?.(event)}>
                 <Copy />
                 Duplicate
               </Button>

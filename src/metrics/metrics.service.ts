@@ -1,6 +1,17 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { Counter, Gauge, Histogram, Registry, collectDefaultMetrics } from 'prom-client';
 
+/**
+ * Structurally matches `AiUsage`. Declared locally so the metrics layer keeps no
+ * compile-time dependency on the AI provider modules (which in turn optionally
+ * depend on this service); a structural import here would be a circular edge.
+ */
+export interface AiTokenCounts {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
+
 @Injectable()
 export class MetricsService implements OnModuleInit {
   private readonly registry: Registry;
@@ -11,6 +22,12 @@ export class MetricsService implements OnModuleInit {
   readonly scheduledTasks: Gauge;
   readonly aiRequestsTotal: Counter;
   readonly aiRequestDuration: Histogram;
+  readonly aiErrorsTotal: Counter;
+  readonly aiRetriesTotal: Counter;
+  readonly aiTokensTotal: Counter;
+  readonly aiFallbacksTotal: Counter;
+  readonly aiCircuitState: Gauge;
+  readonly throttlerRedisFallbacksTotal: Counter;
 
   constructor() {
     this.registry = new Registry();
@@ -58,6 +75,49 @@ export class MetricsService implements OnModuleInit {
       buckets: [0.1, 0.5, 1, 2, 5, 10, 30],
       registers: [this.registry],
     });
+
+    // --- Stage 5a: provider transport health ---
+
+    this.aiErrorsTotal = new Counter({
+      name: 'calassist_ai_errors_total',
+      help: 'AI provider failures by typed error kind',
+      labelNames: ['provider', 'operation', 'kind'],
+      registers: [this.registry],
+    });
+
+    this.aiRetriesTotal = new Counter({
+      name: 'calassist_ai_retries_total',
+      help: 'Extra HTTP attempts consumed by the provider retry policy',
+      labelNames: ['provider', 'operation'],
+      registers: [this.registry],
+    });
+
+    this.aiTokensTotal = new Counter({
+      name: 'calassist_ai_tokens_total',
+      help: 'LLM token usage reported by providers',
+      labelNames: ['provider', 'model', 'operation', 'direction'],
+      registers: [this.registry],
+    });
+
+    this.aiFallbacksTotal = new Counter({
+      name: 'calassist_ai_fallbacks_total',
+      help: 'Requests answered by a non-primary provider or by local fallback logic',
+      labelNames: ['scope', 'operation', 'reason'],
+      registers: [this.registry],
+    });
+
+    this.aiCircuitState = new Gauge({
+      name: 'calassist_ai_circuit_state',
+      help: 'Provider circuit breaker state (0=closed, 1=half_open, 2=open)',
+      labelNames: ['provider'],
+      registers: [this.registry],
+    });
+
+    this.throttlerRedisFallbacksTotal = new Counter({
+      name: 'calassist_throttler_redis_fallback_total',
+      help: 'Rate-limit checks served by the per-process fallback after Redis errors',
+      registers: [this.registry],
+    });
   }
 
   onModuleInit() {
@@ -87,6 +147,62 @@ export class MetricsService implements OnModuleInit {
 
   incrementAiRequests(provider: string, operation: string, status: 'success' | 'error'): void {
     this.aiRequestsTotal.inc({ provider, operation, status });
+  }
+
+  /** Typed failure taxonomy: `AiProviderErrorKind`, kept as a plain string here. */
+  recordAiError(provider: string, operation: string, kind: string): void {
+    this.aiErrorsTotal.inc({ provider, operation, kind });
+  }
+
+  recordAiTimeout(provider: string, operation: string): void {
+    this.aiErrorsTotal.inc({ provider, operation, kind: 'timeout' });
+  }
+
+  recordAiRetries(provider: string, operation: string, extraAttempts: number): void {
+    this.aiRetriesTotal.inc({ provider, operation }, Math.max(1, extraAttempts));
+  }
+
+  recordAiCircuitRejected(provider: string, operation: string): void {
+    this.aiErrorsTotal.inc({ provider, operation, kind: 'circuit_open' });
+  }
+
+  recordAiFallbackExhausted(operation: string): void {
+    this.aiFallbacksTotal.inc({ scope: 'provider-chain', operation, reason: 'chain_exhausted' });
+  }
+
+  /** A request the primary could not serve and the secondary did. */
+  recordFallbackProviderSwitch(operation: string, from: string, to: string): void {
+    this.aiFallbacksTotal.inc({
+      scope: 'provider-chain',
+      operation,
+      reason: `${from}->${to}`,
+    });
+  }
+
+  /** When memory retrieval answers without vectors (embedding outage path). */
+  recordMemoryRecencyFallback(operation: string): void {
+    this.aiFallbacksTotal.inc({ scope: 'memory-engine', operation, reason: 'no_embeddings' });
+  }
+
+  /** When the orchestrator answers from the local mapper because the LLM failed. */
+  recordLocalFallback(operation: string, reason: string): void {
+    this.aiFallbacksTotal.inc({ scope: 'orchestrator', operation, reason });
+  }
+
+  recordAiTokens(provider: string, model: string, operation: string, usage: AiTokenCounts): void {
+    const labels = { provider, model, operation };
+    this.aiTokensTotal.inc({ ...labels, direction: 'prompt' }, usage.promptTokens);
+    this.aiTokensTotal.inc({ ...labels, direction: 'completion' }, usage.completionTokens);
+  }
+
+  /** Gauge mirror of breaker state so an outage is visible without log access. */
+  setAiCircuitState(provider: string, state: 'closed' | 'half_open' | 'open'): void {
+    const value = state === 'closed' ? 0 : state === 'half_open' ? 1 : 2;
+    this.aiCircuitState.set({ provider }, value);
+  }
+
+  recordThrottlerRedisFallback(): void {
+    this.throttlerRedisFallbacksTotal.inc();
   }
 
   observeAiDuration(provider: string, operation: string, durationSeconds: number): void {

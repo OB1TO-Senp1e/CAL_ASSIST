@@ -1,5 +1,6 @@
 # Dependencies
 node_modules
+client/node_modules
 .pnp
 .pnp.js
 
@@ -44,10 +45,6 @@ docker-compose.*.yml
 # Documentation
 *.md
 !README.md
-
-# Prisma
-prisma/migrations/*
-!prisma/migrations/.gitkeep
 
 # Misc
 *.tgz

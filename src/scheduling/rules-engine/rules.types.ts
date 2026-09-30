@@ -141,6 +141,36 @@ export const UpdateRuleInputSchema = z.object({
 
 export type UpdateRuleInput = z.infer<typeof UpdateRuleInputSchema>;
 
+/**
+ * Stage 4k runtime contracts for the /api/rules controller. These zod types
+ * disappear at compile time, so without a ZodValidationPipe the routes accept
+ * any body shape at runtime.
+ */
+export const UpdateRuleBodySchema = UpdateRuleInputSchema.omit({ id: true });
+export type UpdateRuleBody = z.infer<typeof UpdateRuleBodySchema>;
+
+export const ResolveConflictInputSchema = z.object({
+  resolution: z.enum([
+    'DISABLE_FIRST',
+    'DISABLE_SECOND',
+    'ADJUST_PRIORITY',
+    'MERGE',
+    'MANUAL',
+    'KEEP_BOTH',
+  ]),
+});
+export type ResolveConflictInput = z.infer<typeof ResolveConflictInputSchema>;
+
+export const EnforceRulesInputSchema = z.object({
+  input: z.record(z.any()),
+  trigger: RuleTriggerSchema,
+});
+export type EnforceRulesInput = z.infer<typeof EnforceRulesInputSchema>;
+
+export const NaturalLanguageTextSchema = z.object({
+  text: z.string().min(1).max(1000),
+});
+
 export const RuleConflictSchema = z.object({
   id: z.string(),
   ruleId1: z.string(),

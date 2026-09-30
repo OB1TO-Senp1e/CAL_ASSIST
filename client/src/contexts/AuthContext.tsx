@@ -5,8 +5,8 @@ import type { AuthUser } from '@/services/types';
 /**
  * Auth state for the shell.
  *
- * Stage 2: backed by the mock layer (`services/auth.ts`) — real screens, no real
- * backend. Stage 3 flips `USE_MOCK` and the call sites below stay identical.
+ * Stage 3a: backed by the real auth/profile endpoints by default. Offline
+ * previews can opt into the auth mock independently of other screen groups.
  *
  * Deliberately does NOT navigate. Route protection is a rendering concern, so
  * `RequireAuth` owns it — that keeps the "return to where you were" redirect
@@ -20,6 +20,7 @@ interface AuthContextValue {
   /** True while the initial session restore is in flight. */
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  loginWithToken: (token: string) => Promise<void>;
   register: (email: string, password: string, name?: string) => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -62,6 +63,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setStatus('authenticated');
   }, []);
 
+  const loginWithToken = useCallback(async (token: string) => {
+    localStorage.setItem('token', token);
+    const next = await authService.me();
+    if (!next) throw new Error('Google login session could not be restored.');
+    setUser(next);
+    setStatus('authenticated');
+  }, []);
+
   const register = useCallback(async (email: string, password: string, name?: string) => {
     const next = await authService.register(email, password, name);
     setUser(next);
@@ -75,8 +84,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<AuthContextValue>(
-    () => ({ user, status, loading: status === 'loading', login, register, logout }),
-    [user, status, login, register, logout],
+    () => ({ user, status, loading: status === 'loading', login, loginWithToken, register, logout }),
+    [user, status, login, loginWithToken, register, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

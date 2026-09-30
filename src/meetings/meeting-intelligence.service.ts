@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../common/services/prisma.service';
 import { AiProviderService } from '../integrations/ai-providers/ai-provider.service';
+import { MeetingArtifactStore } from './meeting-artifact.store';
 import {
   MeetingPreparationInput,
   MeetingPreparationResult,
@@ -25,42 +26,38 @@ export class MeetingIntelligenceService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly aiProvider: AiProviderService,
+    private readonly artifacts: MeetingArtifactStore
   ) {}
 
   async generatePreMeetingPreparation(
     userId: string,
-    input: MeetingPreparationInput,
+    input: MeetingPreparationInput
   ): Promise<MeetingPreparationResult> {
-    const [
-      checklist,
-      previousContext,
-      outstandingCommitments,
-      relevantTasks,
-      suggestedAgenda,
-    ] = await Promise.all([
-      this.generateChecklist(userId, input),
-      this.getPreviousContext(userId, input),
-      this.getOutstandingCommitments(userId, input),
-      this.getRelevantTasks(userId, input),
-      this.generateSuggestedAgenda(userId, input),
-    ]);
+    const [checklist, previousContext, outstandingCommitments, relevantTasks, suggestedAgenda] =
+      await Promise.all([
+        this.generateChecklist(userId, input),
+        this.getPreviousContext(userId, input),
+        this.getOutstandingCommitments(userId, input),
+        this.getRelevantTasks(userId, input),
+        this.generateSuggestedAgenda(userId, input),
+      ]);
 
     const summary = this.generatePreparationSummary(
       checklist,
       previousContext,
       outstandingCommitments,
       relevantTasks,
-      suggestedAgenda,
+      suggestedAgenda
     );
 
     const confidence = this.calculatePreparationConfidence(
       checklist,
       previousContext,
       outstandingCommitments,
-      relevantTasks,
+      relevantTasks
     );
 
-    return {
+    const result: MeetingPreparationResult = {
       meetingId: input.meetingId,
       checklist,
       previousContext,
@@ -71,11 +68,16 @@ export class MeetingIntelligenceService {
       confidence,
       summary,
     };
+
+    // Persist so GET /api/meetings/:id/preparation can return it later.
+    await this.artifacts.savePreparation(userId, input.meetingId, input.meetingTitle, result);
+
+    return result;
   }
 
   private async generateChecklist(
     userId: string,
-    input: MeetingPreparationInput,
+    input: MeetingPreparationInput
   ): Promise<PreparationChecklistItem[]> {
     const items: PreparationChecklistItem[] = [];
 
@@ -103,7 +105,7 @@ export class MeetingIntelligenceService {
     }
 
     // Decision preparation
-    if (input.agendaItems?.some(a => a.title.toLowerCase().includes('decision'))) {
+    if (input.agendaItems?.some((a) => a.title.toLowerCase().includes('decision'))) {
       items.push({
         id: `check_${Date.now()}_3`,
         title: 'Prepare decision framework',
@@ -158,25 +160,28 @@ export class MeetingIntelligenceService {
 
   private async getPreviousContext(
     userId: string,
-    input: MeetingPreparationInput,
+    input: MeetingPreparationInput
   ): Promise<PreviousContext[]> {
     // Get previous meetings with same attendees or same project
-    const attendeeEmails = input.attendees?.map(a => a.email) || [];
-    
+    const attendeeEmails = input.attendees?.map((a) => a.email) || [];
+
+    // The Prisma relation is `eventParticipants`, not `participants`, and Event
+    // has no `projectId` column. The previous shape threw
+    // "Unknown argument `participants`", making every POST /api/meetings/prepare 500.
     const previousMeetings = await this.prisma.event.findMany({
       where: {
         userId,
+        deletedAt: null,
         endDate: { lt: new Date(input.startTime) },
         ...(attendeeEmails.length > 0 && {
-          participants: { some: { email: { in: attendeeEmails } } },
+          eventParticipants: { some: { email: { in: attendeeEmails } } },
         }),
-        ...(input.relatedProjectId && { projectId: input.relatedProjectId }),
       },
       orderBy: { endDate: 'desc' },
       take: 5,
     });
 
-    return previousMeetings.map(m => ({
+    return previousMeetings.map((m) => ({
       meetingId: m.id,
       meetingTitle: m.title,
       date: m.endDate.toISOString(),
@@ -190,7 +195,7 @@ export class MeetingIntelligenceService {
 
   private async getOutstandingCommitments(
     userId: string,
-    input: MeetingPreparationInput,
+    input: MeetingPreparationInput
   ): Promise<OutstandingCommitment[]> {
     const commitments = await this.prisma.commitment.findMany({
       where: {
@@ -201,11 +206,15 @@ export class MeetingIntelligenceService {
       orderBy: { deadline: 'asc' },
     });
 
-    return commitments.map(c => ({
+    return commitments.map((c) => ({
       commitmentId: c.id,
       object: c.title,
+      // `person` is declared on OutstandingCommitment but could never be filled
+      // while the Commitment row had nowhere to keep it.
+      person: c.person ?? undefined,
       deadline: c.deadline.toISOString(),
-      status: (c.deadline < new Date() ? 'OVERDUE' : c.status) as 'PENDING' | 'IN_PROGRESS' | 'OVERDUE',
+      status: (c.deadline < new Date() ? 'OVERDUE' : c.status) as
+        'PENDING' | 'IN_PROGRESS' | 'OVERDUE',
       riskLevel: c.deadline < new Date() ? 'CRITICAL' : 'MEDIUM',
       relatedToMeeting: false,
     }));
@@ -213,7 +222,7 @@ export class MeetingIntelligenceService {
 
   private async getRelevantTasks(
     userId: string,
-    input: MeetingPreparationInput,
+    input: MeetingPreparationInput
   ): Promise<RelevantTask[]> {
     const where: any = {
       userId,
@@ -234,7 +243,7 @@ export class MeetingIntelligenceService {
       take: 10,
     });
 
-    return tasks.map(t => ({
+    return tasks.map((t) => ({
       taskId: t.id,
       title: t.title,
       status: t.status as 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'BLOCKED',
@@ -249,7 +258,7 @@ export class MeetingIntelligenceService {
 
   private async generateSuggestedAgenda(
     userId: string,
-    input: MeetingPreparationInput,
+    input: MeetingPreparationInput
   ): Promise<SuggestedAgendaItem[]> {
     const items: SuggestedAgendaItem[] = [];
 
@@ -273,44 +282,152 @@ export class MeetingIntelligenceService {
     switch (input.meetingType) {
       case 'TEAM_SYNC':
         items.push(
-          { id: 'sugg_1', title: 'Team updates', description: 'Quick status from each member', estimatedMinutes: 15, type: 'UPDATE', priority: 'HIGH' },
-          { id: 'sugg_2', title: 'Blockers & help needed', description: 'Identify where team needs support', estimatedMinutes: 10, type: 'DISCUSSION', priority: 'HIGH' },
-          { id: 'sugg_3', title: 'Priorities for next week', description: 'Align on top priorities', estimatedMinutes: 10, type: 'PLANNING', priority: 'MEDIUM' },
+          {
+            id: 'sugg_1',
+            title: 'Team updates',
+            description: 'Quick status from each member',
+            estimatedMinutes: 15,
+            type: 'UPDATE',
+            priority: 'HIGH',
+          },
+          {
+            id: 'sugg_2',
+            title: 'Blockers & help needed',
+            description: 'Identify where team needs support',
+            estimatedMinutes: 10,
+            type: 'DISCUSSION',
+            priority: 'HIGH',
+          },
+          {
+            id: 'sugg_3',
+            title: 'Priorities for next week',
+            description: 'Align on top priorities',
+            estimatedMinutes: 10,
+            type: 'PLANNING',
+            priority: 'MEDIUM',
+          }
         );
         break;
       case 'ONE_ON_ONE':
         items.push(
-          { id: 'sugg_1', title: 'Check-in', description: 'How are things going?', estimatedMinutes: 10, type: 'UPDATE', priority: 'HIGH' },
-          { id: 'sugg_2', title: 'Goals & growth', description: 'Discuss progress and development', estimatedMinutes: 15, type: 'DISCUSSION', priority: 'MEDIUM' },
-          { id: 'sugg_3', title: 'Feedback & support', description: 'Two-way feedback', estimatedMinutes: 10, type: 'DISCUSSION', priority: 'MEDIUM' },
+          {
+            id: 'sugg_1',
+            title: 'Check-in',
+            description: 'How are things going?',
+            estimatedMinutes: 10,
+            type: 'UPDATE',
+            priority: 'HIGH',
+          },
+          {
+            id: 'sugg_2',
+            title: 'Goals & growth',
+            description: 'Discuss progress and development',
+            estimatedMinutes: 15,
+            type: 'DISCUSSION',
+            priority: 'MEDIUM',
+          },
+          {
+            id: 'sugg_3',
+            title: 'Feedback & support',
+            description: 'Two-way feedback',
+            estimatedMinutes: 10,
+            type: 'DISCUSSION',
+            priority: 'MEDIUM',
+          }
         );
         break;
       case 'CLIENT_MEETING':
         items.push(
-          { id: 'sugg_1', title: 'Project status update', description: 'Current progress and milestones', estimatedMinutes: 15, type: 'UPDATE', priority: 'HIGH' },
-          { id: 'sugg_2', title: 'Upcoming deliverables', description: 'Review timeline and commitments', estimatedMinutes: 10, type: 'REVIEW', priority: 'HIGH' },
-          { id: 'sugg_3', title: 'Next steps & decisions', description: 'Agree on action items', estimatedMinutes: 15, type: 'DECISION', priority: 'HIGH' },
+          {
+            id: 'sugg_1',
+            title: 'Project status update',
+            description: 'Current progress and milestones',
+            estimatedMinutes: 15,
+            type: 'UPDATE',
+            priority: 'HIGH',
+          },
+          {
+            id: 'sugg_2',
+            title: 'Upcoming deliverables',
+            description: 'Review timeline and commitments',
+            estimatedMinutes: 10,
+            type: 'REVIEW',
+            priority: 'HIGH',
+          },
+          {
+            id: 'sugg_3',
+            title: 'Next steps & decisions',
+            description: 'Agree on action items',
+            estimatedMinutes: 15,
+            type: 'DECISION',
+            priority: 'HIGH',
+          }
         );
         break;
       case 'RETROSPECTIVE':
         items.push(
-          { id: 'sugg_1', title: 'What went well', description: 'Celebrate successes', estimatedMinutes: 15, type: 'RETROSPECTIVE', priority: 'HIGH' },
-          { id: 'sugg_2', title: 'What could improve', description: 'Identify areas for improvement', estimatedMinutes: 20, type: 'RETROSPECTIVE', priority: 'HIGH' },
-          { id: 'sugg_3', title: 'Action items', description: 'Commit to specific improvements', estimatedMinutes: 15, type: 'PLANNING', priority: 'HIGH' },
+          {
+            id: 'sugg_1',
+            title: 'What went well',
+            description: 'Celebrate successes',
+            estimatedMinutes: 15,
+            type: 'RETROSPECTIVE',
+            priority: 'HIGH',
+          },
+          {
+            id: 'sugg_2',
+            title: 'What could improve',
+            description: 'Identify areas for improvement',
+            estimatedMinutes: 20,
+            type: 'RETROSPECTIVE',
+            priority: 'HIGH',
+          },
+          {
+            id: 'sugg_3',
+            title: 'Action items',
+            description: 'Commit to specific improvements',
+            estimatedMinutes: 15,
+            type: 'PLANNING',
+            priority: 'HIGH',
+          }
         );
         break;
       case 'PLANNING':
         items.push(
-          { id: 'sugg_1', title: 'Review objectives', description: 'Confirm goals and constraints', estimatedMinutes: 10, type: 'REVIEW', priority: 'HIGH' },
-          { id: 'sugg_2', title: 'Break down work', description: 'Decompose into tasks', estimatedMinutes: 20, type: 'PLANNING', priority: 'HIGH' },
-          { id: 'sugg_3', title: 'Assign & schedule', description: 'Owners and timelines', estimatedMinutes: 15, type: 'DECISION', priority: 'HIGH' },
+          {
+            id: 'sugg_1',
+            title: 'Review objectives',
+            description: 'Confirm goals and constraints',
+            estimatedMinutes: 10,
+            type: 'REVIEW',
+            priority: 'HIGH',
+          },
+          {
+            id: 'sugg_2',
+            title: 'Break down work',
+            description: 'Decompose into tasks',
+            estimatedMinutes: 20,
+            type: 'PLANNING',
+            priority: 'HIGH',
+          },
+          {
+            id: 'sugg_3',
+            title: 'Assign & schedule',
+            description: 'Owners and timelines',
+            estimatedMinutes: 15,
+            type: 'DECISION',
+            priority: 'HIGH',
+          }
         );
         break;
     }
 
     // Add outstanding commitments discussion if any
     const commitments = await this.prisma.commitment.findMany({
-      where: { userId: (await this.getUserIdFromMeeting(input.meetingId)) || '', status: { in: ['PENDING', 'IN_PROGRESS'] } },
+      where: {
+        userId: (await this.getUserIdFromMeeting(input.meetingId)) || '',
+        status: { in: ['PENDING', 'IN_PROGRESS'] },
+      },
       take: 3,
     });
 
@@ -337,7 +454,10 @@ export class MeetingIntelligenceService {
   }
 
   private async getUserIdFromMeeting(meetingId: string): Promise<string | null> {
-    const event = await this.prisma.event.findUnique({ where: { id: meetingId }, select: { userId: true } });
+    const event = await this.prisma.event.findUnique({
+      where: { id: meetingId },
+      select: { userId: true },
+    });
     return event?.userId || null;
   }
 
@@ -346,11 +466,11 @@ export class MeetingIntelligenceService {
     previousContext: PreviousContext[],
     outstandingCommitments: OutstandingCommitment[],
     relevantTasks: RelevantTask[],
-    suggestedAgenda: SuggestedAgendaItem[],
+    suggestedAgenda: SuggestedAgendaItem[]
   ): string {
-    const highPriorityChecks = checklist.filter(c => c.priority === 'HIGH').length;
-    const overdueCommitments = outstandingCommitments.filter(c => c.status === 'OVERDUE').length;
-    const highPriorityTasks = relevantTasks.filter(t => t.priority >= 8).length;
+    const highPriorityChecks = checklist.filter((c) => c.priority === 'HIGH').length;
+    const overdueCommitments = outstandingCommitments.filter((c) => c.status === 'OVERDUE').length;
+    const highPriorityTasks = relevantTasks.filter((t) => t.priority >= 8).length;
 
     return `Meeting preparation complete: ${checklist.length} checklist items (${highPriorityChecks} high priority), ${previousContext.length} previous meetings for context, ${outstandingCommitments.length} outstanding commitments (${overdueCommitments} overdue), ${relevantTasks.length} relevant tasks (${highPriorityTasks} high priority), ${suggestedAgenda.length} suggested agenda items.`;
   }
@@ -359,7 +479,7 @@ export class MeetingIntelligenceService {
     checklist: PreparationChecklistItem[],
     previousContext: PreviousContext[],
     outstandingCommitments: OutstandingCommitment[],
-    relevantTasks: RelevantTask[],
+    relevantTasks: RelevantTask[]
   ): number {
     let confidence = 0.5;
     if (checklist.length > 0) confidence += 0.1;
@@ -371,9 +491,9 @@ export class MeetingIntelligenceService {
 
   async processPostMeeting(
     userId: string,
-    input: MeetingTranscriptInput,
+    input: MeetingTranscriptInput
   ): Promise<PostMeetingResult> {
-    const extracted = await this.extractFromMeeting(input);
+    const extracted = await this.extractFromMeeting(userId, input);
 
     const actionItems = await this.processActionItems(userId, extracted.actionItems);
     const commitments = await this.processCommitments(userId, extracted.commitments);
@@ -384,17 +504,12 @@ export class MeetingIntelligenceService {
       actionItems,
       commitments,
       deadlines,
-      followUps,
+      followUps
     );
 
-    const summary = this.generatePostMeetingSummary(
-      actionItems,
-      commitments,
-      deadlines,
-      followUps,
-    );
+    const summary = this.generatePostMeetingSummary(actionItems, commitments, deadlines, followUps);
 
-    return {
+    const result: PostMeetingResult = {
       meetingId: input.meetingId,
       actionItems,
       commitments,
@@ -408,9 +523,17 @@ export class MeetingIntelligenceService {
       confidence: this.calculatePostMeetingConfidence(extracted),
       requiresConfirmation,
     };
+
+    // Persist so the per-meeting GET routes can serve the extraction later.
+    await this.artifacts.savePostMeeting(userId, input.meetingId, input.title, result);
+
+    return result;
   }
 
-  private async extractFromMeeting(input: MeetingTranscriptInput): Promise<{
+  private async extractFromMeeting(
+    userId: string,
+    input: MeetingTranscriptInput
+  ): Promise<{
     actionItems: ExtractedActionItem[];
     commitments: ExtractedCommitment[];
     deadlines: ExtractedDeadline[];
@@ -434,7 +557,7 @@ Extract structured information from this meeting:
 
 Meeting: ${input.title}
 Duration: ${input.startTime} to ${input.endTime}
-Attendees: ${input.attendees?.map(a => a.name || a.email).join(', ') || 'Unknown'}
+Attendees: ${input.attendees?.map((a, i) => a.name || `Attendee ${i + 1}`).join(', ') || 'Unknown'}
 Content: ${content || 'No transcript/notes provided'}
 
 ${input.extractedContent ? `Pre-extracted content: ${JSON.stringify(input.extractedContent)}` : ''}
@@ -458,6 +581,9 @@ Only extract information explicitly mentioned. Use confidence < 0.7 for uncertai
       const response = await this.aiProvider.generateStructured(prompt, {
         temperature: 0.2,
         maxTokens: 3000,
+        // C6: meeting data comes from the connected Google calendar.
+        userId,
+        includesGoogleData: true,
       });
 
       return {
@@ -486,9 +612,9 @@ Only extract information explicitly mentioned. Use confidence < 0.7 for uncertai
 
   private async processActionItems(
     userId: string,
-    items: ExtractedActionItem[],
+    items: ExtractedActionItem[]
   ): Promise<ExtractedActionItem[]> {
-    return items.map(item => ({
+    return items.map((item) => ({
       ...item,
       id: item.id || `action_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       source: 'TRANSCRIPT',
@@ -498,9 +624,9 @@ Only extract information explicitly mentioned. Use confidence < 0.7 for uncertai
 
   private async processCommitments(
     userId: string,
-    items: ExtractedCommitment[],
+    items: ExtractedCommitment[]
   ): Promise<ExtractedCommitment[]> {
-    return items.map(item => ({
+    return items.map((item) => ({
       ...item,
       id: item.id || `commit_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       source: 'TRANSCRIPT',
@@ -510,9 +636,9 @@ Only extract information explicitly mentioned. Use confidence < 0.7 for uncertai
 
   private async processDeadlines(
     userId: string,
-    items: ExtractedDeadline[],
+    items: ExtractedDeadline[]
   ): Promise<ExtractedDeadline[]> {
-    return items.map(item => ({
+    return items.map((item) => ({
       ...item,
       id: item.id || `deadline_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       source: 'TRANSCRIPT',
@@ -522,9 +648,9 @@ Only extract information explicitly mentioned. Use confidence < 0.7 for uncertai
 
   private async processFollowUps(
     userId: string,
-    items: ExtractedFollowUp[],
+    items: ExtractedFollowUp[]
   ): Promise<ExtractedFollowUp[]> {
-    return items.map(item => ({
+    return items.map((item) => ({
       ...item,
       id: item.id || `followup_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       source: 'TRANSCRIPT',
@@ -536,13 +662,14 @@ Only extract information explicitly mentioned. Use confidence < 0.7 for uncertai
     actionItems: ExtractedActionItem[],
     commitments: ExtractedCommitment[],
     deadlines: ExtractedDeadline[],
-    followUps: ExtractedFollowUp[],
+    followUps: ExtractedFollowUp[]
   ): string[] {
     const requires: string[] = [];
 
-    if (commitments.length > 0) requires.push(`${commitments.length} commitment(s) require confirmation`);
+    if (commitments.length > 0)
+      requires.push(`${commitments.length} commitment(s) require confirmation`);
     if (deadlines.length > 0) requires.push(`${deadlines.length} deadline(s) require confirmation`);
-    if (actionItems.some(a => a.priority === 'HIGH' && a.confidence < 0.8)) {
+    if (actionItems.some((a) => a.priority === 'HIGH' && a.confidence < 0.8)) {
       requires.push('High-priority action items with low confidence need review');
     }
 
@@ -553,7 +680,7 @@ Only extract information explicitly mentioned. Use confidence < 0.7 for uncertai
     actionItems: ExtractedActionItem[],
     commitments: ExtractedCommitment[],
     deadlines: ExtractedDeadline[],
-    followUps: ExtractedFollowUp[],
+    followUps: ExtractedFollowUp[]
   ): string {
     return `Meeting processed: ${actionItems.length} action item(s), ${commitments.length} commitment(s), ${deadlines.length} deadline(s), ${followUps.length} follow-up(s) extracted.`;
   }

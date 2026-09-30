@@ -1,4 +1,15 @@
-import { Controller, Get, Post, Put, Delete, Body, UseGuards, Request, Param, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Body,
+  UseGuards,
+  Request,
+  Param,
+  Query,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CommitmentEngineService } from './commitment-engine.service';
 import {
@@ -52,7 +63,7 @@ export class CommitmentEngineController {
   async updateCommitment(
     @Request() req,
     @Param('id') id: string,
-    @Body() body: Omit<UpdateCommitmentInput, 'id'>,
+    @Body() body: Omit<UpdateCommitmentInput, 'id'>
   ) {
     return this.commitmentEngineService.updateCommitment(req.user.id, { ...body, id });
   }

@@ -49,7 +49,10 @@ export class CalendarSyncService {
       );
       calendarsSynced = calendarsResult.count;
 
-      // Sync events for each calendar
+      // Sync events for each calendar (DB rows — see syncCalendarsList,
+      // Stage 4i: the old code fed raw provider objects into
+      // syncCalendarEvents, so calendar.id was an external id used as a FK,
+      // and calendar.syncToken never existed).
       for (const calendar of calendarsResult.calendars) {
         const eventsResult = await this.syncCalendarEvents(
           userId,
@@ -63,13 +66,12 @@ export class CalendarSyncService {
         eventsDeleted += eventsResult.deleted;
       }
 
-      // Update sync token
-      if (calendarsResult.nextSyncToken) {
-        await this.prisma.calendarConnection.update({
-          where: { id: connection.id },
-          data: { syncToken: calendarsResult.nextSyncToken, lastSync: new Date() },
-        });
-      }
+      // Delta state lives per Calendar row (adapter.listEvents returns one
+      // nextSyncToken per calendar); the connection only tracks sync health.
+      await this.prisma.calendarConnection.update({
+        where: { id: connection.id },
+        data: { lastSync: new Date() },
+      });
 
       await this.prisma.auditLog.create({
         data: {
@@ -106,11 +108,10 @@ export class CalendarSyncService {
     connection: any,
     adapter: any,
     accessToken: string
-  ): Promise<{ count: number; calendars: any[]; nextSyncToken?: string }> {
+  ): Promise<{ count: number; calendars: any[] }> {
     // For local/Google/Outlook, we need to fetch the calendar list
     // This is a simplified implementation
     let calendars: any[] = [];
-    let nextSyncToken: string | undefined;
 
     const provider = connection.provider;
 
@@ -132,38 +133,46 @@ export class CalendarSyncService {
       calendars = [{ id: 'local_primary', name: 'Local Calendar', isPrimary: true }];
     }
 
+    const rows: any[] = [];
     for (const cal of calendars) {
-      await this.prisma.calendar.upsert({
+      const externalId = String(cal.id ?? cal.externalId ?? '');
+      // Local calendars have no stored external id; keep them stable so the
+      // composite upsert key does not collide across re-syncs.
+      const row = await this.prisma.calendar.upsert({
         where: {
           userId_connectionId_externalId: {
             userId,
             connectionId: connection.id,
-            externalId: cal.id,
+            externalId,
           },
         },
         update: {
           name: cal.name || cal.summary || 'Calendar',
           description: cal.description,
           color: cal.backgroundColor || cal.color || '#3b82f6',
-          isPrimary: cal.isPrimary || cal.id === 'local_primary',
+          isPrimary: cal.isPrimary || externalId === 'local_primary',
           lastSynced: new Date(),
         },
         create: {
           userId,
           connectionId: connection.id,
-          externalId: cal.id,
+          externalId,
           name: cal.name || cal.summary || 'Calendar',
           description: cal.description,
           color: cal.backgroundColor || cal.color || '#3b82f6',
-          isPrimary: cal.isPrimary || cal.id === 'local_primary',
+          isPrimary: cal.isPrimary || externalId === 'local_primary',
           provider: connection.provider as any,
           timezone: cal.timeZone || 'UTC',
           lastSynced: new Date(),
         },
+        select: { id: true, syncToken: true },
       });
+      rows.push(row);
     }
 
-    return { count: calendars.length, calendars, nextSyncToken };
+    // Return the DB rows: syncCalendarEvents needs the real Calendar.id (FK)
+    // and the persisted per-calendar syncToken for delta sync.
+    return { count: rows.length, calendars: rows };
   }
 
   private async syncCalendarEvents(
@@ -243,6 +252,16 @@ export class CalendarSyncService {
     // Handle deleted events (simplified - full implementation would use sync tokens properly)
     // For now, we mark events as deleted if they're not in the sync response but existed before
     // This is a basic implementation - production would use proper delta sync
+
+    // Persist the delta cursor for this calendar so the next sync starts where
+    // this one ended (Stage 4i — previously nextSyncToken was discarded and
+    // every sync was a full sync).
+    if (nextSyncToken) {
+      await this.prisma.calendar.update({
+        where: { id: calendar.id },
+        data: { syncToken: nextSyncToken },
+      });
+    }
 
     return { created, updated, deleted };
   }

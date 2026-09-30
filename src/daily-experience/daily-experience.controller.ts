@@ -8,10 +8,7 @@ export class DailyExperienceController {
   constructor(private readonly dailyExperienceService: DailyExperienceService) {}
 
   @Get('morning')
-  async getMorningBriefing(
-    @Request() req,
-    @Query('date') date?: string,
-  ) {
+  async getMorningBriefing(@Request() req, @Query('date') date?: string) {
     const dateObj = date ? new Date(date) : new Date();
     return this.dailyExperienceService.generateMorningBriefing(req.user.id, dateObj, {
       timezone: req.user.timezone || 'UTC',
@@ -25,10 +22,7 @@ export class DailyExperienceController {
   }
 
   @Get('evening')
-  async getEveningWrapup(
-    @Request() req,
-    @Query('date') date?: string,
-  ) {
+  async getEveningWrapup(@Request() req, @Query('date') date?: string) {
     const dateObj = date ? new Date(date) : new Date();
     return this.dailyExperienceService.generateEveningWrapup(req.user.id, dateObj, {
       timezone: req.user.timezone || 'UTC',
@@ -36,10 +30,7 @@ export class DailyExperienceController {
   }
 
   @Get('briefing')
-  async getFullBriefing(
-    @Request() req,
-    @Query('date') date?: string,
-  ) {
+  async getFullBriefing(@Request() req, @Query('date') date?: string) {
     const dateObj = date ? new Date(date) : new Date();
     const [morning, current, evening] = await Promise.all([
       this.dailyExperienceService.generateMorningBriefing(req.user.id, dateObj, {

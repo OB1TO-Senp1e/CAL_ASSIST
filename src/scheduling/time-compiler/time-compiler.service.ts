@@ -116,14 +116,38 @@ export class TimeCompilerService {
   private buildAvailableSlots(input: SchedulingInput): TimeRange[] {
     const slots: TimeRange[] = [];
     const { timeRange, availability, preferences, timezone } = input;
+
+    // No AvailabilityRule rows is the common case for a new user, and the old
+    // behaviour there was zero slots -> zero blocks. Fall back to the user's
+    // configured working hours so a compile always has somewhere to put work.
+    const effectiveAvailability: AvailabilityRule[] =
+      availability.length === 0
+        ? [
+            {
+              id: 'derived_working_hours',
+              startTime: preferences.workingHoursStart,
+              endTime: preferences.workingHoursEnd,
+              timezone,
+              isAvailable: true,
+              priority: 0,
+              recurrence: 'DAILY',
+            },
+          ]
+        : availability;
+
     const current = new Date(timeRange.start);
 
     while (current < timeRange.end) {
       const dayOfWeek = current.getDay();
-      const dateStr = current.toISOString().split('T')[0];
+      const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+      if (isWeekend && !preferences.allowWeekendScheduling) {
+        current.setDate(current.getDate() + 1);
+        current.setHours(0, 0, 0, 0);
+        continue;
+      }
 
       // Find applicable availability rules for this day
-      const rules = availability.filter((rule) => {
+      const rules = effectiveAvailability.filter((rule) => {
         if (rule.dayOfWeek !== undefined && rule.dayOfWeek !== dayOfWeek) return false;
         if (rule.startDate && new Date(rule.startDate) > current) return false;
         if (rule.endDate && new Date(rule.endDate) < current) return false;
@@ -134,6 +158,8 @@ export class TimeCompilerService {
       rules.sort((a, b) => b.priority - a.priority);
 
       for (const rule of rules) {
+        // A derived working-hours window is local wall-clock time, so it is
+        // applied with setHours() in the request's own day boundaries.
         const [startHour, startMin] = rule.startTime.split(':').map(Number);
         const [endHour, endMin] = rule.endTime.split(':').map(Number);
 

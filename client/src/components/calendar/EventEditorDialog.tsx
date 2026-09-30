@@ -8,7 +8,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { EVENT_CATEGORY_LABEL } from '@/lib/design-tokens';
 import { formatRange } from '@/lib/datetime';
-import type { CalendarDTO, CalendarEventDTO, EventCategory, EventStatus } from '@/services/types';
+import type { CalendarDTO, CalendarEventDTO, ConflictDTO, EventCategory, EventStatus } from '@/services/types';
 
 /**
  * Create / edit an event.
@@ -64,6 +64,8 @@ export function EventEditorDialog({
   onCheckConflicts,
   saving,
   saveError,
+  canCreate = true,
+  categoryWritable = true,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -72,13 +74,15 @@ export function EventEditorDialog({
   defaultStart?: dayjs.Dayjs;
   defaultEnd?: dayjs.Dayjs;
   onSave: (values: EventEditorValues) => Promise<void>;
-  onCheckConflicts?: (start: dayjs.Dayjs, end: dayjs.Dayjs, excludeId?: string) => Promise<CalendarEventDTO[]>;
+  onCheckConflicts?: (start: dayjs.Dayjs, end: dayjs.Dayjs, excludeId?: string) => Promise<ConflictDTO[]>;
   saving?: boolean;
   saveError?: string | null;
+  canCreate?: boolean;
+  categoryWritable?: boolean;
 }) {
   const [values, setValues] = useState<EventEditorValues>(() => emptyValues(calendars, defaultStart, defaultEnd));
   const [error, setError] = useState<string | null>(null);
-  const [conflicts, setConflicts] = useState<CalendarEventDTO[]>([]);
+  const [conflicts, setConflicts] = useState<ConflictDTO[]>([]);
   const [checking, setChecking] = useState(false);
 
   // Re-seed whenever the dialog opens so a cancelled edit never leaks into the next one.
@@ -126,6 +130,10 @@ export function EventEditorDialog({
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (!event && !canCreate) {
+      setError('Event creation is unavailable until the backend calendar schema is corrected.');
+      return;
+    }
     if (!values.title.trim()) {
       setError('Give the event a title.');
       return;
@@ -216,12 +224,12 @@ export function EventEditorDialog({
                 ))}
               </Select>
             </Field>
-            <Field label="Type" htmlFor="ev-category">
+            <Field label="Type" htmlFor="ev-category" hint={!categoryWritable ? 'Category metadata is not persisted by the current backend.' : undefined}>
               <Select
                 id="ev-category"
                 value={values.category}
                 onChange={(e) => patch({ category: e.target.value as EventCategory })}
-                disabled={saving}
+                disabled={saving || !categoryWritable}
               >
                 {(Object.keys(EVENT_CATEGORY_LABEL) as EventCategory[]).map((c) => (
                   <option key={c} value={c}>
@@ -281,9 +289,9 @@ export function EventEditorDialog({
                 Overlaps {conflicts.length} existing event{conflicts.length > 1 ? 's' : ''}
               </p>
               <ul className="mt-1 space-y-0.5">
-                {conflicts.slice(0, 3).map((c) => (
-                  <li key={c.id} className="tabular truncate text-2xs text-level-high/90">
-                    {c.title} · {formatRange(c.start, c.end)}
+                {conflicts.slice(0, 3).map((conflict) => (
+                  <li key={conflict.eventB} className="tabular truncate text-2xs text-level-high/90">
+                    {conflict.eventBTitle ?? conflict.eventB} · {conflict.overlapMinutes} min · {conflict.type.toLowerCase().replace('_', ' ')}
                   </li>
                 ))}
               </ul>
@@ -295,7 +303,7 @@ export function EventEditorDialog({
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
               Cancel
             </Button>
-            <Button type="submit" disabled={saving}>
+            <Button type="submit" disabled={saving || (!isEdit && !canCreate)}>
               {saving ? (
                 <>
                   <Spinner className="size-3.5" />

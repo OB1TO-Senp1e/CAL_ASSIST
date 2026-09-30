@@ -9,7 +9,13 @@ import { AiProvidersModule } from '../../integrations/ai-providers/ai-providers.
 import { TimeCompilerModule } from '../../scheduling/time-compiler/time-compiler.module';
 
 @Module({
-  imports: [CommitmentsModule, RealityEngineModule, SchedulingEngineModule, AiProvidersModule, TimeCompilerModule],
+  imports: [
+    CommitmentsModule,
+    RealityEngineModule,
+    SchedulingEngineModule,
+    AiProvidersModule,
+    TimeCompilerModule,
+  ],
   controllers: [ProactiveAssistantController],
   providers: [ProactiveAssistantService, PrismaService],
   exports: [ProactiveAssistantService],

@@ -91,6 +91,10 @@ export const AssistantResponseSchema = z.object({
   proposedActions: z.array(ProposedActionSchema).optional(),
   requiresConfirmation: z.boolean().optional(),
   confidence: z.number().min(0).max(1).optional(),
+  // Set by the orchestrator when it persists a turn, so the HTTP layer can echo
+  // the stored ids instead of guessing which conversation/message they belong to.
+  conversationId: z.string().optional(),
+  messageId: z.string().optional(),
 });
 
 export type AssistantResponse = z.infer<typeof AssistantResponseSchema>;

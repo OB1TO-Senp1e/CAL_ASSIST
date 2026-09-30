@@ -2,14 +2,13 @@
  * Auth service facade.
  *
  * Components call `authService` and never care where the data comes from. In
- * Stage 2 it is backed by the mock layer; Stage 3 flips `USE_MOCK` off and the
- * same call sites hit the real NestJS API. This is the "data-source swap" seam
- * the build loop describes — no component rewrite required.
+ * Stage 3a uses the real auth/profile endpoints. Unintegrated screen groups
+ * continue to use `USE_MOCK`; auth can be mocked independently for previews.
  *
  * Real endpoints (verified in src/auth/auth.controller.ts):
  *   POST /auth/login     → { access_token, user }
  *   POST /auth/register  → { id, email, name, createdAt, updatedAt }
- *   POST /auth/logout    → { success: true }
+ *   POST /api/auth/logout → { success: true } (logout is not excluded from the global prefix)
  *   GET  /api/users/me   → profile  (note: users routes are behind the /api prefix)
  */
 import api from './api';
@@ -26,11 +25,10 @@ import {
   type MockUser,
 } from '@/lib/mock/db';
 
-/**
- * Mock mode is ON by default for Stage 2. Stage 3 sets `VITE_USE_MOCK=0` (or
- * ships without the flag) to talk to the real backend.
- */
-export const USE_MOCK = import.meta.env.VITE_USE_MOCK !== '0';
+/** Mock switch retained for screen groups not yet tied into the backend. */
+export const USE_MOCK = import.meta.env.VITE_USE_MOCK === '1';
+/** Auth is live by default in Stage 3; set this only for an offline demo. */
+export const USE_AUTH_MOCK = import.meta.env.VITE_AUTH_USE_MOCK === '1';
 
 export const IS_DEV_BYPASS = import.meta.env.DEV && import.meta.env.VITE_AUTH_BYPASS === '1';
 
@@ -53,7 +51,7 @@ function toProfile(user: MockUser): Profile {
 
 export const authService = {
   async login(email: string, password: string): Promise<AuthResponse> {
-    if (USE_MOCK) {
+    if (USE_AUTH_MOCK) {
       await latency();
       const user = authenticate(email, password);
       return { access_token: setSession(user.id), user: toAuthUser(user) };
@@ -64,24 +62,27 @@ export const authService = {
   },
 
   async register(email: string, password: string, name?: string): Promise<AuthUser> {
-    if (USE_MOCK) {
+    if (USE_AUTH_MOCK) {
       await latency();
       const user = createUser(email, password, name);
       // Register then sign straight in, so the user lands inside the app.
       setSession(user.id);
       return toAuthUser(user);
     }
-    const { data } = await api.post<AuthUser>('/auth/register', { email, password, name });
-    return data;
+    await api.post<AuthUser>('/auth/register', { email, password, name });
+    // Registration returns a user record but no JWT; log in to establish a session.
+    const { data } = await api.post<AuthResponse>('/auth/login', { email, password });
+    localStorage.setItem('token', data.access_token);
+    return data.user;
   },
 
   async logout(): Promise<void> {
-    if (USE_MOCK) {
+    if (USE_AUTH_MOCK) {
       clearSession();
       return;
     }
     try {
-      await api.post('/auth/logout');
+      await api.post('/api/auth/logout');
     } catch {
       // Logging out must never fail from the user's point of view.
     } finally {
@@ -89,10 +90,24 @@ export const authService = {
     }
   },
 
+  /**
+   * C4 — permanent account deletion. The backend requires the caller to echo
+   * back their own email as an explicit confirmation step. Clears the local
+   * session either way; a failure leaves the account intact.
+   */
+  async deleteAccount(confirmEmail: string): Promise<void> {
+    if (USE_AUTH_MOCK) {
+      clearSession();
+      return;
+    }
+    await api.delete('/api/users/me', { data: { confirm: confirmEmail } });
+    localStorage.removeItem('token');
+  },
+
   /** Restore the session on boot. Returns null when there is none. */
   async me(): Promise<AuthUser | null> {
     if (IS_DEV_BYPASS) return toAuthUser(DEV_BYPASS_USER);
-    if (USE_MOCK) {
+    if (USE_AUTH_MOCK) {
       const id = getSessionUserId();
       const user = id ? findUserById(id) : undefined;
       await latency(80, 180);

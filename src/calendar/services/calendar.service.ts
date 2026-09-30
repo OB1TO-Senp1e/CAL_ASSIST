@@ -22,7 +22,11 @@ import { AvailabilityCalculator } from './availability-calculator';
 import { ViewGenerator, ViewOptions } from '../views/view-generator';
 
 export interface CreateEventRequest {
-  calendarId: UUID;
+  // Optional, matching `Event.calendarId String?` in Prisma. This used to be
+  // required here while the HTTP boundary treated it as optional, and neither
+  // line up with a nullable column; an id-bearing create was impossible because
+  // the schema demanded a UUID that cuid ids never satisfy.
+  calendarId?: UUID;
   title: string;
   description?: string;
   location?: string;
@@ -49,6 +53,7 @@ export interface UpdateEventRequest {
   category?: EventCategory;
   color?: string;
   status?: EventStatus;
+  source?: 'USER' | 'AI_GENERATED' | 'SYNCED';
   participants?: EventParticipant[];
 }
 
@@ -86,6 +91,19 @@ export interface AvailabilityQueryOptions {
   durationMinutes: number;
   workingHours?: { start: number; end: number; days: number[] };
   bufferMinutes?: number;
+}
+
+/**
+ * Normalise a query-string option that may arrive as `undefined`, a bare
+ * string, or a string[] into a clean array of trimmed, non-empty values.
+ */
+function toArrayOption<T extends string>(value?: T | T[] | string | string[]): T[] {
+  if (value === undefined || value === null) return [];
+  const list = Array.isArray(value) ? value : [value];
+  return list
+    .flatMap((v) => String(v).split(','))
+    .map((v) => v.trim())
+    .filter((v) => v.length > 0) as T[];
 }
 
 @Injectable()
@@ -155,12 +173,16 @@ export class CalendarService {
   async getEvents(userId: UUID, options: CalendarQueryOptions = {}): Promise<CalendarEvent[]> {
     const where: any = { userId };
 
-    if (options.status && options.status.length > 0) {
-      where.status = { in: options.status };
+    // Query params arrive as a string (or string[]) depending on how many
+    // values the client sent, so normalise before handing them to `in`.
+    const statusIn = toArrayOption(options.status);
+    if (statusIn.length > 0) {
+      where.status = { in: statusIn };
     }
 
-    if (options.category && options.category.length > 0) {
-      where.category = { in: options.category };
+    const categoryIn = toArrayOption(options.category);
+    if (categoryIn.length > 0) {
+      where.category = { in: categoryIn };
     }
 
     if (options.startDate || options.endDate) {
@@ -225,6 +247,7 @@ export class CalendarService {
     if (request.category) updateData.category = request.category;
     if (request.color !== undefined) updateData.color = request.color;
     if (request.status) updateData.status = request.status;
+    if (request.source) updateData.source = request.source;
 
     const event = await this.prisma.event.update({
       where: { id: eventId },
@@ -619,6 +642,7 @@ export class CalendarService {
       status: prismaEvent.status,
       category: prismaEvent.category,
       color: prismaEvent.color,
+      source: prismaEvent.source,
       participants:
         prismaEvent.eventParticipants?.map((p: any) => ({
           id: p.id,

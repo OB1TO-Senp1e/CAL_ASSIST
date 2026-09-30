@@ -13,6 +13,7 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '@app/auth/jwt-auth.guard';
+import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { CalendarService } from './services/calendar.service';
 import {
   CreateEventRequest,
@@ -23,6 +24,11 @@ import {
   CalendarQueryOptions,
   AvailabilityQueryOptions,
   ViewOptions,
+  CreateEventSchema,
+  UpdateEventSchema,
+  MoveEventSchema,
+  ResizeEventSchema,
+  BulkEventSchema,
 } from './interfaces/calendar.interface';
 
 @Controller('calendar/events')
@@ -32,13 +38,31 @@ export class CalendarController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  async createEvent(@Request() req, @Body() body: CreateEventRequest) {
+  async createEvent(
+    @Request() req,
+    @Body(new ZodValidationPipe(CreateEventSchema)) body: CreateEventRequest
+  ) {
     return this.calendarService.createEvent(req.user.id, body);
   }
 
+  /**
+   * Canonical event list. Accepts both query shapes:
+   *   startDate/endDate  — the domain CalendarQuerySchema names.
+   *   timeMin/timeMax    — Google-Calendar-style aliases that older clients
+   *                        and the removed adapter route used. Aliases only
+   *                        fill in missing values; explicit start/end wins.
+   */
   @Get()
-  async getEvents(@Request() req, @Query() query: CalendarQueryOptions) {
-    return this.calendarService.getEvents(req.user.id, query);
+  async getEvents(
+    @Request() req,
+    @Query() query: CalendarQueryOptions & { timeMin?: string; timeMax?: string }
+  ) {
+    const { timeMin, timeMax, ...rest } = query;
+    return this.calendarService.getEvents(req.user.id, {
+      ...rest,
+      startDate: rest.startDate ?? timeMin,
+      endDate: rest.endDate ?? timeMax,
+    });
   }
 
   @Get('availability')
@@ -120,22 +144,37 @@ export class CalendarController {
   }
 
   @Patch(':id')
-  async updateEvent(@Request() req, @Param('id') id: string, @Body() body: UpdateEventRequest) {
+  async updateEvent(
+    @Request() req,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(UpdateEventSchema)) body: UpdateEventRequest
+  ) {
     return this.calendarService.updateEvent(req.user.id, id, body);
   }
 
   @Patch(':id/move')
-  async moveEvent(@Request() req, @Param('id') id: string, @Body() body: MoveEventRequest) {
+  async moveEvent(
+    @Request() req,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(MoveEventSchema)) body: MoveEventRequest
+  ) {
     return this.calendarService.moveEvent(req.user.id, id, body);
   }
 
   @Patch(':id/resize')
-  async resizeEvent(@Request() req, @Param('id') id: string, @Body() body: ResizeEventRequest) {
+  async resizeEvent(
+    @Request() req,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(ResizeEventSchema)) body: ResizeEventRequest
+  ) {
     return this.calendarService.resizeEvent(req.user.id, id, body);
   }
 
   @Post('bulk')
-  async bulkAction(@Request() req, @Body() body: BulkEventRequest) {
+  async bulkAction(
+    @Request() req,
+    @Body(new ZodValidationPipe(BulkEventSchema)) body: BulkEventRequest
+  ) {
     return this.calendarService.bulkAction(req.user.id, body);
   }
 

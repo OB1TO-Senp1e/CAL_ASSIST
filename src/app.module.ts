@@ -1,8 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
-import { CacheModule } from '@nestjs/cache-manager';
-import { BullModule } from '@nestjs/bullmq';
 import { TerminusModule } from '@nestjs/terminus';
 import { APP_GUARD } from '@nestjs/core';
 import { AppController } from './app.controller';
@@ -38,8 +36,16 @@ import { DailyExperienceModule } from './daily-experience/daily-experience.modul
 import { PermissionModule } from './permissions/permission.module';
 import { SimulationEngineModule } from './scheduling/simulation-engine/simulation-engine.module';
 import { LoggingModule } from './common/logging/logging.module';
+import { AiConsentModule } from './ai/consent/ai-consent.module';
 import { PrismaService } from './common/services/prisma.service';
 import { HealthController } from './health/health.controller';
+import { ProductionConfigValidator } from './config/production-config.validator';
+import { MigrationStateGuard } from './config/migration-state.guard';
+import { REDIS_CLIENT, RedisModule } from './common/redis/redis.module';
+import { RedisThrottlerStorage } from './common/redis/redis-throttler.storage';
+import { RedisClientType } from 'redis';
+import { ShutdownLogger } from './common/shutdown-logger';
+import { MetricsService } from './metrics/metrics.service';
 
 @Module({
   imports: [
@@ -48,10 +54,13 @@ import { HealthController } from './health/health.controller';
       envFilePath: '.env',
     }),
 
+    RedisModule,
+
     // Rate Limiting
     ThrottlerModule.forRootAsync({
-      imports: [ConfigModule],
-      useFactory: (config: ConfigService) => ({
+      imports: [ConfigModule, RedisModule, MetricsModule],
+      useFactory: (config: ConfigService, redis: RedisClientType, metrics: MetricsService) => ({
+        storage: new RedisThrottlerStorage(redis, metrics),
         throttlers: [
           {
             ttl: config.get<number>('THROTTLE_TTL', 60000),
@@ -59,33 +68,7 @@ import { HealthController } from './health/health.controller';
           },
         ],
       }),
-      inject: [ConfigService],
-    }),
-
-    // Caching with Redis
-    CacheModule.registerAsync({
-      isGlobal: true,
-      imports: [ConfigModule],
-      useFactory: (config: ConfigService) => ({
-        store: 'redis',
-        host: config.get<string>('REDIS_HOST', 'localhost'),
-        port: config.get<number>('REDIS_PORT', 6379),
-        ttl: config.get<number>('CACHE_TTL', 300000),
-        max: config.get<number>('CACHE_MAX', 1000),
-      }),
-      inject: [ConfigService],
-    }),
-
-    // Background Jobs with BullMQ
-    BullModule.forRootAsync({
-      imports: [ConfigModule],
-      useFactory: (config: ConfigService) => ({
-        connection: {
-          host: config.get<string>('REDIS_HOST', 'localhost'),
-          port: config.get<number>('REDIS_PORT', 6379),
-        },
-      }),
-      inject: [ConfigService],
+      inject: [ConfigService, REDIS_CLIENT, MetricsService],
     }),
 
     // Health Checks
@@ -99,6 +82,7 @@ import { HealthController } from './health/health.controller';
 
     // Proactive Assistant
     ProactiveAssistantModule,
+    AiConsentModule,
     PermissionModule,
     TravelTimeModule,
     MeetingIntelligenceModule,
@@ -133,7 +117,11 @@ import { HealthController } from './health/health.controller';
   controllers: [AppController, HealthController],
   providers: [
     AppService,
+    ShutdownLogger,
     PrismaService,
+    // Fail fast in production on insecure OAuth, cookie, secret, or migration config.
+    ProductionConfigValidator,
+    MigrationStateGuard,
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,

@@ -1,0 +1,27 @@
+=== ITEM7 RE-VERIFICATION (user decision 2026-09-30: KEEP C-02 applied live) ===
+date: 2026-09-30T12:01:17.948Z  live usage: SELECT only.
+PASS  ledger: 12 migrations, C-02 present, checksum unchanged
+      sql:  SELECT migration_name, checksum FROM "_prisma_migrations" WHERE migration_name='20260929150000_c02_coordination_domain'
+      expect: [{"migration_name":"20260929150000_c02_coordination_domain","checksum":"c7c4d24bc38438d6877b5f72b6cee252fe59865849121ef9419fa20b07bc8550"}]
+      got:    [{"migration_name":"20260929150000_c02_coordination_domain","checksum":"c7c4d24bc38438d6877b5f72b6cee252fe59865849121ef9419fa20b07bc8550"}]
+PASS  ledger row count
+      sql:  SELECT count(*) c FROM "_prisma_migrations"
+      expect: [{"c":"12"}]
+      got:    [{"c":"12"}]
+PASS  5 C-02 tables present
+      sql:  SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name IN ($1,$2,$3,$4,$5) ORDER BY 1
+      expect: [{"table_name":"AiActionLog"},{"table_name":"Meeting"},{"table_name":"MeetingParticipant"},{"table_name":"MeetingProposal"},{"table_name":"SchedulingPreference"}]
+      got:    [{"table_name":"AiActionLog"},{"table_name":"Meeting"},{"table_name":"MeetingParticipant"},{"table_name":"MeetingProposal"},{"table_name":"SchedulingPreference"}]
+PASS  MeetingStatus enum present
+      sql:  SELECT typname FROM pg_type WHERE typname='MeetingStatus'
+      expect: [{"typname":"MeetingStatus"}]
+      got:    [{"typname":"MeetingStatus"}]
+PASS  base table count
+      sql:  SELECT count(*) c FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE'
+      expect: [{"c":"57"}]
+      got:    [{"c":"57"}]
+census sha256 now = aaa50c5eb069ef6f7b2443fb4304d4453e785155bb3b5e2992eb10c02c5129a2
+census sha256 committed baseline = aaa50c5eb069ef6f7b2443fb4304d4453e785155bb3b5e2992eb10c02c5129a2
+PASS  census identical to gate baseline (499 rows total)
+
+OVERALL: ALL PASS - KEEP decision safe; live == committed C-02 == schema.prisma

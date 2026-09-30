@@ -179,6 +179,10 @@ export function CalendarPage() {
   /* ───────── Mutations ───────── */
 
   const openCreate = useCallback((start: Dayjs, end?: Dayjs) => {
+    if (!calendarService.canCreateEvent) {
+      setError('Event creation is unavailable in the current backend.');
+      return;
+    }
     setEditing(null);
     const from = start;
     const to = end ?? from.add(1, 'hour');
@@ -324,7 +328,7 @@ export function CalendarPage() {
   const handleAcceptProposal = useCallback(async (event: CalendarEventDTO) => {
     setBusy(true);
     try {
-      const updated = await calendarService.updateEvent(event.id, { status: 'CONFIRMED' });
+      const updated = await calendarService.updateEvent(event.id, { status: 'CONFIRMED', source: 'USER' });
       const accepted = { ...updated, source: 'USER' as const };
       setEvents((prev) => prev.map((e) => (e.id === accepted.id ? accepted : e)));
       setSelected(accepted);
@@ -407,7 +411,7 @@ export function CalendarPage() {
           ))}
         </div>
 
-        <Button size="sm" onClick={() => openCreate(dayjs().add(1, 'hour').startOf('hour'))} title="New event (N)">
+        <Button size="sm" disabled={!calendarService.canCreateEvent} title={!calendarService.canCreateEvent ? 'Event creation is unavailable in the current backend.' : 'New event (N)'} onClick={() => openCreate(dayjs().add(1, 'hour').startOf('hour'))}>
           <Plus />
           <span className="hidden sm:inline">Event</span>
         </Button>
@@ -456,6 +460,7 @@ export function CalendarPage() {
           anchor={anchor}
           onPickDay={(day) => setAnchor(day)}
           calendars={calendars}
+          canToggleCalendar={calendarService.canToggleCalendarVisibility}
           onToggleCalendar={toggleCalendar}
           categories={categories}
           onToggleCategory={(c) => toggle(categories, c, setCategories)}
@@ -540,6 +545,8 @@ export function CalendarPage() {
         onAcceptProposal={handleAcceptProposal}
         onRejectProposal={handleRejectProposal}
         busy={busy}
+        canDuplicate={calendarService.canCreateEvent}
+        canAcceptProposal={calendarService.canAcceptProposal}
       />
 
       <EventEditorDialog
@@ -559,6 +566,8 @@ export function CalendarPage() {
         onCheckConflicts={conflictCheck}
         saving={saving}
         saveError={saveError}
+        canCreate={calendarService.canCreateEvent}
+        categoryWritable={calendarService.canPersistCategory}
       />
     </div>
   );

@@ -11,8 +11,23 @@ import {
   Query,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
+import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { RulesEngineService } from './rules-engine.service';
-import { CreateRuleInput, UpdateRuleInput, RuleType, RuleScope } from './rules.types';
+import {
+  CreateRuleInputSchema,
+  UpdateRuleBodySchema,
+  UpdateRuleBody,
+  ResolveConflictInputSchema,
+  ResolveConflictInput,
+  EnforceRulesInputSchema,
+  EnforceRulesInput,
+  NaturalLanguageTextSchema,
+  ParseNaturalLanguageInputSchema,
+  ParseNaturalLanguageInput,
+  CreateRuleInput,
+  RuleType,
+  RuleScope,
+} from './rules.types';
 
 @Controller('rules')
 @UseGuards(JwtAuthGuard)
@@ -20,7 +35,10 @@ export class RulesEngineController {
   constructor(private readonly rulesEngineService: RulesEngineService) {}
 
   @Post()
-  async createRule(@Request() req, @Body() body: CreateRuleInput) {
+  async createRule(
+    @Request() req,
+    @Body(new ZodValidationPipe(CreateRuleInputSchema)) body: CreateRuleInput
+  ) {
     return this.rulesEngineService.createRule(req.user.id, body);
   }
 
@@ -47,11 +65,7 @@ export class RulesEngineController {
   async resolveConflict(
     @Request() req,
     @Param('id') conflictId: string,
-    @Body()
-    body: {
-      resolution:
-        'DISABLE_FIRST' | 'DISABLE_SECOND' | 'ADJUST_PRIORITY' | 'MERGE' | 'MANUAL' | 'KEEP_BOTH';
-    }
+    @Body(new ZodValidationPipe(ResolveConflictInputSchema)) body: ResolveConflictInput
   ) {
     await this.rulesEngineService.resolveConflict(req.user.id, conflictId, body.resolution);
     return { success: true };
@@ -71,7 +85,7 @@ export class RulesEngineController {
   async updateRule(
     @Request() req,
     @Param('id') id: string,
-    @Body() body: Omit<UpdateRuleInput, 'id'>
+    @Body(new ZodValidationPipe(UpdateRuleBodySchema)) body: UpdateRuleBody
   ) {
     return this.rulesEngineService.updateRule(req.user.id, { ...body, id });
   }
@@ -85,21 +99,24 @@ export class RulesEngineController {
   @Post('enforce')
   async enforceRules(
     @Request() req,
-    @Body() body: { input: Record<string, any>; trigger: string }
+    @Body(new ZodValidationPipe(EnforceRulesInputSchema)) body: EnforceRulesInput
   ) {
-    return this.rulesEngineService.enforceRules(req.user.id, body.input, body.trigger as any);
+    return this.rulesEngineService.enforceRules(req.user.id, body.input, body.trigger);
   }
 
   @Post('parse')
   async parseNaturalLanguage(
     @Request() req,
-    @Body() body: { text: string; context?: Record<string, any> }
+    @Body(new ZodValidationPipe(ParseNaturalLanguageInputSchema)) body: ParseNaturalLanguageInput
   ) {
     return this.rulesEngineService.parseNaturalLanguage(body);
   }
 
   @Post('from-natural-language')
-  async createRuleFromNaturalLanguage(@Request() req, @Body() body: { text: string }) {
+  async createRuleFromNaturalLanguage(
+    @Request() req,
+    @Body(new ZodValidationPipe(NaturalLanguageTextSchema)) body: { text: string }
+  ) {
     return this.rulesEngineService.createRuleFromNaturalLanguage(req.user.id, body.text);
   }
 }

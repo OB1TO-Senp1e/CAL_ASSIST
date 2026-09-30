@@ -94,6 +94,13 @@ export class ProjectsService {
         priority: request.priority,
         startDate: request.startDate ? new Date(request.startDate) : undefined,
         dueDate: request.dueDate ? new Date(request.dueDate) : undefined,
+        // Match the goal/task rule: completing stamps completedAt, reopening clears it.
+        completedAt:
+          request.status === 'COMPLETED'
+            ? new Date()
+            : request.status && project.completedAt
+              ? null
+              : undefined,
       },
     });
   }

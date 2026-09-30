@@ -28,7 +28,7 @@ export class SimulationEngineService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly timeCompiler: TimeCompilerService,
+    private readonly timeCompiler: TimeCompilerService
   ) {}
 
   async runSimulation(input: SimulationInput): Promise<SimulationResult> {
@@ -48,16 +48,33 @@ export class SimulationEngineService {
     const simulatedProposal = await this.timeCompiler.compileSchedule(modifiedInput);
 
     // Calculate differences
-    const scheduleDiff = this.calculateScheduleDiff(baseProposal.proposedBlocks, simulatedProposal.proposedBlocks);
+    const scheduleDiff = this.calculateScheduleDiff(
+      baseProposal.proposedBlocks,
+      simulatedProposal.proposedBlocks
+    );
     const deadlineEffects = this.calculateDeadlineEffects(baseProposal, simulatedProposal, input);
-    const constraintViolations = this.calculateConstraintViolations(baseProposal, simulatedProposal, input);
+    const constraintViolations = this.calculateConstraintViolations(
+      baseProposal,
+      simulatedProposal,
+      input
+    );
     const workloadChanges = this.calculateWorkloadChanges(baseProposal, simulatedProposal);
-    const dependencyEffects = this.calculateDependencyEffects(baseProposal, simulatedProposal, input);
+    const dependencyEffects = this.calculateDependencyEffects(
+      baseProposal,
+      simulatedProposal,
+      input
+    );
     const tradeoffs = this.identifyTradeoffs(baseProposal, simulatedProposal, input);
     const conflicts = this.mergeConflicts(baseProposal, simulatedProposal);
     const metrics = this.calculateMetrics(baseProposal, simulatedProposal, input);
 
-    const summary = this.generateSummary(scheduleDiff, deadlineEffects, constraintViolations, workloadChanges, tradeoffs);
+    const summary = this.generateSummary(
+      scheduleDiff,
+      deadlineEffects,
+      constraintViolations,
+      workloadChanges,
+      tradeoffs
+    );
 
     return {
       simulationId,
@@ -106,8 +123,16 @@ export class SimulationEngineService {
       const modifiedInput = this.applyChanges(scenarioInput, baseSchedulingInput);
       const simulatedProposal = await this.timeCompiler.compileSchedule(modifiedInput);
 
-      const deadlineEffects = this.calculateDeadlineEffects(baseProposal, simulatedProposal, scenarioInput);
-      const constraintViolations = this.calculateConstraintViolations(baseProposal, simulatedProposal, scenarioInput);
+      const deadlineEffects = this.calculateDeadlineEffects(
+        baseProposal,
+        simulatedProposal,
+        scenarioInput
+      );
+      const constraintViolations = this.calculateConstraintViolations(
+        baseProposal,
+        simulatedProposal,
+        scenarioInput
+      );
       const tradeoffs = this.identifyTradeoffs(baseProposal, simulatedProposal, scenarioInput);
 
       scenarios.push({
@@ -143,13 +168,17 @@ export class SimulationEngineService {
     };
   }
 
-  async runQuickSimulation(input: { userId: string; question: string; context?: any }): Promise<SimulationResult> {
+  async runQuickSimulation(input: {
+    userId: string;
+    question: string;
+    context?: any;
+  }): Promise<SimulationResult> {
     // Parse natural language question into simulation changes
     const changes = this.parseQuestion(input.question);
-    
+
     // Get current schedule data
     const scheduleData = await this.getCurrentScheduleData(input.userId, input.context);
-    
+
     const simulationInput: SimulationInput = {
       ...scheduleData,
       changes,
@@ -188,7 +217,7 @@ export class SimulationEngineService {
           description: `Take ${dayMatch[1]} ${timeMatch?.[1] || 'all day'} off`,
           targetEntityType: 'AVAILABILITY',
           targetEntityId: '',
-          parameters: { 
+          parameters: {
             day: dayMatch[1].toUpperCase(),
             period: timeMatch?.[1]?.toUpperCase() || 'ALL_DAY',
             isAvailable: false,
@@ -256,10 +285,10 @@ export class SimulationEngineService {
         take: 50,
       }),
       this.prisma.event.findMany({
-        where: { 
-          userId, 
+        where: {
+          userId,
           startDate: { gte: timeRange.start, lte: timeRange.end },
-          status: { in: ['CONFIRMED', 'TENTATIVE'] }
+          status: { in: ['CONFIRMED', 'TENTATIVE'] },
         },
       }),
       this.prisma.timeBlock.findMany({
@@ -271,10 +300,18 @@ export class SimulationEngineService {
 
     return {
       userId,
-      baseSchedule: timeBlocks.map(b => {
-// Map Prisma TimeBlockType to our TimeBlockType (filter out unsupported values)
-        const blockType = ['TASK', 'FOCUS', 'MEETING', 'BREAK', 'BUFFER', 'TRAVEL', 'ROUTINE'].includes(b.blockType)
-          ? b.blockType as TimeCompilerTimeBlockType
+      baseSchedule: timeBlocks.map((b) => {
+        // Map Prisma TimeBlockType to our TimeBlockType (filter out unsupported values)
+        const blockType = [
+          'TASK',
+          'FOCUS',
+          'MEETING',
+          'BREAK',
+          'BUFFER',
+          'TRAVEL',
+          'ROUTINE',
+        ].includes(b.blockType)
+          ? (b.blockType as TimeCompilerTimeBlockType)
           : 'TASK';
         return {
           id: b.id,
@@ -304,7 +341,7 @@ export class SimulationEngineService {
       timeRange: { start: timeRange.start.toISOString(), end: timeRange.end.toISOString() },
       timezone,
       changes: [], // Will be filled by caller
-      tasks: tasks.map(t => ({
+      tasks: tasks.map((t) => ({
         id: t.id,
         title: t.title,
         description: t.description ?? undefined,
@@ -323,7 +360,7 @@ export class SimulationEngineService {
         projectId: t.projectId ?? undefined,
         milestoneId: t.milestoneId ?? undefined,
       })),
-      fixedEvents: events.map(e => ({
+      fixedEvents: events.map((e) => ({
         id: e.id,
         title: e.title,
         startTime: e.startDate.toISOString(),
@@ -334,7 +371,7 @@ export class SimulationEngineService {
         location: e.location ?? undefined,
         isFixed: true,
       })),
-      availability: availabilities.map(a => ({
+      availability: availabilities.map((a) => ({
         id: a.id,
         dayOfWeek: a.dayOfWeek ?? undefined,
         startDate: a.startDate?.toISOString(),
@@ -355,7 +392,10 @@ export class SimulationEngineService {
         minBreakDuration: 15,
         maxDailyHours: 8,
         preferredBreakInterval: 120,
-        energyPeakHours: [{ start: '09:00', end: '11:00' }, { start: '14:00', end: '16:00' }],
+        energyPeakHours: [
+          { start: '09:00', end: '11:00' },
+          { start: '14:00', end: '16:00' },
+        ],
         bufferBetweenTasks: 15,
         travelBufferDefault: 30,
         protectFocusTime: true,
@@ -373,25 +413,25 @@ export class SimulationEngineService {
         end: new Date(input.timeRange.end),
       },
       timezone: input.timezone,
-      tasks: input.tasks.map(t => ({
+      tasks: input.tasks.map((t) => ({
         ...t,
         deadline: t.deadline ? new Date(t.deadline) : undefined,
         startDate: t.startDate ? new Date(t.startDate) : undefined,
         preferredTime: t.preferredTime ? new Date(t.preferredTime) : undefined,
       })),
-      fixedEvents: input.fixedEvents.map(e => ({
+      fixedEvents: input.fixedEvents.map((e) => ({
         ...e,
         startTime: new Date(e.startTime),
         endTime: new Date(e.endTime),
       })),
-      availability: input.availability.map(a => ({
+      availability: input.availability.map((a) => ({
         ...a,
         startDate: a.startDate ? new Date(a.startDate) : undefined,
         endDate: a.endDate ? new Date(a.endDate) : undefined,
       })),
       constraints: input.constraints,
       preferences: input.preferences,
-      existingBlocks: input.baseSchedule.map(b => ({
+      existingBlocks: input.baseSchedule.map((b) => ({
         ...b,
         startTime: new Date(b.startTime),
         endTime: new Date(b.endTime),
@@ -465,7 +505,7 @@ export class SimulationEngineService {
   }
 
   private applyMoveEvent(input: SchedulingInput, change: SimulationChange): void {
-    const event = input.fixedEvents.find(e => e.id === change.targetEntityId);
+    const event = input.fixedEvents.find((e) => e.id === change.targetEntityId);
     if (event && change.parameters.targetTime) {
       const duration = event.endTime.getTime() - event.startTime.getTime();
       event.startTime = new Date(change.parameters.targetTime);
@@ -474,7 +514,7 @@ export class SimulationEngineService {
   }
 
   private applyMoveTask(input: SchedulingInput, change: SimulationChange): void {
-    const task = input.tasks.find(t => t.id === change.targetEntityId);
+    const task = input.tasks.find((t) => t.id === change.targetEntityId);
     if (task && change.parameters.preferredTime) {
       task.preferredTime = new Date(change.parameters.preferredTime);
     }
@@ -491,7 +531,7 @@ export class SimulationEngineService {
   }
 
   private applyRemoveTimeBlock(input: SchedulingInput, change: SimulationChange): void {
-    const index = input.existingBlocks.findIndex(b => b.id === change.targetEntityId);
+    const index = input.existingBlocks.findIndex((b) => b.id === change.targetEntityId);
     if (index !== -1) {
       input.existingBlocks.splice(index, 1);
     }
@@ -500,7 +540,7 @@ export class SimulationEngineService {
   private applyChangeAvailability(input: SchedulingInput, change: SimulationChange): void {
     const { day, period, isAvailable } = change.parameters;
     // Find or create availability rule for the day
-    let rule = input.availability.find(a => a.dayOfWeek === this.dayToNumber(day));
+    let rule = input.availability.find((a) => a.dayOfWeek === this.dayToNumber(day));
     if (!rule) {
       rule = {
         id: generateId(),
@@ -516,7 +556,10 @@ export class SimulationEngineService {
     } else {
       rule.isAvailable = isAvailable;
       if (period === 'MORNING') rule.endTime = '12:00';
-      else if (period === 'AFTERNOON') { rule.startTime = '13:00'; rule.endTime = '17:00'; }
+      else if (period === 'AFTERNOON') {
+        rule.startTime = '13:00';
+        rule.endTime = '17:00';
+      }
     }
   }
 
@@ -524,22 +567,28 @@ export class SimulationEngineService {
     if (change.parameters.task) {
       input.tasks.push({
         ...change.parameters.task,
-        deadline: change.parameters.task.deadline ? new Date(change.parameters.task.deadline) : undefined,
-        startDate: change.parameters.task.startDate ? new Date(change.parameters.task.startDate) : undefined,
-        preferredTime: change.parameters.task.preferredTime ? new Date(change.parameters.task.preferredTime) : undefined,
+        deadline: change.parameters.task.deadline
+          ? new Date(change.parameters.task.deadline)
+          : undefined,
+        startDate: change.parameters.task.startDate
+          ? new Date(change.parameters.task.startDate)
+          : undefined,
+        preferredTime: change.parameters.task.preferredTime
+          ? new Date(change.parameters.task.preferredTime)
+          : undefined,
       });
     }
   }
 
   private applyRemoveTask(input: SchedulingInput, change: SimulationChange): void {
-    const index = input.tasks.findIndex(t => t.id === change.targetEntityId);
+    const index = input.tasks.findIndex((t) => t.id === change.targetEntityId);
     if (index !== -1) {
       input.tasks.splice(index, 1);
     }
   }
 
   private applyChangeDeadline(input: SchedulingInput, change: SimulationChange): void {
-    const task = input.tasks.find(t => t.id === change.targetEntityId);
+    const task = input.tasks.find((t) => t.id === change.targetEntityId);
     if (task && change.parameters.newDeadline) {
       task.deadline = new Date(change.parameters.newDeadline);
     }
@@ -572,40 +621,51 @@ export class SimulationEngineService {
   private applyShiftSchedule(input: SchedulingInput, change: SimulationChange): void {
     const days = change.parameters.shiftDays || 0;
     const ms = days * 24 * 60 * 60 * 1000;
-    
+
     for (const task of input.tasks) {
       if (task.preferredTime) task.preferredTime = new Date(task.preferredTime.getTime() + ms);
       if (task.deadline) task.deadline = new Date(task.deadline.getTime() + ms);
       if (task.startDate) task.startDate = new Date(task.startDate.getTime() + ms);
     }
-    
+
     for (const event of input.fixedEvents) {
       event.startTime = new Date(event.startTime.getTime() + ms);
       event.endTime = new Date(event.endTime.getTime() + ms);
     }
-    
+
     input.timeRange.start = new Date(input.timeRange.start.getTime() + ms);
     input.timeRange.end = new Date(input.timeRange.end.getTime() + ms);
   }
 
   private applyLaunchEarlier(input: SchedulingInput, change: SimulationChange): void {
-    this.applyShiftSchedule(input, { ...change, parameters: { shiftDays: change.parameters.shiftDays || -3 } });
+    this.applyShiftSchedule(input, {
+      ...change,
+      parameters: { shiftDays: change.parameters.shiftDays || -3 },
+    });
   }
 
   private applyLaunchLater(input: SchedulingInput, change: SimulationChange): void {
-    this.applyShiftSchedule(input, { ...change, parameters: { shiftDays: change.parameters.shiftDays || 3 } });
+    this.applyShiftSchedule(input, {
+      ...change,
+      parameters: { shiftDays: change.parameters.shiftDays || 3 },
+    });
   }
 
   private dayToNumber(day: string): number {
     const days: Record<string, number> = {
-      SUNDAY: 0, MONDAY: 1, TUESDAY: 2, WEDNESDAY: 3,
-      THURSDAY: 4, FRIDAY: 5, SATURDAY: 6,
+      SUNDAY: 0,
+      MONDAY: 1,
+      TUESDAY: 2,
+      WEDNESDAY: 3,
+      THURSDAY: 4,
+      FRIDAY: 5,
+      SATURDAY: 6,
     };
     return days[day.toUpperCase()] ?? 1;
   }
 
   private serializeBlocks(blocks: ScheduledBlock[]): SimulationResult['baseSchedule'] {
-    return blocks.map(b => ({
+    return blocks.map((b) => ({
       id: b.id,
       title: b.title,
       type: b.type,
@@ -626,8 +686,8 @@ export class SimulationEngineService {
   }
 
   private calculateScheduleDiff(baseBlocks: ScheduledBlock[], simulatedBlocks: ScheduledBlock[]) {
-    const baseMap = new Map(baseBlocks.map(b => [b.id, b]));
-    const simMap = new Map(simulatedBlocks.map(b => [b.id, b]));
+    const baseMap = new Map(baseBlocks.map((b) => [b.id, b]));
+    const simMap = new Map(simulatedBlocks.map((b) => [b.id, b]));
 
     const moved: SimulationResult['scheduleDiff']['moved'] = [];
     const added: SimulationResult['scheduleDiff']['added'] = [];
@@ -638,8 +698,10 @@ export class SimulationEngineService {
     for (const [id, baseBlock] of baseMap) {
       const simBlock = simMap.get(id);
       if (simBlock) {
-        if (baseBlock.startTime.getTime() !== simBlock.startTime.getTime() ||
-            baseBlock.endTime.getTime() !== simBlock.endTime.getTime()) {
+        if (
+          baseBlock.startTime.getTime() !== simBlock.startTime.getTime() ||
+          baseBlock.endTime.getTime() !== simBlock.endTime.getTime()
+        ) {
           if (baseBlock.taskId && simBlock.taskId) {
             rescheduled.push({
               blockId: id,
@@ -654,7 +716,10 @@ export class SimulationEngineService {
             moved.push({
               blockId: id,
               title: baseBlock.title,
-              from: { start: baseBlock.startTime.toISOString(), end: baseBlock.endTime.toISOString() },
+              from: {
+                start: baseBlock.startTime.toISOString(),
+                end: baseBlock.endTime.toISOString(),
+              },
               to: { start: simBlock.startTime.toISOString(), end: simBlock.endTime.toISOString() },
               reason: 'Moved due to simulation',
             });
@@ -687,17 +752,25 @@ export class SimulationEngineService {
     return { moved, added, removed, rescheduled };
   }
 
-  private calculateDeadlineEffects(baseProposal: any, simulatedProposal: any, input: SimulationInput) {
+  private calculateDeadlineEffects(
+    baseProposal: any,
+    simulatedProposal: any,
+    input: SimulationInput
+  ) {
     const effects: SimulationResult['deadlineEffects'] = [];
     const baseBlocks = baseProposal.proposedBlocks;
     const simBlocks = simulatedProposal.proposedBlocks;
 
-    const baseMap = new Map<string, ScheduledBlock>(baseBlocks.filter(b => b.taskId).map(b => [b.taskId!, b]));
-    const simMap = new Map<string, ScheduledBlock>(simBlocks.filter(b => b.taskId).map(b => [b.taskId!, b]));
+    const baseMap = new Map<string, ScheduledBlock>(
+      baseBlocks.filter((b) => b.taskId).map((b) => [b.taskId!, b])
+    );
+    const simMap = new Map<string, ScheduledBlock>(
+      simBlocks.filter((b) => b.taskId).map((b) => [b.taskId!, b])
+    );
 
     for (const task of input.tasks) {
       if (!task.deadline) continue;
-      
+
       const baseBlock = baseMap.get(task.id);
       const simBlock = simMap.get(task.id);
       const deadline = new Date(task.deadline);
@@ -712,7 +785,9 @@ export class SimulationEngineService {
       if (originalCompletion && newCompletion) {
         const origDiff = deadline.getTime() - originalCompletion.getTime();
         const newDiff = deadline.getTime() - newCompletion.getTime();
-        daysShift = Math.round((newCompletion.getTime() - originalCompletion.getTime()) / (24 * 60 * 60 * 1000));
+        daysShift = Math.round(
+          (newCompletion.getTime() - originalCompletion.getTime()) / (24 * 60 * 60 * 1000)
+        );
 
         if (newDiff < 0) {
           impact = 'MISSED';
@@ -750,7 +825,11 @@ export class SimulationEngineService {
     return effects;
   }
 
-  private calculateConstraintViolations(baseProposal: any, simulatedProposal: any, input: SimulationInput) {
+  private calculateConstraintViolations(
+    baseProposal: any,
+    simulatedProposal: any,
+    input: SimulationInput
+  ) {
     const violations: SimulationResult['constraintViolations'] = [];
 
     const baseConstraints = baseProposal.constraints;
@@ -760,9 +839,12 @@ export class SimulationEngineService {
 
     // Check newly violated constraints
     for (const simUnsat of simUnsatisfied) {
-      const wasSatisfiedBefore = !baseUnsatisfied.some(b => b.type === simUnsat.type && 
-        b.affectedBlocks.some(ab => simUnsat.affectedBlocks.includes(ab)));
-      
+      const wasSatisfiedBefore = !baseUnsatisfied.some(
+        (b) =>
+          b.type === simUnsat.type &&
+          b.affectedBlocks.some((ab) => simUnsat.affectedBlocks.includes(ab))
+      );
+
       violations.push({
         constraintId: simUnsat.type,
         constraintType: simUnsat.type,
@@ -775,9 +857,12 @@ export class SimulationEngineService {
 
     // Check resolved constraints
     for (const baseUnsat of baseUnsatisfied) {
-      const isStillViolated = simUnsatisfied.some(s => s.type === baseUnsat.type && 
-        s.affectedBlocks.some(ab => baseUnsat.affectedBlocks.includes(ab)));
-      
+      const isStillViolated = simUnsatisfied.some(
+        (s) =>
+          s.type === baseUnsat.type &&
+          s.affectedBlocks.some((ab) => baseUnsat.affectedBlocks.includes(ab))
+      );
+
       if (!isStillViolated) {
         violations.push({
           constraintId: baseUnsat.type,
@@ -798,14 +883,17 @@ export class SimulationEngineService {
     const simMetrics = simulatedProposal.metrics;
 
     const dailyBreakdown: SimulationResult['workloadChanges']['dailyBreakdown'] = [];
-    
+
     // Group blocks by day
     const baseByDay = this.groupByDay(baseProposal.proposedBlocks);
     const simByDay = this.groupByDay(simulatedProposal.proposedBlocks);
     const allDates = new Set([...baseByDay.keys(), ...simByDay.keys()]);
 
     for (const date of allDates) {
-      const baseMinutes = (baseByDay.get(date) || []).reduce((sum, b) => sum + b.durationMinutes, 0);
+      const baseMinutes = (baseByDay.get(date) || []).reduce(
+        (sum, b) => sum + b.durationMinutes,
+        0
+      );
       const simMinutes = (simByDay.get(date) || []).reduce((sum, b) => sum + b.durationMinutes, 0);
       dailyBreakdown.push({
         date: new Date(date).toISOString(),
@@ -837,14 +925,22 @@ export class SimulationEngineService {
     return map;
   }
 
-  private calculateDependencyEffects(baseProposal: any, simulatedProposal: any, input: SimulationInput) {
+  private calculateDependencyEffects(
+    baseProposal: any,
+    simulatedProposal: any,
+    input: SimulationInput
+  ) {
     const effects: SimulationResult['dependencyEffects'] = [];
 
     const baseBlocks = baseProposal.proposedBlocks;
     const simBlocks = simulatedProposal.proposedBlocks;
 
-    const baseMap = new Map<string, ScheduledBlock>(baseBlocks.filter(b => b.taskId).map(b => [b.taskId!, b]));
-    const simMap = new Map<string, ScheduledBlock>(simBlocks.filter(b => b.taskId).map(b => [b.taskId!, b]));
+    const baseMap = new Map<string, ScheduledBlock>(
+      baseBlocks.filter((b) => b.taskId).map((b) => [b.taskId!, b])
+    );
+    const simMap = new Map<string, ScheduledBlock>(
+      simBlocks.filter((b) => b.taskId).map((b) => [b.taskId!, b])
+    );
 
     for (const task of input.tasks) {
       for (const depId of task.dependencies) {
@@ -853,19 +949,21 @@ export class SimulationEngineService {
         const simTaskBlock = simMap.get(task.id);
         const simDepBlock = simMap.get(depId);
 
-        const wasSatisfied = baseTaskBlock && baseDepBlock && baseDepBlock.endTime <= baseTaskBlock.startTime;
-        const isSatisfied = simTaskBlock && simDepBlock && simDepBlock.endTime <= simTaskBlock.startTime;
+        const wasSatisfied =
+          baseTaskBlock && baseDepBlock && baseDepBlock.endTime <= baseTaskBlock.startTime;
+        const isSatisfied =
+          simTaskBlock && simDepBlock && simDepBlock.endTime <= simTaskBlock.startTime;
 
         if (wasSatisfied !== isSatisfied) {
           effects.push({
             taskId: task.id,
             taskTitle: task.title,
             dependencyId: depId,
-            dependencyTitle: input.tasks.find(t => t.id === depId)?.title || depId,
+            dependencyTitle: input.tasks.find((t) => t.id === depId)?.title || depId,
             wasSatisfied: !!wasSatisfied,
             isSatisfied: !!isSatisfied,
-            violationDescription: isSatisfied 
-              ? 'Dependency now satisfied' 
+            violationDescription: isSatisfied
+              ? 'Dependency now satisfied'
               : `Dependency violated: ${simDepBlock?.title || 'dependency'} ends after ${simTaskBlock?.title || 'task'} starts`,
           });
         }
@@ -948,7 +1046,7 @@ export class SimulationEngineService {
     // Deduplicate by involved blocks and type
     const seen = new Set<string>();
     return allConflicts
-      .filter(c => {
+      .filter((c) => {
         const key = `${c.type}-${c.involvedBlocks.sort().join(',')}`;
         if (seen.has(key)) return false;
         seen.add(key);
@@ -964,11 +1062,11 @@ export class SimulationEngineService {
     // Schedule stability: how much the schedule changed
     const baseBlocks = baseProposal.proposedBlocks;
     const simBlocks = simulatedProposal.proposedBlocks;
-    const baseMap = new Map<string, ScheduledBlock>(baseBlocks.map(b => [b.id, b]));
-    
+    const baseMap = new Map<string, ScheduledBlock>(baseBlocks.map((b) => [b.id, b]));
+
     let stableBlocks = 0;
     let totalBlocks = 0;
-    
+
     for (const simBlock of simBlocks) {
       if (simBlock.taskId) totalBlocks++;
       const baseBlock = baseMap.get(simBlock.id);
@@ -976,12 +1074,14 @@ export class SimulationEngineService {
         stableBlocks++;
       }
     }
-    
+
     const scheduleStabilityScore = totalBlocks > 0 ? stableBlocks / totalBlocks : 1;
 
     // Feasibility: based on conflicts and unsatisfied constraints
     const totalConflicts = simulatedProposal.conflicts.length;
-    const criticalConflicts = simulatedProposal.conflicts.filter((c: any) => c.severity === 'CRITICAL').length;
+    const criticalConflicts = simulatedProposal.conflicts.filter(
+      (c: any) => c.severity === 'CRITICAL'
+    ).length;
     const feasibilityScore = Math.max(0, 1 - criticalConflicts * 0.2 - totalConflicts * 0.05);
 
     return {
@@ -996,24 +1096,24 @@ export class SimulationEngineService {
 
   private selectBestScenario(scenarios: any[]): { scenarioId: string } | null {
     if (scenarios.length === 0) return null;
-    
+
     // Score scenarios: higher deadline compliance, lower conflicts, higher feasibility
     let best = scenarios[0];
     let bestScore = -Infinity;
-    
+
     for (const s of scenarios) {
-      const score = 
+      const score =
         s.metrics.deadlineComplianceRate * 0.4 +
         s.metrics.feasibilityScore * 0.3 +
         s.metrics.dependencyComplianceRate * 0.2 +
         s.metrics.scheduleStabilityScore * 0.1;
-      
+
       if (score > bestScore) {
         bestScore = score;
         best = s;
       }
     }
-    
+
     return { scenarioId: best.scenarioId };
   }
 
@@ -1025,7 +1125,7 @@ export class SimulationEngineService {
     tradeoffs: any[]
   ): string {
     const parts: string[] = [];
-    
+
     if (scheduleDiff.moved.length > 0) {
       parts.push(`${scheduleDiff.moved.length} item(s) moved`);
     }
@@ -1039,20 +1139,24 @@ export class SimulationEngineService {
       parts.push(`${scheduleDiff.rescheduled.length} task(s) rescheduled`);
     }
 
-    const missedDeadlines = deadlineEffects.filter(d => d.impact === 'MISSED').length;
+    const missedDeadlines = deadlineEffects.filter((d) => d.impact === 'MISSED').length;
     if (missedDeadlines > 0) {
       parts.push(`${missedDeadlines} deadline(s) at risk of being missed`);
     }
 
-    const violations = constraintViolations.filter(v => v.severity === 'VIOLATION').length;
+    const violations = constraintViolations.filter((v) => v.severity === 'VIOLATION').length;
     if (violations > 0) {
       parts.push(`${violations} new constraint violation(s)`);
     }
 
     if (workloadChanges.changeMinutes > 0) {
-      parts.push(`Workload increased by ${Math.round(workloadChanges.changeMinutes / 60 * 10) / 10} hours`);
+      parts.push(
+        `Workload increased by ${Math.round((workloadChanges.changeMinutes / 60) * 10) / 10} hours`
+      );
     } else if (workloadChanges.changeMinutes < 0) {
-      parts.push(`Workload decreased by ${Math.round(-workloadChanges.changeMinutes / 60 * 10) / 10} hours`);
+      parts.push(
+        `Workload decreased by ${Math.round((-workloadChanges.changeMinutes / 60) * 10) / 10} hours`
+      );
     }
 
     if (tradeoffs.length > 0) {

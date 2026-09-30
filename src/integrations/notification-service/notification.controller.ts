@@ -10,8 +10,13 @@ import {
   Patch,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
+import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { NotificationService } from './notification.service';
-import { NotificationPayload } from './notification.interface';
+import {
+  NotificationPayload,
+  NotificationPreferencesSchema,
+  NotificationPreferencesUpdate,
+} from './notification.interface';
 
 @Controller('notifications')
 @UseGuards(JwtAuthGuard)
@@ -100,13 +105,30 @@ export class NotificationController {
     );
   }
 
+  /**
+   * Real read contract. Used to return `{ message: 'Use context/preferences
+   * endpoint' }`, which pointed callers at a route that does not exist.
+   */
   @Get('preferences')
   async getPreferences(@Request() req) {
-    return { message: 'Use context/preferences endpoint' };
+    return this.notificationService.preferencesFor(req.user.id);
   }
 
   @Post('preferences')
-  async updatePreferences(@Request() req, @Body() body: any) {
+  async updatePreferences(
+    @Request() req,
+    @Body(new ZodValidationPipe(NotificationPreferencesSchema))
+    body: NotificationPreferencesUpdate
+  ) {
+    return this.notificationService.updatePreferences(req.user.id, body);
+  }
+
+  @Patch('preferences')
+  async patchPreferences(
+    @Request() req,
+    @Body(new ZodValidationPipe(NotificationPreferencesSchema))
+    body: NotificationPreferencesUpdate
+  ) {
     return this.notificationService.updatePreferences(req.user.id, body);
   }
 }

@@ -95,7 +95,13 @@ export interface SchedulingInput {
 
 // Zod schemas for API validation
 export const TimeBlockTypeSchema = z.enum([
-  'TASK', 'FOCUS', 'MEETING', 'BREAK', 'BUFFER', 'TRAVEL', 'ROUTINE'
+  'TASK',
+  'FOCUS',
+  'MEETING',
+  'BREAK',
+  'BUFFER',
+  'TRAVEL',
+  'ROUTINE',
 ]);
 
 export const TimeRangeSchema = z.object({
@@ -105,9 +111,17 @@ export const TimeRangeSchema = z.object({
 
 export const AppliedConstraintSchema = z.object({
   type: z.enum([
-    'HARD_DEADLINE', 'FIXED_EVENT', 'AVAILABILITY_WINDOW', 'FOCUS_REQUIRED',
-    'MAX_HOURS_PER_DAY', 'MIN_BREAK_BETWEEN', 'PREFERRED_TIME', 'ENERGY_MATCH',
-    'LOCATION_BASED', 'DEPENDENCY', 'TRAVEL_BUFFER'
+    'HARD_DEADLINE',
+    'FIXED_EVENT',
+    'AVAILABILITY_WINDOW',
+    'FOCUS_REQUIRED',
+    'MAX_HOURS_PER_DAY',
+    'MIN_BREAK_BETWEEN',
+    'PREFERRED_TIME',
+    'ENERGY_MATCH',
+    'LOCATION_BASED',
+    'DEPENDENCY',
+    'TRAVEL_BUFFER',
   ]),
   severity: z.enum(['HARD', 'SOFT', 'PREFERENCE']),
   description: z.string(),
@@ -142,10 +156,21 @@ export const ScheduledBlockSchema = z.object({
 });
 
 export const SimulationTypeSchema = z.enum([
-  'MOVE_EVENT', 'MOVE_TASK', 'ADD_TIME_BLOCK', 'REMOVE_TIME_BLOCK',
-  'CHANGE_AVAILABILITY', 'ADD_TASK', 'REMOVE_TASK', 'CHANGE_DEADLINE',
-  'ADD_WORK_HOURS', 'REMOVE_WORK_HOURS', 'TAKE_TIME_OFF', 'SHIFT_SCHEDULE',
-  'LAUNCH_EARLIER', 'LAUNCH_LATER', 'CUSTOM',
+  'MOVE_EVENT',
+  'MOVE_TASK',
+  'ADD_TIME_BLOCK',
+  'REMOVE_TIME_BLOCK',
+  'CHANGE_AVAILABILITY',
+  'ADD_TASK',
+  'REMOVE_TASK',
+  'CHANGE_DEADLINE',
+  'ADD_WORK_HOURS',
+  'REMOVE_WORK_HOURS',
+  'TAKE_TIME_OFF',
+  'SHIFT_SCHEDULE',
+  'LAUNCH_EARLIER',
+  'LAUNCH_LATER',
+  'CUSTOM',
 ]);
 
 export type SimulationType = z.infer<typeof SimulationTypeSchema>;
@@ -219,9 +244,17 @@ export const SimulationInputSchema = z.object({
     z.object({
       id: z.string(),
       type: z.enum([
-        'HARD_DEADLINE', 'FIXED_EVENT', 'AVAILABILITY_WINDOW', 'FOCUS_REQUIRED',
-        'MAX_HOURS_PER_DAY', 'MIN_BREAK_BETWEEN', 'PREFERRED_TIME', 'ENERGY_MATCH',
-        'LOCATION_BASED', 'DEPENDENCY', 'TRAVEL_BUFFER'
+        'HARD_DEADLINE',
+        'FIXED_EVENT',
+        'AVAILABILITY_WINDOW',
+        'FOCUS_REQUIRED',
+        'MAX_HOURS_PER_DAY',
+        'MIN_BREAK_BETWEEN',
+        'PREFERRED_TIME',
+        'ENERGY_MATCH',
+        'LOCATION_BASED',
+        'DEPENDENCY',
+        'TRAVEL_BUFFER',
       ]),
       severity: z.enum(['HARD', 'SOFT', 'PREFERENCE']),
       description: z.string(),
@@ -363,8 +396,12 @@ export const TradeoffSchema = z.object({
   description: z.string(),
   impact: z.enum(['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']),
   affectedArea: z.enum([
-    'DEADLINES', 'FOCUS_TIME', 'MEETINGS', 'BREAKS',
-    'WORK_LIFE_BALANCE', 'PRIORITIES'
+    'DEADLINES',
+    'FOCUS_TIME',
+    'MEETINGS',
+    'BREAKS',
+    'WORK_LIFE_BALANCE',
+    'PRIORITIES',
   ]),
   affectedBlocks: z.array(z.string()),
 });
@@ -374,8 +411,11 @@ export type Tradeoff = z.infer<typeof TradeoffSchema>;
 export const ConflictSchema = z.object({
   id: z.string(),
   type: z.enum([
-    'OVERLAP', 'DEADLINE_MISS', 'DEPENDENCY_VIOLATION',
-    'AVAILABILITY_VIOLATION', 'ENERGY_MISMATCH'
+    'OVERLAP',
+    'DEADLINE_MISS',
+    'DEPENDENCY_VIOLATION',
+    'AVAILABILITY_VIOLATION',
+    'ENERGY_MISMATCH',
   ]),
   severity: z.enum(['CRITICAL', 'WARNING', 'INFO']),
   description: z.string(),
@@ -454,13 +494,15 @@ export type ApplySimulationInput = z.infer<typeof ApplySimulationInputSchema>;
 export const QuickSimulationInputSchema = z.object({
   userId: z.string(),
   question: z.string(),
-  context: z.object({
-    timeRange: z.object({
-      start: z.string().datetime(),
-      end: z.string().datetime(),
-    }),
-    timezone: z.string(),
-  }).optional(),
+  context: z
+    .object({
+      timeRange: z.object({
+        start: z.string().datetime(),
+        end: z.string().datetime(),
+      }),
+      timezone: z.string(),
+    })
+    .optional(),
 });
 
 export type QuickSimulationInput = z.infer<typeof QuickSimulationInputSchema>;

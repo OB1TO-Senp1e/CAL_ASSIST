@@ -1,56 +1,21 @@
 import { useState, useEffect } from 'react';
-import { Calendar, ChevronLeft, ChevronRight, Plus, Target } from 'lucide-react';
+import { Calendar, ChevronLeft, ChevronRight, Target } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import dayjs from 'dayjs';
-import { goalsAPI, tasksAPI, timeBlocksAPI } from '@/services';
+import { workService } from '@/services/work';
+import { timeBlockService, type TimeBlockDTO } from '@/services/time-blocks';
+import { assistantService } from '@/services/assistant';
 import { useAuth } from '@/contexts/AuthContext';
+import type { GoalDTO, ProjectDTO, TaskDTO } from '@/services/types';
 
-interface TimeBlock {
-  id: string;
-  title: string;
-  startDate: string;
-  endDate: string;
-  status: string;
-  blockType: string;
-}
-
-interface Task {
-  id: string;
-  title: string;
-  dueDate?: string;
-  priority: number;
-  status: string;
-}
-
-interface Goal {
-  id: string;
-  title: string;
-  status: string;
-  priority: number;
-  progress?: number;
-}
-
-interface Recommendation {
-  type: string;
-  title: string;
-  message: string;
-  action: string;
-}
-
-function getArrayData<T>(value: unknown): T[] | null {
-  if (Array.isArray(value)) return value as T[];
-  if (value && typeof value === 'object' && 'data' in value && Array.isArray(value.data)) {
-    return value.data as T[];
-  }
-  return null;
-}
+type TodayGoal = GoalDTO & { progress: number };
 
 export function TodayPage() {
   const { user } = useAuth();
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [timeBlocks, setTimeBlocks] = useState<TimeBlock[]>([]);
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [goals, setGoals] = useState<Goal[]>([]);
-  const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
+  const [timeBlocks, setTimeBlocks] = useState<TimeBlockDTO[]>([]);
+  const [tasks, setTasks] = useState<TaskDTO[]>([]);
+  const [goals, setGoals] = useState<TodayGoal[]>([]);
   const [dataError, setDataError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -66,58 +31,44 @@ export function TodayPage() {
       const endOfDay = today.endOf('day').toDate();
 
       const results = await Promise.allSettled([
-        timeBlocksAPI.getAll({ startDate: startOfDay.toISOString(), endDate: endOfDay.toISOString() }),
-        tasksAPI.getAll({ limit: 5 }),
-        goalsAPI.getAll({ status: 'PENDING' }),
+        timeBlockService.listRange(startOfDay.toISOString(), endOfDay.toISOString()),
+        workService.listTasks(),
+        workService.listGoals(),
+        workService.listProjects(),
       ]);
 
-      const [timeBlocksResult, tasksResult, goalsResult] = results;
+      const [timeBlocksResult, tasksResult, goalsResult, projectsResult] = results;
       const failures: string[] = [];
 
       if (timeBlocksResult.status === 'fulfilled') {
-        const data = getArrayData<TimeBlock>(timeBlocksResult.value.data);
-        setTimeBlocks(data ?? []);
-        if (!data) failures.push('time blocks');
+        setTimeBlocks(timeBlocksResult.value);
       } else {
         setTimeBlocks([]);
         failures.push('time blocks');
       }
 
+      const allTasks = tasksResult.status === 'fulfilled' ? tasksResult.value : [];
+      if (tasksResult.status !== 'fulfilled') failures.push('tasks');
+      setTasks(allTasks.filter((task) => task.status === 'PENDING' || task.status === 'IN_PROGRESS').sort((a, b) => b.priority - a.priority).slice(0, 5));
+
+      const projects: ProjectDTO[] = projectsResult.status === 'fulfilled' ? projectsResult.value : [];
+      if (projectsResult.status !== 'fulfilled') failures.push('projects');
       if (goalsResult.status === 'fulfilled') {
-        const data = getArrayData<Goal>(goalsResult.value.data);
-        setGoals(data ?? []);
-        if (!data) failures.push('goals');
+        const activeGoals = goalsResult.value.filter((goal) => goal.status === 'PENDING' || goal.status === 'IN_PROGRESS');
+        setGoals(activeGoals.map((goal) => {
+          const projectIds = projects.filter((project) => project.goalId === goal.id).map((project) => project.id);
+          const related = allTasks.filter((task) => task.goalId === goal.id || (task.projectId && projectIds.includes(task.projectId)));
+          const completed = related.filter((task) => task.status === 'COMPLETED').length;
+          return { ...goal, progress: related.length ? Math.round(completed / related.length * 100) : 0 };
+        }));
       } else {
         setGoals([]);
         failures.push('goals');
       }
 
-      const taskData = tasksResult.status === 'fulfilled'
-        ? getArrayData<Task>(tasksResult.value.data)
-        : null;
-      const pendingTasks = taskData?.filter(
-        (t: Task) => t.status === 'PENDING' || t.status === 'IN_PROGRESS'
-      ) || [];
-      setTasks(pendingTasks);
-      if (!taskData) failures.push('tasks');
       setDataError(failures.length ? `Could not load ${failures.join(', ')}. The rest of your dashboard is still available.` : null);
-      
-      setRecommendations([
-        {
-          type: 'AI',
-          title: 'Focus Time Available',
-          message: '2 hours of focused work time available this afternoon',
-          action: 'schedule',
-        },
-        {
-          type: 'RISK',
-          title: 'Deadline Approaching',
-          message: 'API documentation due today at 5pm',
-          action: 'prioritize',
-        },
-      ]);
     } catch (error) {
-      console.error('Error loading dashboard data:', error);
+      setDataError(error instanceof Error ? error.message : 'Could not load the dashboard.');
     } finally {
       setLoading(false);
     }
@@ -159,9 +110,9 @@ export function TodayPage() {
         )}
         
         <div className="flex items-center gap-2">
-          <button aria-label="Add item" className="rounded-xl border bg-card p-2.5 shadow-sm transition hover:bg-muted">
-            <Plus className="h-4 w-4" />
-          </button>
+          <Link to="/tasks" aria-label="Add task" title="Add task" className="rounded-xl border bg-card p-2.5 shadow-sm transition hover:bg-muted">
+            <Calendar className="h-4 w-4" />
+          </Link>
           <div className="flex items-center gap-1">
             <button 
               aria-label="Previous day"
@@ -247,18 +198,14 @@ export function TodayPage() {
           </div>
         </div>
         
-        {recommendations.map((rec, i) => (
-          <div key={i} className="mb-4 rounded-xl border border-white/80 bg-white/75 p-4 last:mb-0">
-            <h3 className="font-medium tracking-tight">{rec.title}</h3>
-            <p className="text-sm text-muted-foreground">{rec.message}</p>
-            <div className="flex gap-2 mt-2">
-              <button className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-sm shadow-primary/15 transition hover:bg-primary/90">
-                {rec.action === 'schedule' ? 'Schedule' : 'Prioritize'}
-              </button>
-              <button className="rounded-lg border bg-card px-3 py-1.5 text-xs font-medium transition hover:bg-muted">Dismiss</button>
-            </div>
-          </div>
-        ))}
+        <p className="text-sm text-muted-foreground">
+          {assistantService.apiAvailable
+            ? 'Ask the assistant to review your day or help prioritize open work.'
+            : 'Assistant conversations are unavailable because the backend has no assistant controller yet.'}
+        </p>
+        <Link to="/assistant" className="mt-3 inline-flex items-center gap-2 text-xs font-medium text-primary hover:underline">
+          Open Assistant
+        </Link>
       </div>
 
       {/* Goals Progress */}

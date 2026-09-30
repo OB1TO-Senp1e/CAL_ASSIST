@@ -1,8 +1,22 @@
 import { z } from 'zod';
 import { DateTime, RecurrenceRule } from '../domain/calendar-event';
 
+/**
+ * Accepts any non-empty identifier.
+ *
+ * Prisma generates `cuid()` ids for `Calendar` and `Event` (`@id @default(cuid())`),
+ * so the previous `z.string().uuid()` rejected every real id that reached the
+ * boundary — an id-bearing event create could never succeed. External/provider
+ * ids are also in play once calendar sync lands, so the boundary only asserts
+ * presence rather than a specific id flavour.
+ */
+export const EntityIdSchema = z.string().min(1).max(64);
+
 export const CreateEventSchema = z.object({
-  calendarId: z.string().uuid(),
+  // Optional: `Event.calendarId` is nullable in Prisma and
+  // `CalendarService.createEvent` writes `request.calendarId` straight through,
+  // so requiring it here contradicted both the schema and the service.
+  calendarId: EntityIdSchema.optional(),
   title: z.string().min(1).max(255),
   description: z.string().optional(),
   location: z.string().optional(),
@@ -103,6 +117,7 @@ export const UpdateEventSchema = z.object({
     .optional(),
   color: z.string().optional(),
   status: z.enum(['CONFIRMED', 'TENTATIVE', 'CANCELLED', 'NEEDS_ACTION']).optional(),
+  source: z.enum(['USER', 'AI_GENERATED', 'SYNCED']).optional(),
   participants: z
     .array(
       z.object({
@@ -129,7 +144,7 @@ export const ResizeEventSchema = z.object({
 });
 
 export const BulkEventSchema = z.object({
-  eventIds: z.array(z.string().uuid()),
+  eventIds: z.array(EntityIdSchema).min(1),
   action: z.enum(['delete', 'cancel', 'confirm', 'move', 'resize']),
   newStart: z.string().datetime().optional(),
   newEnd: z.string().datetime().optional(),

@@ -145,7 +145,7 @@ export function RegisterForm({ onSuccess }: { onSuccess?: () => void }) {
       </Button>
 
       <p className="text-xs text-muted-foreground">
-        This creates a local account immediately — there is no email verification step yet.
+        Your account is created immediately — there is no email verification step yet.
       </p>
     </form>
   );

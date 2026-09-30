@@ -9,6 +9,7 @@ import { AssistantThread } from '@/components/assistant/AssistantThread';
 import { AssistantComposer } from '@/components/assistant/AssistantComposer';
 import { ConversationList } from '@/components/assistant/ConversationList';
 import { TOOL_CATEGORY_LABEL } from '@/lib/mock/assistant';
+import { assistantService } from '@/services/assistant';
 
 /**
  * Full-page Assistant (unit 2c).
@@ -63,7 +64,7 @@ export function AssistantPage() {
             </button>
           ))}
         </div>
-        <Button size="sm" variant="outline" onClick={() => void newConversation()}>
+        <Button size="sm" variant="outline" onClick={() => void newConversation()} disabled={!assistantService.apiAvailable} title={!assistantService.apiAvailable ? 'Assistant conversation endpoints are not exposed by the backend.' : undefined}>
           <Plus className="size-3.5" />
           New
         </Button>
@@ -71,7 +72,7 @@ export function AssistantPage() {
 
       <div className="flex min-h-0 flex-1">
         {/* Conversation rail — hidden on phones, where the thread owns the screen. */}
-        <nav
+        {assistantService.apiAvailable && <nav
           aria-label="Conversations"
           className="hidden w-60 shrink-0 flex-col border-r border-border bg-surface-sunken lg:flex"
         >
@@ -83,7 +84,7 @@ export function AssistantPage() {
             onNew={() => void newConversation()}
             onDelete={(id) => void removeConversation(id)}
           />
-        </nav>
+        </nav>}
 
         <div className="flex min-w-0 flex-1 flex-col">
           {tab === 'tools' ? (
@@ -135,7 +136,8 @@ export function AssistantPage() {
                 onRetry={reload}
                 size="page"
               />
-              <AssistantComposer onSend={(text) => void send(text)} sending={sending} size="page" />
+              {!assistantService.apiAvailable && <p className="border-t border-border bg-muted/30 px-4 py-2 text-xs text-muted-foreground">The backend does not expose assistant conversation endpoints yet.</p>}
+              <AssistantComposer onSend={(text) => void send(text)} sending={sending} disabled={!assistantService.apiAvailable} size="page" />
             </>
           )}
         </div>

@@ -9,8 +9,8 @@
  *   Level           — src/ai/assistant/interfaces/assistant-tools.interface.ts ToolConfirmationLevelSchema
  *                     src/commitments/commitment.types.ts riskLevel
  *                     src/daily-experience/daily-experience.types.ts RiskLevelSchema
- *   EventCategory   — src/calendar/domain/calendar-event.ts EventCategory
- *                     (NOT on the Prisma Event model — see BUILD_LOG mismatches)
+ *   EventCategory   — prisma/schema.prisma enum EventCategory
+ *                     (mirrored by src/calendar/domain/calendar-event.ts)
  */
 import type { EventCategory } from '@/services/types';
 

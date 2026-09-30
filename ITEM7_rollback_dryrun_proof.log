@@ -1,0 +1,72 @@
+=== ITEM7 ARTIFACT 2 - ROLLBACK DRY-RUN AGAINST CLONE OF CURRENT LIVE SCHEMA ===
+date: 2026-09-30T11:37:23.898Z
+isolation: every DROP/INSERT/DDL below runs on LOCAL Docker db "c02_live_clone".
+live usage: SELECT ledger rows + table inventory ONLY. No DDL/DML was sent to live.
+
+READ-ONLY live ledger rows(12): ["20260926091145_init","20260926185000_add_time_block_commitment_refs","20260927110000_add_event_category_color","20260927120000_stage3_persistence","20260927123000_recommendation_state","20260927190000_commitment_person_metadata","20260927210000_memory_schema_sync","20260928120000_stage4k_permission_models","20260928121000_stage4k_replanning_policy","20260928210000_c7_calendar_oauth_pkce","20260928211000_c8_calendar_push_channel","20260929150000_c02_coordination_domain"]
+READ-ONLY live base table count: 57
+
+CLONE INPUT: .tmp-spec/live_schema.sql = 80237 bytes, sha256=2449eca597bf04cf2e35a0c5e7d5c0232f9375bb84c7b36fea0f25df13dfe42b
+  (exported from live by artifact 1 via `migrate diff --from-empty --to-config-datasource(live)`;
+   only cosmetic edit: CREATE SCHEMA -> CREATE SCHEMA IF NOT EXISTS. Prisma exports the public-schema
+   DDL surface, not the _prisma_migrations ledger (recreated below with the real live rows).)
+clone built: base tables = 57 (live has 57; +_prisma_migrations), ledger rows = 12
+
+seeded 1 row into User (required-no-default cols: 4)
+seeded 1 row into Meeting (required-no-default cols: 4)
+seeded 1 row into MeetingParticipant (required-no-default cols: 5)
+seeded 1 row into MeetingProposal (required-no-default cols: 5)
+seeded 1 row into SchedulingPreference (required-no-default cols: 6)
+seeded 1 row into AiActionLog (required-no-default cols: 4)
+
+--- BEFORE-ROLLBACK CLONE STATE (clone mirrors what live has NOW) ---
+row counts: {"Meeting":"1","MeetingParticipant":"1","MeetingProposal":"1","SchedulingPreference":"1","AiActionLog":"1","User":"1"}
+ledger rows: 12 (expect 12 incl. C-02)
+C-02 tables present: 5 (expect 5)
+MeetingStatus enum present: 1 (expect 1)
+indexes on C-02 tables: 26 (expect 26 incl. pkeys)
+FKs owned by C-02 tables: 7 (expect 7)
+
+--- ROLLBACK SCRIPT (committed bytes, sha256=2a6f615de861d74893e7a59b92283ecea3e2c96c97d9d8f18839d5c57cfeefd7) BEGIN ---
+-- C-02 LIVE ROLLBACK — PREPARED, DO NOT RUN WITHOUT USER APPROVAL.
+-- Reverses exactly what `20260929150000_c02_coordination_domain` applied to the
+-- live Supabase DB (accidental deploy 30 Sep). Drops ONLY C-02 objects; the 5
+-- tables are brand-new and empty of pre-existing data (no legacy FK points at
+-- them). Run against DIRECT_URL only (session :5432), never the pooler.
+--
+-- Order: FK children -> parents -> enum -> ledger row.
+
+BEGIN;
+
+DROP TABLE IF EXISTS "AiActionLog";
+DROP TABLE IF EXISTS "SchedulingPreference";
+DROP TABLE IF EXISTS "MeetingProposal";
+DROP TABLE IF EXISTS "MeetingParticipant";
+DROP TABLE IF EXISTS "Meeting";
+
+DROP TYPE IF EXISTS "MeetingStatus";
+
+DELETE FROM "_prisma_migrations"
+ WHERE migration_name = '20260929150000_c02_coordination_domain';
+
+COMMIT;
+
+-- Verify after run:
+--   SELECT count(*) FROM information_schema.tables
+--    WHERE table_name IN ('Meeting','MeetingParticipant','MeetingProposal',
+--                         'SchedulingPreference','AiActionLog');            -- expect 0
+--   SELECT count(*) FROM pg_type WHERE typname = 'MeetingStatus';            -- expect 0
+--   SELECT count(*) FROM "_prisma_migrations";                               -- expect 11
+
+--- ROLLBACK SCRIPT END ---
+rollback executed on clone in 21ms, no error
+
+--- AFTER-ROLLBACK CLONE STATE ---
+C-02 tables present: 0 (expect 0)
+MeetingStatus enum present: 0 (expect 0)
+indexes on C-02 tables: 0 (expect 0)
+FKs owned by C-02 tables: 0 (expect 0)
+ledger rows: 11 (expect 11)
+C-02 ledger row present: 0 (expect 0)
+legacy User seed row survived: 1 (expect 1)
+clone base tables after rollback: 52 (expect 52 = live 57 minus 5 C-02)

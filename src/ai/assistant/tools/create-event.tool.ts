@@ -43,6 +43,8 @@ export class CreateEventTool implements ToolDefinition<CreateEventInput, CreateE
           timezone: input.timezone ?? 'UTC',
           recurrenceRule: input.recurrence,
           status: input.status ?? 'CONFIRMED',
+          category: input.category ?? 'PERSONAL',
+          color: input.color,
           calendarId: input.calendarId,
         },
       });
@@ -83,6 +85,8 @@ export class CreateEventTool implements ToolDefinition<CreateEventInput, CreateE
           endDate: event.endDate.toISOString(),
           timezone: event.timezone,
           status: event.status,
+          category: event.category,
+          color: event.color ?? null,
         },
       };
     } catch (error: any) {

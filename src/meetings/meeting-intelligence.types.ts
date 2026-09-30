@@ -6,21 +6,41 @@ export const MeetingPreparationSchema = z.object({
   meetingDescription: z.string().optional(),
   startTime: z.string().datetime(),
   endTime: z.string().datetime(),
-  attendees: z.array(z.object({
-    email: z.string().email(),
-    name: z.string().optional(),
-    role: z.enum(['ORGANIZER', 'REQUIRED', 'OPTIONAL']).optional(),
-  })).optional(),
+  attendees: z
+    .array(
+      z.object({
+        email: z.string().email(),
+        name: z.string().optional(),
+        role: z.enum(['ORGANIZER', 'REQUIRED', 'OPTIONAL']).optional(),
+      })
+    )
+    .optional(),
   location: z.string().optional(),
-  meetingType: z.enum(['STANDARD', 'ONE_ON_ONE', 'TEAM_SYNC', 'CLIENT_MEETING', 'BOARD', 'INTERVIEW', 'RETROSPECTIVE', 'PLANNING', 'OTHER']).optional(),
+  meetingType: z
+    .enum([
+      'STANDARD',
+      'ONE_ON_ONE',
+      'TEAM_SYNC',
+      'CLIENT_MEETING',
+      'BOARD',
+      'INTERVIEW',
+      'RETROSPECTIVE',
+      'PLANNING',
+      'OTHER',
+    ])
+    .optional(),
   relatedProjectId: z.string().optional(),
   relatedGoalId: z.string().optional(),
-  agendaItems: z.array(z.object({
-    title: z.string(),
-    description: z.string().optional(),
-    estimatedMinutes: z.number().int().positive().optional(),
-    owner: z.string().optional(),
-  })).optional(),
+  agendaItems: z
+    .array(
+      z.object({
+        title: z.string(),
+        description: z.string().optional(),
+        estimatedMinutes: z.number().int().positive().optional(),
+        owner: z.string().optional(),
+      })
+    )
+    .optional(),
 });
 
 export type MeetingPreparationInput = z.infer<typeof MeetingPreparationSchema>;
@@ -29,7 +49,16 @@ export const PreparationChecklistItemSchema = z.object({
   id: z.string(),
   title: z.string(),
   description: z.string().optional(),
-  category: z.enum(['MATERIALS', 'RESEARCH', 'DECISIONS', 'UPDATES', 'FOLLOW_UPS', 'LOGISTICS', 'TECHNICAL', 'OTHER']),
+  category: z.enum([
+    'MATERIALS',
+    'RESEARCH',
+    'DECISIONS',
+    'UPDATES',
+    'FOLLOW_UPS',
+    'LOGISTICS',
+    'TECHNICAL',
+    'OTHER',
+  ]),
   priority: z.enum(['HIGH', 'MEDIUM', 'LOW']),
   estimatedMinutes: z.number().int().positive().optional(),
   completed: z.boolean().default(false),
@@ -44,12 +73,16 @@ export const PreviousContextSchema = z.object({
   meetingTitle: z.string(),
   date: z.string().datetime(),
   summary: z.string(),
-  actionItems: z.array(z.object({
-    title: z.string(),
-    assignee: z.string().optional(),
-    status: z.enum(['PENDING', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED']).optional(),
-    dueDate: z.string().datetime().optional(),
-  })).optional(),
+  actionItems: z
+    .array(
+      z.object({
+        title: z.string(),
+        assignee: z.string().optional(),
+        status: z.enum(['PENDING', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED']).optional(),
+        dueDate: z.string().datetime().optional(),
+      })
+    )
+    .optional(),
   decisions: z.array(z.string()).optional(),
   keyDiscussions: z.array(z.string()).optional(),
   attendees: z.array(z.string()).optional(),
@@ -88,15 +121,28 @@ export const SuggestedAgendaItemSchema = z.object({
   title: z.string(),
   description: z.string().optional(),
   estimatedMinutes: z.number().int().positive(),
-  type: z.enum(['UPDATE', 'DISCUSSION', 'DECISION', 'REVIEW', 'PLANNING', 'BRAINSTORM', 'RETROSPECTIVE', 'OTHER']),
+  type: z.enum([
+    'UPDATE',
+    'DISCUSSION',
+    'DECISION',
+    'REVIEW',
+    'PLANNING',
+    'BRAINSTORM',
+    'RETROSPECTIVE',
+    'OTHER',
+  ]),
   priority: z.enum(['HIGH', 'MEDIUM', 'LOW']),
   suggestedOwner: z.string().optional(),
   dependsOn: z.array(z.string()).optional(),
-  relatedEntities: z.array(z.object({
-    type: z.enum(['TASK', 'COMMITMENT', 'GOAL', 'PROJECT', 'PREVIOUS_MEETING']),
-    id: z.string(),
-    title: z.string(),
-  })).optional(),
+  relatedEntities: z
+    .array(
+      z.object({
+        type: z.enum(['TASK', 'COMMITMENT', 'GOAL', 'PROJECT', 'PREVIOUS_MEETING']),
+        id: z.string(),
+        title: z.string(),
+      })
+    )
+    .optional(),
 });
 
 export type SuggestedAgendaItem = z.infer<typeof SuggestedAgendaItemSchema>;
@@ -120,42 +166,64 @@ export const MeetingTranscriptSchema = z.object({
   title: z.string(),
   startTime: z.string().datetime(),
   endTime: z.string().datetime(),
-  attendees: z.array(z.object({
-    email: z.string().email(),
-    name: z.string().optional(),
-    joinedAt: z.string().datetime().optional(),
-    leftAt: z.string().datetime().optional(),
-  })).optional(),
+  attendees: z
+    .array(
+      z.object({
+        email: z.string().email(),
+        name: z.string().optional(),
+        joinedAt: z.string().datetime().optional(),
+        leftAt: z.string().datetime().optional(),
+      })
+    )
+    .optional(),
   transcript: z.string().optional(),
   recordingUrl: z.string().url().optional(),
   notes: z.string().optional(),
-  extractedContent: z.object({
-    decisions: z.array(z.string()).optional(),
-    actionItems: z.array(z.object({
-      description: z.string(),
-      assignee: z.string().optional(),
-      dueDate: z.string().datetime().optional(),
-      priority: z.enum(['HIGH', 'MEDIUM', 'LOW']).optional(),
-    })).optional(),
-    commitments: z.array(z.object({
-      description: z.string(),
-      person: z.string().optional(),
-      deadline: z.string().datetime().optional(),
-    })).optional(),
-    deadlines: z.array(z.object({
-      description: z.string(),
-      date: z.string().datetime(),
-      assignee: z.string().optional(),
-    })).optional(),
-    followUps: z.array(z.object({
-      description: z.string(),
-      assignee: z.string().optional(),
-      dueDate: z.string().datetime().optional(),
-    })).optional(),
-    keyTopics: z.array(z.string()).optional(),
-    blockers: z.array(z.string()).optional(),
-    risks: z.array(z.string()).optional(),
-  }).optional(),
+  extractedContent: z
+    .object({
+      decisions: z.array(z.string()).optional(),
+      actionItems: z
+        .array(
+          z.object({
+            description: z.string(),
+            assignee: z.string().optional(),
+            dueDate: z.string().datetime().optional(),
+            priority: z.enum(['HIGH', 'MEDIUM', 'LOW']).optional(),
+          })
+        )
+        .optional(),
+      commitments: z
+        .array(
+          z.object({
+            description: z.string(),
+            person: z.string().optional(),
+            deadline: z.string().datetime().optional(),
+          })
+        )
+        .optional(),
+      deadlines: z
+        .array(
+          z.object({
+            description: z.string(),
+            date: z.string().datetime(),
+            assignee: z.string().optional(),
+          })
+        )
+        .optional(),
+      followUps: z
+        .array(
+          z.object({
+            description: z.string(),
+            assignee: z.string().optional(),
+            dueDate: z.string().datetime().optional(),
+          })
+        )
+        .optional(),
+      keyTopics: z.array(z.string()).optional(),
+      blockers: z.array(z.string()).optional(),
+      risks: z.array(z.string()).optional(),
+    })
+    .optional(),
 });
 
 export type MeetingTranscriptInput = z.infer<typeof MeetingTranscriptSchema>;
@@ -171,11 +239,15 @@ export const ExtractedActionItemSchema = z.object({
   source: z.enum(['TRANSCRIPT', 'NOTES', 'MANUAL']).default('TRANSCRIPT'),
   confidence: z.number().min(0).max(1).default(1.0),
   context: z.string().optional(),
-  relatedEntities: z.array(z.object({
-    type: z.enum(['TASK', 'COMMITMENT', 'GOAL', 'PROJECT', 'MEETING']),
-    id: z.string().optional(),
-    title: z.string().optional(),
-  })).optional(),
+  relatedEntities: z
+    .array(
+      z.object({
+        type: z.enum(['TASK', 'COMMITMENT', 'GOAL', 'PROJECT', 'MEETING']),
+        id: z.string().optional(),
+        title: z.string().optional(),
+      })
+    )
+    .optional(),
 });
 
 export type ExtractedActionItem = z.infer<typeof ExtractedActionItemSchema>;
@@ -189,11 +261,15 @@ export const ExtractedCommitmentSchema = z.object({
   confidence: z.number().min(0).max(1).default(1.0),
   source: z.enum(['TRANSCRIPT', 'NOTES', 'MANUAL']).default('TRANSCRIPT'),
   context: z.string().optional(),
-  relatedEntities: z.array(z.object({
-    type: z.enum(['TASK', 'COMMITMENT', 'GOAL', 'PROJECT', 'MEETING']),
-    id: z.string().optional(),
-    title: z.string().optional(),
-  })).optional(),
+  relatedEntities: z
+    .array(
+      z.object({
+        type: z.enum(['TASK', 'COMMITMENT', 'GOAL', 'PROJECT', 'MEETING']),
+        id: z.string().optional(),
+        title: z.string().optional(),
+      })
+    )
+    .optional(),
 });
 
 export type ExtractedCommitment = z.infer<typeof ExtractedCommitmentSchema>;
@@ -207,11 +283,15 @@ export const ExtractedDeadlineSchema = z.object({
   confidence: z.number().min(0).max(1).default(1.0),
   source: z.enum(['TRANSCRIPT', 'NOTES', 'MANUAL']).default('TRANSCRIPT'),
   context: z.string().optional(),
-  relatedEntities: z.array(z.object({
-    type: z.enum(['TASK', 'COMMITMENT', 'GOAL', 'PROJECT', 'MEETING']),
-    id: z.string().optional(),
-    title: z.string().optional(),
-  })).optional(),
+  relatedEntities: z
+    .array(
+      z.object({
+        type: z.enum(['TASK', 'COMMITMENT', 'GOAL', 'PROJECT', 'MEETING']),
+        id: z.string().optional(),
+        title: z.string().optional(),
+      })
+    )
+    .optional(),
 });
 
 export type ExtractedDeadline = z.infer<typeof ExtractedDeadlineSchema>;
@@ -225,11 +305,15 @@ export const ExtractedFollowUpSchema = z.object({
   confidence: z.number().min(0).max(1).default(1.0),
   source: z.enum(['TRANSCRIPT', 'NOTES', 'MANUAL']).default('TRANSCRIPT'),
   context: z.string().optional(),
-  relatedEntities: z.array(z.object({
-    type: z.enum(['TASK', 'COMMITMENT', 'GOAL', 'PROJECT', 'MEETING']),
-    id: z.string().optional(),
-    title: z.string().optional(),
-  })).optional(),
+  relatedEntities: z
+    .array(
+      z.object({
+        type: z.enum(['TASK', 'COMMITMENT', 'GOAL', 'PROJECT', 'MEETING']),
+        id: z.string().optional(),
+        title: z.string().optional(),
+      })
+    )
+    .optional(),
 });
 
 export type ExtractedFollowUp = z.infer<typeof ExtractedFollowUpSchema>;
@@ -254,7 +338,9 @@ export type PostMeetingResult = z.infer<typeof PostMeetingResultSchema>;
 export const MeetingIntelligenceConfigSchema = z.object({
   autoCreateTasks: z.boolean().default(false),
   autoCreateCommitments: z.boolean().default(false),
-  requireConfirmationFor: z.array(z.enum(['TASK', 'COMMITMENT', 'DEADLINE', 'FOLLOW_UP'])).default(['COMMITMENT', 'DEADLINE']),
+  requireConfirmationFor: z
+    .array(z.enum(['TASK', 'COMMITMENT', 'DEADLINE', 'FOLLOW_UP']))
+    .default(['COMMITMENT', 'DEADLINE']),
   defaultTaskPriority: z.number().int().min(1).max(10).default(5),
   defaultTaskDurationMinutes: z.number().int().positive().default(60),
   includeLowConfidenceItems: z.boolean().default(false),

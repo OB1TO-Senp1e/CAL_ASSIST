@@ -1,6 +1,5 @@
 {
-  "dashboard": {
-    "title": "CalAssist API Overview",
+  "title": "CalAssist API Overview",
     "uid": "calassist-api-overview",
     "tags": ["calassist", "api"],
     "timezone": "browser",
@@ -11,7 +10,7 @@
       {
         "title": "HTTP Requests Rate",
         "type": "graph",
-        "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+        "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
         "targets": [
           {
             "expr": "rate(calassist_http_requests_total[5m])",
@@ -22,7 +21,7 @@
       {
         "title": "HTTP Request Duration (p95)",
         "type": "graph",
-        "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+        "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
         "targets": [
           {
             "expr": "histogram_quantile(0.95, rate(calassist_http_request_duration_seconds_bucket[5m]))",
@@ -37,7 +36,7 @@
       {
         "title": "Active Users",
         "type": "stat",
-        "gridPos": {"x": 0, "y": 8, "w": 6, "h": 4},
+        "gridPos": { "x": 0, "y": 8, "w": 6, "h": 4 },
         "targets": [
           {
             "expr": "calassist_active_users",
@@ -48,7 +47,7 @@
       {
         "title": "Scheduled Tasks",
         "type": "stat",
-        "gridPos": {"x": 6, "y": 8, "w": 6, "h": 4},
+        "gridPos": { "x": 6, "y": 8, "w": 6, "h": 4 },
         "targets": [
           {
             "expr": "calassist_scheduled_tasks",
@@ -59,7 +58,7 @@
       {
         "title": "AI Requests Rate",
         "type": "graph",
-        "gridPos": {"x": 0, "y": 12, "w": 12, "h": 8},
+        "gridPos": { "x": 0, "y": 12, "w": 12, "h": 8 },
         "targets": [
           {
             "expr": "rate(calassist_ai_requests_total[5m])",
@@ -70,7 +69,7 @@
       {
         "title": "AI Request Duration (p95)",
         "type": "graph",
-        "gridPos": {"x": 12, "y": 12, "w": 12, "h": 8},
+        "gridPos": { "x": 12, "y": 12, "w": 12, "h": 8 },
         "targets": [
           {
             "expr": "histogram_quantile(0.95, rate(calassist_ai_request_duration_seconds_bucket[5m]))",
@@ -81,7 +80,7 @@
       {
         "title": "Node.js Memory Usage",
         "type": "graph",
-        "gridPos": {"x": 0, "y": 20, "w": 12, "h": 8},
+        "gridPos": { "x": 0, "y": 20, "w": 12, "h": 8 },
         "targets": [
           {
             "expr": "process_resident_memory_bytes",
@@ -100,15 +99,46 @@
       {
         "title": "Event Loop Lag",
         "type": "graph",
-        "gridPos": {"x": 12, "y": 20, "w": 12, "h": 8},
+        "gridPos": { "x": 12, "y": 20, "w": 12, "h": 8 },
         "targets": [
           {
             "expr": "nodejs_eventloop_lag_seconds",
             "legendFormat": "Event Loop Lag"
           }
         ]
+      },
+      {
+        "title": "API Replica Availability",
+        "type": "graph",
+        "gridPos": { "x": 0, "y": 28, "w": 12, "h": 8 },
+        "targets": [
+          {
+            "expr": "up{job=\"calassist-api\"}",
+            "legendFormat": "{{instance}}"
+          }
+        ]
+      },
+      {
+        "title": "API 5xx Rate by Replica",
+        "type": "graph",
+        "gridPos": { "x": 12, "y": 28, "w": 12, "h": 8 },
+        "targets": [
+          {
+            "expr": "sum by (instance) (rate(calassist_http_requests_total{job=\"calassist-api\",status_code=~\"5..\"}[5m]))",
+            "legendFormat": "{{instance}}"
+          }
+        ]
+      },
+      {
+        "title": "AI Circuit State by Replica",
+        "type": "graph",
+        "gridPos": { "x": 0, "y": 36, "w": 12, "h": 8 },
+        "targets": [
+          {
+            "expr": "calassist_ai_circuit_state",
+            "legendFormat": "{{instance}} {{provider}}"
+          }
+        ]
       }
     ]
-  },
-  "overwrite": true
 }

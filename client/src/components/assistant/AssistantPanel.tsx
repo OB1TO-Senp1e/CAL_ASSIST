@@ -7,6 +7,7 @@ import { useAssistant } from '@/contexts/AssistantContext';
 import { AssistantThread } from './AssistantThread';
 import { AssistantComposer } from './AssistantComposer';
 import { ConversationList } from './ConversationList';
+import { assistantService } from '@/services/assistant';
 
 /**
  * The ambient AI layer (DESIGN_SYSTEM.md §AI presence).
@@ -41,10 +42,10 @@ export function AssistantPanel() {
 
   // Start a conversation on first open so the composer is always usable.
   useEffect(() => {
-    if (assistantOpen && !loading && conversations.length === 0) {
+    if (assistantService.apiAvailable && assistantOpen && !loading && !error && conversations.length === 0) {
       void newConversation();
     }
-  }, [assistantOpen, loading, conversations.length, newConversation]);
+  }, [assistantOpen, loading, error, conversations.length, newConversation]);
 
   const active = conversations.find((c) => c.id === activeId);
 
@@ -66,6 +67,7 @@ export function AssistantPanel() {
         <button
           type="button"
           onClick={() => setShowList((v) => !v)}
+          disabled={!assistantService.apiAvailable}
           aria-expanded={showList}
           className="flex min-w-0 items-center gap-1 rounded-sm text-left hover:text-foreground"
           title="Switch conversation"
@@ -119,7 +121,7 @@ export function AssistantPanel() {
         size="panel"
       />
 
-      <AssistantComposer onSend={(text) => void send(text)} sending={sending} />
+      <AssistantComposer onSend={(text) => void send(text)} sending={sending} disabled={!assistantService.apiAvailable} />
     </aside>
   );
 }

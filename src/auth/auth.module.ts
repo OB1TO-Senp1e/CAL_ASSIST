@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { ConfigService, ConfigModule } from '@nestjs/config';
@@ -8,10 +8,12 @@ import { LocalStrategy } from './local.strategy';
 import { AuthController } from './auth.controller';
 import { UsersModule } from '../users/users.module';
 import { PrismaService } from '../common/services/prisma.service';
+import { GoogleStrategy } from './google.strategy';
+import { DevelopmentOnlyGuard } from '../common/guards/development-only.guard';
 
 @Module({
   imports: [
-    UsersModule,
+    forwardRef(() => UsersModule),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     ConfigModule,
     JwtModule.registerAsync({
@@ -25,7 +27,14 @@ import { PrismaService } from '../common/services/prisma.service';
       }),
     }),
   ],
-  providers: [AuthService, LocalStrategy, JwtStrategy, PrismaService],
+  providers: [
+    AuthService,
+    LocalStrategy,
+    JwtStrategy,
+    GoogleStrategy,
+    PrismaService,
+    DevelopmentOnlyGuard,
+  ],
   controllers: [AuthController],
   exports: [AuthService, JwtModule, PassportModule],
 })

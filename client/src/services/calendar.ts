@@ -7,9 +7,11 @@
  * src/integrations/calendar-adapters/calendar.controller.ts.
  *
  * Divergence from the raw backend response is confined to `normalizeEvent()`:
- * the service currently returns `DateTime` class instances (no `toJSON`), so
- * dates arrive as `{_utc,_timeZone}` and `category`/`source` are absent from the
- * Prisma model. Normalising here means Stage 3 does not break either way.
+ * the service still returns Luxon `DateTime` instances for `start`/`end` (no
+ * `toJSON`), so dates arrive as `{_utc,_timeZone}` rather than ISO strings.
+ * `category`/`color` are real Prisma Event columns as of migration
+ * 20260927110000_add_event_category_color, but are defaulted here so rows
+ * created before that migration still read cleanly.
  */
 import dayjs, { type Dayjs } from 'dayjs';
 import api from './api';
@@ -18,6 +20,8 @@ import type {
   CalendarDTO,
   CalendarEventDTO,
   CreateEventInput,
+  ConflictDTO,
+  DayViewDTO,
   MonthViewDTO,
   EventStatus,
   UpdateEventInput,
@@ -25,7 +29,7 @@ import type {
 } from './types';
 import { USE_MOCK } from './auth';
 import { loadCalendars, loadEvents, mockId, saveCalendars, saveEvents } from '@/lib/mock/calendar';
-import { expandOccurrences } from '@/lib/rrule';
+import { expandOccurrences, parseRRule, toRRuleString } from '@/lib/rrule';
 import { toIso } from '@/lib/datetime';
 import { latency } from '@/lib/mock/db';
 
@@ -36,12 +40,17 @@ export function normalizeEvent(raw: Record<string, unknown>): CalendarEventDTO {
     recurrenceRule?: string | null;
     recurrence?: unknown;
     eventParticipants?: CalendarEventDTO['participants'];
+    startDate?: unknown;
+    endDate?: unknown;
   };
 
   let recurrenceRule = event.recurrenceRule ?? null;
   if (!recurrenceRule && event.recurrence) {
-    recurrenceRule = typeof event.recurrence === 'string' ? event.recurrence : null;
+    const parsed = parseRRule(event.recurrence);
+    recurrenceRule = typeof event.recurrence === 'string' ? event.recurrence : parsed ? toRRuleString(parsed) : null;
   }
+
+  const source = raw.source;
 
   return {
     id: String(raw.id ?? ''),
@@ -50,23 +59,39 @@ export function normalizeEvent(raw: Record<string, unknown>): CalendarEventDTO {
     title: String(raw.title ?? ''),
     description: (raw.description as string | null) ?? null,
     location: (raw.location as string | null) ?? null,
-    start: toIso(event.start),
-    end: toIso(event.end),
+    start: toIso(event.start ?? event.startDate),
+    end: toIso(event.end ?? event.endDate),
     allDay: Boolean(raw.allDay),
     timeZone: event.timezone ?? event.timeZone ?? 'UTC',
     status: (raw.status as EventStatus) ?? 'CONFIRMED',
-    // Not on the Prisma Event model today; default rather than crash the grid.
+    // Prisma Event.column; defaults to PERSONAL for rows created before it existed.
     category: (raw.category as CalendarEventDTO['category']) ?? 'PERSONAL',
     color: (raw.color as string | null) ?? null,
     recurrenceRule,
     exceptionDates: ((raw.exceptionDates as unknown[]) ?? []).map(toIso).filter(Boolean),
-    source: (raw.source as CalendarEventDTO['source']) ?? 'USER',
+    source: (source as CalendarEventDTO['source']) ?? 'USER',
     visibility: (raw.visibility as CalendarEventDTO['visibility']) ?? 'PRIVATE',
     participants: event.participants ?? event.eventParticipants ?? [],
     reminders: (raw.reminders as CalendarEventDTO['reminders']) ?? [],
     createdAt: toIso(raw.createdAt),
     updatedAt: toIso(raw.updatedAt),
   };
+}
+
+function normalizeDay(raw: Record<string, unknown>): DayViewDTO {
+  const events = Array.isArray(raw.events) ? raw.events as Record<string, unknown>[] : [];
+  const allDayEvents = Array.isArray(raw.allDayEvents) ? raw.allDayEvents as Record<string, unknown>[] : [];
+  return {
+    date: toIso(raw.date),
+    events: events.map(normalizeEvent),
+    allDayEvents: allDayEvents.map(normalizeEvent),
+    workingHours: (raw.workingHours as DayViewDTO['workingHours'] | undefined) ?? { start: 9, end: 17 },
+  };
+}
+
+function normalizeWeek(raw: Record<string, unknown>): WeekViewDTO {
+  const days = Array.isArray(raw.days) ? raw.days as Record<string, unknown>[] : [];
+  return { weekStart: toIso(raw.weekStart), weekEnd: toIso(raw.weekEnd), days: days.map(normalizeDay) };
 }
 
 /* ───────────── Mock implementations ───────────── */
@@ -148,6 +173,17 @@ async function mockAgenda(start: Dayjs, end: Dayjs): Promise<CalendarEventDTO[]>
 /* ───────────── Public API ───────────── */
 
 export const calendarService = {
+  // PATCH /api/calendar/calendars/:id/visibility (adapter controller) persists
+  // Calendar.isVisible as of Stage 4, so the toggle is no longer mock-only.
+  canToggleCalendarVisibility: true,
+  // category/color persist on the Prisma Event model as of migration
+  // 20260927110000_add_event_category_color, so these are no longer mock-only.
+  canPersistCategory: true,
+  canCreateEvent: true,
+  // PATCH /api/calendar/events/:id accepts status + source since Stage 4, so
+  // accepting an AI_GENERATED event (CONFIRMED + USER) is a single live call.
+  canAcceptProposal: true,
+
   async listCalendars(): Promise<CalendarDTO[]> {
     if (USE_MOCK) {
       await latency(80, 200);
@@ -163,31 +199,42 @@ export const calendarService = {
       saveCalendars(next);
       return next;
     }
-    await api.patch(`/api/calendar/calendars/${id}`, { isVisible });
-    return this.listCalendars();
+    await api.patch(`/api/calendar/calendars/${encodeURIComponent(id)}/visibility`, { isVisible });
+    const { data } = await api.get<CalendarDTO[]>('/api/calendar/calendars');
+    return data;
   },
 
   /** GET /api/calendar/events?startDate&endDate */
   async listEvents(start: Dayjs, end: Dayjs): Promise<CalendarEventDTO[]> {
     if (USE_MOCK) return mockList(start, end);
     const { data } = await api.get<Record<string, unknown>[]>('/api/calendar/events', {
+      // The domain controller owns this route and accepts both startDate/endDate
+      // and the Google-style timeMin/timeMax aliases; we send the canonical pair.
       params: { startDate: start.toISOString(), endDate: end.toISOString() },
     });
-    return data.map(normalizeEvent);
+    return data.map(normalizeEvent).filter((event) => dayjs(event.start).isBefore(end) && dayjs(event.end).isAfter(start));
   },
 
   /** GET /api/calendar/events/week/:weekStart */
   async weekView(weekStart: Dayjs): Promise<WeekViewDTO> {
     if (USE_MOCK) return mockWeek(weekStart);
-    const { data } = await api.get<WeekViewDTO>(`/api/calendar/events/week/${weekStart.format('YYYY-MM-DD')}`);
-    return data;
+    const { data } = await api.get<Record<string, unknown>>(`/api/calendar/events/week/${weekStart.format('YYYY-MM-DD')}`);
+    return normalizeWeek(data);
   },
 
-  /** GET /api/calendar/events/month/:year/:month — month is 1-based on the wire. */
+  /** GET /api/calendar/events/month/:year/:month — controller/service both use a 0-based month. */
   async monthView(year: number, month: number): Promise<MonthViewDTO> {
     if (USE_MOCK) return mockMonth(year, month);
-    const { data } = await api.get<MonthViewDTO>(`/api/calendar/events/month/${year}/${month + 1}`);
-    return data;
+    const { data } = await api.get<Record<string, unknown>>(`/api/calendar/events/month/${year}/${month}`);
+    const weeks = (Array.isArray(data.weeks) ? data.weeks as Record<string, unknown>[] : []).map(normalizeWeek);
+    const rawByDate = data.eventsByDate as Record<string, Record<string, unknown>[]> | undefined;
+    const eventsByDate: Record<string, CalendarEventDTO[]> = {};
+    for (const [date, events] of Object.entries(rawByDate ?? {})) eventsByDate[date] = events.map(normalizeEvent);
+    for (const week of weeks) for (const day of week.days) {
+      const events = [...day.allDayEvents, ...day.events];
+      if (events.length && !eventsByDate[day.date.slice(0, 10)]) eventsByDate[day.date.slice(0, 10)] = events;
+    }
+    return { year: Number(data.year ?? year), month: Number(data.month ?? month), weeks, eventsByDate };
   },
 
   /** GET /api/calendar/events/agenda?startDate&endDate */
@@ -236,7 +283,17 @@ export const calendarService = {
       saveEvents([...loadEvents(), event]);
       return event;
     }
-    const { data } = await api.post<Record<string, unknown>>('/api/calendar/events', input);
+    // `category`/`color` now exist on the Prisma Event model (migration
+    // 20260927110000_add_event_category_color), so live create persists them.
+    // The engine's CreateEventRequest takes start/end/timeZone, not startDate/endDate.
+    const { category, color, recurrenceRule, ...rest } = input;
+    const body = {
+      ...rest,
+      ...(category ? { category } : {}),
+      ...(color ? { color } : {}),
+      ...(recurrenceRule ? { recurrence: recurrenceRule } : {}),
+    };
+    const { data } = await api.post<Record<string, unknown>>('/api/calendar/events', body);
     return normalizeEvent(data);
   },
 
@@ -266,7 +323,9 @@ export const calendarService = {
       saveEvents(events);
       return merged;
     }
-    const { data } = await api.patch<Record<string, unknown>>(`/api/calendar/events/${id}`, input);
+    const { category: _category, color: _color, recurrenceRule, ...rest } = input;
+    const body = { ...rest, ...(recurrenceRule === undefined ? {} : { recurrence: recurrenceRule }) };
+    const { data } = await api.patch<Record<string, unknown>>(`/api/calendar/events/${id}`, body);
     return normalizeEvent(data);
   },
 
@@ -317,15 +376,18 @@ export const calendarService = {
   },
 
   /** POST /api/calendar/events/conflicts/check */
-  async checkConflicts(start: Dayjs, end: Dayjs, excludeId?: string): Promise<CalendarEventDTO[]> {
+  async checkConflicts(start: Dayjs, end: Dayjs, excludeId?: string): Promise<ConflictDTO[]> {
     if (USE_MOCK) {
       await latency(120, 260);
-      return mockOverlapping(start, end, excludeId);
+      return mockOverlapping(start, end, excludeId).map((event) => ({
+        type: 'OVERLAP', eventA: excludeId ?? 'new', eventB: event.id, eventBTitle: event.title,
+        overlapMinutes: Math.max(0, Math.round((Math.min(end.valueOf(), dayjs(event.end).valueOf()) - Math.max(start.valueOf(), dayjs(event.start).valueOf())) / 60_000)),
+      }));
     }
-    const { data } = await api.post<Record<string, unknown>[]>('/api/calendar/events/conflicts/check', {
-      event: { start: start.toISOString(), end: end.toISOString() },
+    const { data } = await api.post<{ conflicts: Array<{ eventId: string; eventTitle: string; conflictType: ConflictDTO['type']; overlapMinutes: number }> }>('/api/calendar/events/conflicts/check', {
+      event: { start: start.toISOString(), end: end.toISOString(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' },
       excludeEventId: excludeId,
     });
-    return data.map(normalizeEvent);
+    return data.conflicts.map((conflict) => ({ type: conflict.conflictType, eventA: excludeId ?? 'new', eventB: conflict.eventId, eventBTitle: conflict.eventTitle, overlapMinutes: conflict.overlapMinutes }));
   },
 };

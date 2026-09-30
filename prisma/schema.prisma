@@ -21,6 +21,9 @@ model User {
   assistantRecommendations AssistantRecommendation[]
   auditLogs                AuditLog[]
   autonomyRules            AutonomyRule[]
+  autonomyPolicies         AutonomyPolicy[]
+  ruleConflicts            RuleConflict[]
+  replanningPolicies       ReplanningPolicy[]
   availabilities           AvailabilityRule[]
   calendars                Calendar[]
   calendarConnections      CalendarConnection[]
@@ -53,6 +56,14 @@ model User {
   tasks                    Task[]
   timeBlocks               TimeBlock[]
   travelBuffers            TravelBuffer[]
+  scheduleProposalRecords  ScheduleProposalRecord[]
+  deviationStates          DeviationState[]
+  interventionStates       InterventionState[]
+  meetingArtifacts         MeetingArtifact[]
+  recommendationStates     RecommendationState[]
+  meetings                 Meeting[]
+  schedulingPreferences    SchedulingPreference[]
+  aiActionLogs             AiActionLog[]
 
   @@index([email])
   @@index([deletedAt])
@@ -271,6 +282,41 @@ model Calendar {
   @@index([externalId])
 }
 
+// C7: server-side PKCE store for the hand-rolled calendar OAuth flows.
+// Keyed by SHA-256 of the signed state JWT (no bearer material in the DB).
+// Holds the code_verifier for exactly one callback: consumed (deleted) on use
+// and ignored once expiresAt has passed. The verifier never appears in any
+// URL, the state JWT, or logs.
+model CalendarOAuthPkce {
+  id           String           @id
+  codeVerifier String
+  userId       String
+  provider     CalendarProvider
+  createdAt    DateTime         @default(now())
+  expiresAt    DateTime
+  consumedAt   DateTime?
+
+  @@index([expiresAt])
+}
+
+// C8: Google Calendar push-notification channels. Created at watch time; a
+// notification is only trusted when its channel token + channel id + resource
+// id all match a live row (Google does NOT sign push payloads with HMAC).
+model CalendarPushChannel {
+  id           String           @id @default(cuid())
+  userId       String
+  provider     CalendarProvider
+  channelId    String
+  resourceUri  String
+  channelToken String
+  expiration   DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@unique([provider, channelId])
+  @@index([userId])
+}
+
 model CalendarConnection {
   id             String           @id @default(cuid())
   userId         String
@@ -311,6 +357,8 @@ model Event {
   status             EventStatus        @default(CONFIRMED)
   visibility         EventVisibility    @default(PRIVATE)
   source             EventSource        @default(USER)
+  category           EventCategory      @default(PERSONAL)
+  color              String?
   calendarExternalId String?
   externalETag       String?
   createdBy          String?
@@ -322,12 +370,14 @@ model Event {
   eventParticipants  EventParticipant[]
   reminders          Reminder[]
   timeBlocks         TimeBlock[]
+  meeting            Meeting?
 
   @@index([userId])
   @@index([calendarId])
   @@index([startDate, endDate])
   @@index([recurrenceRule])
   @@index([calendarExternalId])
+  @@index([category])
 }
 
 model EventParticipant {
@@ -381,6 +431,19 @@ model Commitment {
   status            CommitmentStatus @default(PENDING)
   priority          Int              @default(0)
   source            CommitmentSource @default(USER)
+  // Stage 4: meeting extraction already produces `person` / `personEmail` /
+  // `confidence` / `context` (see the client's MeetingCommitment type), but the
+  // model had nowhere to put them, so an extracted commitment could not survive
+  // the write. `confidence` also makes the `LOW_CONFIDENCE` risk factor — which
+  // was declared but unreachable — actually evaluable.
+  person            String?
+  personEmail       String?
+  confidence        Float?
+  context           String?
+  // Links a commitment to the entity it was promised against, so the UI can
+  // show "for <project>" and the risk engine can check for allocated time.
+  relatedEntityType String?
+  relatedEntityId   String?
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
   deletedAt         DateTime?
@@ -392,6 +455,8 @@ model Commitment {
   @@index([userId])
   @@index([deadline])
   @@index([status])
+  @@index([person])
+  @@index([confidence])
 }
 
 model Routine {
@@ -921,20 +986,83 @@ model Integration {
   @@index([isActive])
 }
 
+/// Stage 4k: structured permission grants. Before 4k the service stored the
+/// whole grant (action/scope/decision/conditions) as URL-encoded JSON smuggled
+/// through the `scope` string with a `calassist.permission:` prefix; every
+/// field is now a real, typed column.
 model Permission {
-  id        String          @id @default(cuid())
-  userId    String
-  scope     String
-  level     PermissionLevel
-  grantedBy String
-  grantedAt DateTime        @default(now())
-  expiresAt DateTime?
-  isActive  Boolean         @default(true)
-  user      User            @relation(fields: [userId], references: [id])
+  id         String             @id @default(cuid())
+  userId     String
+  action     PermissionAction
+  scope      PermissionScope
+  decision   PermissionDecision
+  conditions Json               @default("{}")
+  grantedBy  String             @default("USER")
+  grantedAt  DateTime           @default(now())
+  expiresAt  DateTime?
+  isActive   Boolean            @default(true)
+  user       User               @relation(fields: [userId], references: [id])
 
+  @@unique([userId, action, scope])
   @@index([userId, scope])
-  @@index([level])
+  @@index([action])
   @@index([expiresAt])
+}
+
+/// Stage 4k: autonomy policies used to be JSON.stringify-ed into
+/// AutonomyRule.actionConfig under a `calassistPolicy` key, which forced the
+/// rules engine and the replanning engine to guess row types with marker
+/// heuristics. Policies now live here and AutonomyRule is rule storage only.
+model AutonomyPolicy {
+  id                     String             @id @default(cuid())
+  userId                 String
+  name                   String
+  description            String?
+  autonomyLevel          AutonomyLevel      @default(SUGGEST)
+  enabledScopes          PermissionScope[]
+  allowedActions         PermissionAction[]
+  riskThreshold          RiskLevel          @default(LOW)
+  requireConfirmationFor PermissionAction[]
+  protectedEntities      Json               @default("[]")
+  timeRestrictions       Json               @default("[]")
+  maxActionsPerPeriod    Json?
+  isActive               Boolean            @default(true)
+  priority               Int                @default(0)
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+  user                   User               @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([isActive])
+}
+
+/// Stage 4k: detected rule conflicts and their resolutions were recomputed on
+/// every read and smuggled back as stringified entries in the owning rule's
+/// `conditions.resolvedConflicts` JSON array. Conflicts are persisted here now,
+/// keyed by the stable `<ruleId1>:<ruleId2>` external id the API already uses.
+model RuleConflict {
+  id                  String                 @id @default(cuid())
+  userId              String
+  /// External id: the two rule ids, sorted, joined by ':' (stable, parseable).
+  conflictKey         String
+  ruleId1             String
+  ruleId2             String
+  rule1Name           String
+  rule2Name           String
+  conflictType        RuleConflictType
+  description         String
+  severity            RuleConflictSeverity
+  suggestedResolution RuleConflictResolution?
+  detectedAt          DateTime               @default(now())
+  resolvedAt          DateTime?
+  resolution          RuleConflictResolution?
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+  user                User                   @relation(fields: [userId], references: [id])
+
+  @@unique([userId, conflictKey])
+  @@index([userId])
+  @@index([resolvedAt])
 }
 
 model AutonomyRule {
@@ -986,6 +1114,172 @@ model AuditLog {
   @@index([createdAt])
   @@index([correlationId])
   @@index([success])
+}
+
+// ---------------------------------------------------------------------------
+// Stage 3 persistence (3e proposals, 3g deviations, 3j interventions, 3l meetings)
+// ---------------------------------------------------------------------------
+
+model ScheduleProposalRecord {
+  id            String           @id @default(cuid())
+  userId        String
+  /// Proposal id minted by TimeCompilerService.compileSchedule() and surfaced to clients.
+  externalId    String           @unique
+  status        ProposalStatus   @default(DRAFT)
+  rangeStart    DateTime
+  rangeEnd      DateTime
+  timezone      String           @default("UTC")
+  /// The full ScheduleProposal document as returned by the compiler.
+  payload       Json
+  confidence    Float
+  blockCount    Int              @default(0)
+  scheduledMin  Int              @default(0)
+  appliedAt     DateTime?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  user          User             @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model DeviationState {
+  id             String          @id @default(cuid())
+  userId         String
+  /// Stable "<entityType>:<entityId>" key produced by the Reality Engine.
+  deviationId    String
+  status         DeviationStatus @default(OPEN)
+  entityType     String?
+  entityId       String?
+  acknowledgedAt DateTime?
+  resolvedAt     DateTime?
+  resolution     String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  user           User            @relation(fields: [userId], references: [id])
+
+  @@unique([userId, deviationId])
+  @@index([userId])
+  @@index([status])
+}
+
+model InterventionState {
+  id             String                @id @default(cuid())
+  userId         String
+  /// Deterministic "<type>:<fingerprint>" id so the feed is addressable across requests.
+  interventionId String
+  type           String
+  status         InterventionStatus    @default(PENDING)
+  snoozedUntil   DateTime?
+  acknowledgedAt DateTime?
+  dismissedAt    DateTime?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  user           User                  @relation(fields: [userId], references: [id])
+
+  @@unique([userId, interventionId])
+  @@index([userId])
+  @@index([status])
+  @@index([snoozedUntil])
+}
+
+model MeetingArtifact {
+  id         String               @id @default(cuid())
+  userId     String
+  meetingId  String
+  kind       MeetingArtifactKind
+  meetingTitle String?
+  /// MeetingPreparationResult or PostMeetingResult as returned by the service.
+  payload    Json
+  summary    String?
+  confidence Float?
+  createdAt  DateTime             @default(now())
+  updatedAt  DateTime             @updatedAt
+  user       User                 @relation(fields: [userId], references: [id])
+
+  @@unique([userId, meetingId, kind])
+  @@index([userId])
+  @@index([meetingId])
+  @@index([kind])
+}
+
+/// Stage 4k: dedicated home for the replanning-engine's autonomy policies
+/// (the /api/replanning/autonomy-policies contract). These previously shared
+/// the AutonomyRule table with scheduling rules and were told apart by
+/// heuristics; AutonomyRule is now rule storage only.
+model ReplanningPolicy {
+  id                     String               @id @default(cuid())
+  userId                 String
+  name                   String
+  description            String?
+  enabled                Boolean              @default(true)
+  scope                  ReplanningScope      @default(GLOBAL)
+  triggers               ReplanTrigger[]
+  allowedActions         ReplanAllowedAction[]
+  constraints            Json                 @default("[]")
+  maxChangesPerOperation Int                  @default(3)
+  maxTimeShiftMinutes    Int                  @default(120)
+  protectedTimeRanges    Json                 @default("[]")
+  requireConfirmationFor ReplanConfirmation[]
+  priority               Int                  @default(0)
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
+  user                   User                 @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([enabled])
+}
+
+enum ProposalStatus {
+  DRAFT
+  READY
+  APPLIED
+  REJECTED
+  EXPIRED
+}
+
+enum DeviationStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+  DISMISSED
+}
+
+enum InterventionStatus {
+  PENDING
+  ACKNOWLEDGED
+  DISMISSED
+  SNOOZED
+}
+
+model RecommendationState {
+  id              String                @id @default(cuid())
+  userId          String
+  /// Deterministic "<deviationId>:<recommendationType>" key.
+  recommendationId String
+  deviationId     String
+  status          RecommendationStateStatus @default(PENDING)
+  acceptedAt      DateTime?
+  rejectedAt      DateTime?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  user            User                  @relation(fields: [userId], references: [id])
+
+  @@unique([userId, recommendationId])
+  @@index([userId])
+  @@index([status])
+}
+
+enum RecommendationStateStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+enum MeetingArtifactKind {
+  PREPARATION
+  POST_MEETING
 }
 
 enum PreferenceCategory {
@@ -1077,6 +1371,19 @@ enum EventVisibility {
   PUBLIC
   PRIVATE
   CONFIDENTIAL
+}
+
+enum EventCategory {
+  PERSONAL
+  WORK
+  MEETING
+  APPOINTMENT
+  REMINDER
+  HOLIDAY
+  BIRTHDAY
+  TRAVEL
+  FOCUS_TIME
+  CUSTOM
 }
 
 enum EventSource {
@@ -1348,3 +1655,363 @@ enum AutonomyActionType {
   CREATE_TASK
   CREATE_GOAL
 }
+
+// --- Stage 4k: dedicated permission/policy/conflict model enums ---
+
+enum PermissionAction {
+  CREATE_EVENT
+  MOVE_EVENT
+  CANCEL_EVENT
+  CONTACT_PEOPLE
+  NEGOTIATE_MEETING_TIMES
+  MODIFY_TASKS
+  REPLAN_SCHEDULES
+  SEND_NOTIFICATIONS
+  CREATE_TASK
+  UPDATE_TASK
+  DELETE_TASK
+  CREATE_COMMITMENT
+  MODIFY_COMMITMENT
+  EXTRACT_COMMITMENTS
+  MODIFY_GOALS
+  MODIFY_PROJECTS
+  RUN_PROACTIVE_CHECK
+  DISMISS_INTERVENTION
+  MODIFY_RULES
+  MODIFY_AUTONOMY_POLICIES
+  ACCESS_INTEGRATIONS
+  SYNC_CALENDAR
+  MODIFY_PREFERENCES
+}
+
+enum PermissionScope {
+  GLOBAL
+  CALENDAR
+  TASKS
+  COMMITMENTS
+  GOALS
+  PROJECTS
+  SCHEDULING
+  NOTIFICATIONS
+  INTEGRATIONS
+  AI_ASSISTANT
+  PROACTIVE
+  RULES
+}
+
+enum PermissionDecision {
+  ALLOW
+  DENY
+  ASK
+  CONDITIONAL
+}
+
+enum AutonomyLevel {
+  OBSERVE
+  SUGGEST
+  ASK_BEFORE_ACTION
+  AUTO_EXECUTE_LOW_RISK
+  DELEGATED_AUTHORITY
+}
+
+enum RiskLevel {
+  NONE
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum RuleConflictType {
+  DIRECT_CONTRADICTION
+  OVERLAPPING_CONDITIONS
+  MUTUALLY_EXCLUSIVE_ACTIONS
+  PRIORITY_AMBIGUITY
+  SCOPE_OVERLAP
+}
+
+enum RuleConflictSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum RuleConflictResolution {
+  DISABLE_FIRST
+  DISABLE_SECOND
+  ADJUST_PRIORITY
+  MERGE
+  MANUAL
+  KEEP_BOTH
+}
+
+// --- Stage 4k: ReplanningPolicy enums (mirror replanning.types.ts exactly) ---
+
+enum ReplanningScope {
+  GLOBAL
+  SCHEDULING
+  TASKS
+  MEETINGS
+  FOCUS_TIME
+}
+
+enum ReplanTrigger {
+  TASK_OVERRUN
+  MEETING_LATE
+  TASK_POSTPONED
+  DEADLINE_APPROACHING
+  DEPENDENCY_INCOMPLETE
+  SCHEDULE_DRIFT
+  NEW_TASK
+  TASK_CANCELLED
+  MEETING_CANCELLED
+  MANUAL
+}
+
+enum ReplanAllowedAction {
+  MOVE_TASK
+  RESCHEDULE_EVENT
+  SPLIT_TASK
+  MERGE_BLOCKS
+  ADD_BUFFER
+  REDUCE_SCOPE
+  REPRIORITIZE
+  EXTEND_DEADLINE
+  CANCEL_LOW_PRIORITY
+}
+
+enum ReplanConfirmation {
+  DEADLINE_CHANGES
+  MEETING_MOVES
+  FOCUS_TIME_CHANGES
+  EXTERNAL_EVENT_CHANGES
+  HIGH_PRIORITY_CHANGES
+}
+
+// ---------------------------------------------------------------------------
+// C-02 - Coordination domain models (spec §8, §7, §9, §12)
+//
+// Scope is *additive only*: no existing model, field or enum is altered, and
+// `Event` remains the single calendar anchor (§25 step 1 - "without removing
+// existing Event/Task/Commitment models"). §25 step 4 asks for "Meeting as a
+// domain object linked to Event", so `Meeting` is a 1:1 extension of `Event`
+// (`eventId` is UNIQUE and nullable) rather than a competing source of truth:
+// a meeting that has not been booked yet simply has `eventId = null`.
+//
+// Enums are reused, not duplicated. Only ONE new enum is introduced here -
+// `MeetingStatus` - because the §7 lifecycle states exist nowhere in the
+// schema yet. Everything else binds to pre-existing enums:
+//   ParticipantStatus (§8 "responseStatus"), ProposalStatus (§8 proposals),
+//   PreferenceCategory (§12 preference categories), PermissionAction,
+//   PermissionDecision, RiskLevel, AutonomyLevel (§9 audit record).
+// ---------------------------------------------------------------------------
+
+/// Spec §7 "Meeting Lifecycle", verbatim:
+/// DRAFT -> PROPOSED -> PENDING_APPROVAL -> SCHEDULED -> INVITATIONS_SENT ->
+/// PARTIALLY_CONFIRMED -> CONFIRMED -> IN_PROGRESS -> COMPLETED -> FOLLOW_UP ->
+/// CLOSED, plus the terminal/intermediate states DECLINED, CANCELLED,
+/// RESCHEDULED, NO_SHOW, FAILED.
+/// Transitions are NOT enforced by this enum; they belong to the coordination
+/// engine and its tests (§23 "lifecycle transitions").
+enum MeetingStatus {
+  DRAFT
+  PROPOSED
+  PENDING_APPROVAL
+  SCHEDULED
+  INVITATIONS_SENT
+  PARTIALLY_CONFIRMED
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  FOLLOW_UP
+  CLOSED
+  DECLINED
+  CANCELLED
+  RESCHEDULED
+  NO_SHOW
+  FAILED
+}
+
+/// Spec §8: the meeting aggregate. Deliberately NOT a duplicate of `Event`:
+/// time-of-record lives on `Event` (via `eventId`), while everything the
+/// coordination layer owns - lifecycle state, who was invited and how they
+/// responded, conference details, the proposal that produced it - lives here.
+///
+/// `conferenceProvider` is a free-form string, not the `CalendarProvider`
+/// enum: §6 allows `'google_meet' | 'none' | string`, and `CalendarProvider`
+/// models *calendar* backends, which is a different axis.
+model Meeting {
+  id                 String               @id @default(cuid())
+  userId             String
+  /// The calendar anchor this meeting is booked as, once it exists.
+  /// 1:1 (§25 step 4). Nullable while the meeting is still a proposal.
+  eventId            String?              @unique
+  title              String
+  description        String?
+  status             MeetingStatus        @default(DRAFT)
+  /// Optimistic-concurrency counter bumped by the coordination engine on
+  /// every state transition; a stale writer matches 0 rows and loses.
+  version            Int                  @default(0)
+  /// Client-supplied key for AI-initiated creation. The unique index below
+  /// makes a retried request a no-op instead of a duplicate meeting.
+  idempotencyKey     String?
+  durationMinutes    Int                  @default(30)
+  timezone           String               @default("UTC")
+  /// Free-form meeting type ("client", "internal", "interview", "board").
+  /// §12 lets a user attach per-type default durations to this value.
+  meetingType        String?
+  conferenceProvider String?
+  conferenceUrl      String?
+  conferenceId       String?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  deletedAt          DateTime?
+  user               User                 @relation(fields: [userId], references: [id])
+  event              Event?               @relation(fields: [eventId], references: [id])
+  participants       MeetingParticipant[]
+  proposals          MeetingProposal[]
+  actionLogs         AiActionLog[]
+
+  @@unique([userId, idempotencyKey])
+  @@index([userId])
+  @@index([status])
+  @@index([userId, status])
+  @@index([meetingType])
+}
+
+/// Spec §8. Separate from `EventParticipant` on purpose: those rows mirror
+/// the calendar provider's attendee list, while these are the people the
+/// coordination layer is negotiating with, including ones who are not on any
+/// event yet (§7 PROPOSED precedes any calendar write).
+model MeetingParticipant {
+  id             String            @id @default(cuid())
+  meetingId      String
+  name           String
+  email          String
+  /// Free-form ("organizer", "required", "optional", "presenter") - §8 lists
+  /// `role` without constraining it, and §12's rules are per-meeting-type.
+  role           String?
+  responseStatus ParticipantStatus @default(NEEDS_ACTION)
+  required       Boolean           @default(true)
+  respondedAt    DateTime?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  meeting        Meeting           @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, email])
+  @@index([meetingId])
+  @@index([email])
+}
+
+/// Spec §8: "id, meetingId, start, end, score/priority if used internally,
+/// reasons, conflicts, createdAt. Expose human-readable reasons instead of
+/// opaque scores." Hence `reasons`/`conflicts` are stored as human-readable
+/// string arrays and `priority` is an internal-only optional integer.
+model MeetingProposal {
+  id        String         @id @default(cuid())
+  meetingId String
+  start     DateTime
+  end       DateTime
+  /// Internal ranking only. Never surfaced as the user-facing justification
+  /// (§11: "avoid opaque AI-only ranking").
+  priority  Int?
+  reasons   String[]
+  conflicts String[]
+  /// Approval-expiry horizon. C-07 owns the expiry *behavior* (sweeping
+  /// READY -> EXPIRED, approval flow); the column lives here so C-07 adds no
+  /// migration. Single-use is enforced in C-07 code as an atomic conditional
+  /// update (UPDATE ... WHERE status IN ('READY') -> APPLIED), never a
+  /// read-then-write (see D9 in CAL_UPDATE_INFO/docs/coordination-audit.md).
+  expiresAt DateTime?
+  /// Reuses the existing ProposalStatus vocabulary (DRAFT/READY/APPLIED/
+  /// REJECTED/EXPIRED) rather than inventing a parallel one.
+  status    ProposalStatus @default(READY)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  meeting   Meeting        @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@index([meetingId])
+  @@index([start, end])
+  @@index([status])
+}
+
+/// Spec §12 "Executive/Boss Mode": working hours, preferred meeting times,
+/// minimum buffer, max meetings/day, lunch window, focus hours, default
+/// duration, preferred timezone, preferred conference provider.
+///
+/// Distinct from the generic `Preference` table, which stores opaque
+/// `valueJson` strings. §12's hard rule - "Distinguish explicit preferences
+/// from learned patterns. Learned behavior should be proposed as a suggestion,
+/// not silently converted into a hard rule" - is encoded structurally by
+/// `isExplicit` + `isHardRule`: a learned row can never be enforced as a
+/// constraint without an explicit promotion.
+model SchedulingPreference {
+  id          String             @id @default(cuid())
+  userId      String
+  /// Reuses the existing PreferenceCategory enum (WORKING_HOURS,
+  /// MEETING_CONSTRAINTS, FOCUS_PREFERENCES, ...).
+  category    PreferenceCategory
+  key         String
+  /// Structured value: a time range, an integer (minutes/count), or a string
+  /// (timezone/provider) - validated in application code, not here.
+  value       Json
+  /// true = the user stated it; false = the system inferred it (§12).
+  isExplicit  Boolean            @default(true)
+  /// Only an explicit preference may ever be a hard constraint (§11/§12).
+  isHardRule  Boolean            @default(false)
+  description String?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  deletedAt   DateTime?
+  user        User               @relation(fields: [userId], references: [id])
+
+  @@unique([userId, category, key])
+  @@index([userId])
+  @@index([category])
+}
+
+/// Spec §9: "Every execution path must pass permission checks and write an
+/// audit record." This is that record, scoped to the coordination/meeting
+/// path. `AuditLog` (existing) stays the general security trail; this table
+/// carries the AI-specific fields (§7 lifecycle transition, proposal chosen,
+/// permission asked/granted, and the human-readable reason §11 demands).
+model AiActionLog {
+  id            String             @id @default(cuid())
+  userId        String
+  /// What kind of logged event this row is ("LIFECYCLE_TRANSITION",
+  /// "PROPOSAL_SELECTION", "PERMISSION_CHECK", "INVITE_SENT", ...).
+  /// Free-form so new event kinds never force a migration.
+  eventType     String
+  /// Existing PermissionAction vocabulary (CREATE_EVENT, MOVE_EVENT,
+  /// CONTACT_PEOPLE, NEGOTIATE_MEETING_TIMES, ...).
+  action        PermissionAction
+  /// Existing PermissionDecision vocabulary (ALLOW/DENY/ASK/CONDITIONAL).
+  /// Nullable: not every logged event is a permission decision (a lifecycle
+  /// transition or a proposal selection records eventType/action only).
+  decision      PermissionDecision?
+  riskLevel     RiskLevel          @default(LOW)
+  autonomyLevel AutonomyLevel?
+  /// The meeting the action concerned, when there was one. Nullable and
+  /// SetNull so that deleting a meeting preserves the audit trail.
+  meetingId     String?
+  proposalId    String?
+  /// Human-readable justification of what was done and why (§11).
+  reason        String?
+  /// Request/response detail for replay and debugging.
+  payload       Json?
+  /// Set when the action failed; null means success. Kept as a nullable string
+  /// so the enum-free error surface from a provider does not force a migration.
+  error         String?
+  createdAt     DateTime           @default(now())
+  user          User               @relation(fields: [userId], references: [id])
+  meeting       Meeting?           @relation(fields: [meetingId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([meetingId])
+  @@index([action])
+  @@index([decision])
+  @@index([createdAt])
+  @@index([userId, createdAt])
+}
+

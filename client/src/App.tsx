@@ -1,7 +1,5 @@
 import { lazy, Suspense } from 'react';
 import { Routes, Route } from 'react-router-dom';
-import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { LegacyPage } from '@/components/layout/LegacyPage';
 import { RouteFallback } from '@/components/layout/RouteFallback';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { AssistantProvider } from '@/contexts/AssistantContext';
@@ -9,6 +7,12 @@ import { ThemeProvider } from '@/contexts/ThemeContext';
 import { RequireAuth } from '@/components/auth/RequireAuth';
 import { LoginPage } from '@/pages/LoginPage';
 import { RegisterPage } from '@/pages/RegisterPage';
+import { PrivacyPage } from '@/pages/PrivacyPage';
+import { TermsPage } from '@/pages/TermsPage';
+
+const DashboardLayout = lazy(() =>
+  import('@/components/layout/DashboardLayout').then((m) => ({ default: m.DashboardLayout })),
+);
 
 /**
  * Routes are lazy so a cold load only pays for the authenticated shell. Auth is
@@ -21,8 +25,7 @@ const TasksPage = lazy(() => import('@/pages/TasksPage').then((m) => ({ default:
 const ArchitecturePage = lazy(() => import('@/pages/ArchitecturePage').then((m) => ({ default: m.ArchitecturePage })));
 
 /**
- * Placeholder surfaces for units 2c–2m. Declared individually (rather than one
- * dynamic helper) so each keeps its own chunk and stays type-checked by name.
+ * Product surfaces are lazy so a cold load pays only for the authenticated shell.
  */
 const AssistantPage = lazy(() => import('@/pages/AssistantPage').then((m) => ({ default: m.AssistantPage })));
 const GoalsPage = lazy(() => import('@/pages').then((m) => ({ default: m.GoalsPage })));
@@ -56,6 +59,9 @@ function App() {
           {/* Public */}
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          {/* C5: legal pages must render without a session. */}
+          <Route path="/privacy" element={<PrivacyPage />} />
+          <Route path="/terms" element={<TermsPage />} />
           <Route
             path="/architecture"
             element={
@@ -70,7 +76,9 @@ function App() {
             path="/"
             element={
               <RequireAuth>
-                <DashboardLayout />
+                <Suspense fallback={<RouteFallback />}>
+                  <DashboardLayout />
+                </Suspense>
               </RequireAuth>
             }
           >
@@ -80,19 +88,19 @@ function App() {
             <Route path="search" element={<SearchPage />} />
 
             <Route path="assistant" element={<AssistantPage />} />
-            <Route path="goals" element={<LegacyPage title="Goals"><GoalsPage /></LegacyPage>} />
-            <Route path="projects" element={<LegacyPage title="Projects"><ProjectsPage /></LegacyPage>} />
-            <Route path="commitments" element={<LegacyPage title="Commitments"><CommitmentsPage /></LegacyPage>} />
-            <Route path="compiler" element={<LegacyPage title="Time Compiler"><CompilerPage /></LegacyPage>} />
-            <Route path="reality" element={<LegacyPage title="Reality &amp; Replanning"><RealityPage /></LegacyPage>} />
-            <Route path="insights" element={<LegacyPage title="Insights"><InsightsPage /></LegacyPage>} />
-            <Route path="memory" element={<LegacyPage title="Memory"><MemoryPage /></LegacyPage>} />
-            <Route path="rules" element={<LegacyPage title="Rules"><RulesPage /></LegacyPage>} />
-            <Route path="permissions" element={<LegacyPage title="Permissions"><PermissionsPage /></LegacyPage>} />
-            <Route path="proactive" element={<LegacyPage title="Proactive"><ProactivePage /></LegacyPage>} />
-            <Route path="meetings" element={<LegacyPage title="Meetings"><MeetingsPage /></LegacyPage>} />
-            <Route path="integrations" element={<LegacyPage title="Integrations"><IntegrationsPage /></LegacyPage>} />
-            <Route path="settings" element={<LegacyPage title="Settings"><SettingsPage /></LegacyPage>} />
+            <Route path="goals" element={<GoalsPage />} />
+            <Route path="projects" element={<ProjectsPage />} />
+            <Route path="commitments" element={<CommitmentsPage />} />
+            <Route path="compiler" element={<CompilerPage />} />
+            <Route path="reality" element={<RealityPage />} />
+            <Route path="insights" element={<InsightsPage />} />
+            <Route path="memory" element={<MemoryPage />} />
+            <Route path="rules" element={<RulesPage />} />
+            <Route path="permissions" element={<PermissionsPage />} />
+            <Route path="proactive" element={<ProactivePage />} />
+            <Route path="meetings" element={<MeetingsPage />} />
+            <Route path="integrations" element={<IntegrationsPage />} />
+            <Route path="settings" element={<SettingsPage />} />
           </Route>
         </Routes>
       </AuthProvider>

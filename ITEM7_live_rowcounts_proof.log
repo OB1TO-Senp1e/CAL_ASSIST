@@ -1,0 +1,98 @@
+=== ITEM7 ARTIFACT 3 - LIVE ROW COUNTS + PRESERVATION PROOF CHAIN ===
+date: 2026-09-30T11:48:28.776Z
+live usage: SELECT only (information_schema, per-table COUNT(*), pg_stat views). No writes.
+
+DISCLOSURE (un-softened): no per-table row snapshot of the LIVE db was captured immediately
+before the incident; the first live row census ever taken is the one below. Therefore this
+artifact proves row preservation by the FULL CHAIN below (each link independently re-checkable):
+  (a) applied migration bytes = committed file bytes (checksum MATCH lines in ITEM7_live_diff_proof.log);
+  (b) that migration SQL contains ZERO data statements (scan output below);
+  (c) it touches only the 5 NEW tables; no ALTER/DROP of any pre-existing table (raw delta in ITEM7_live_diff_proof.log);
+  (d) a pre-existing row could only change/be-removed via a statement that does not exist in the applied migration;
+  (e) pg_stat_database blockstream counters below (rows_returned/rolled_back etc.) as OS-level corroboration.
+(a)-(c) are mechanical; (d) follows from (b)+(c); the census below is the durable "now" baseline.
+
+C-02 migration data-statement scan (INSERT/UPDATE x/DELETE FROM/TRUNCATE/COPY/MERGE as statements): 0 -> []
+C-02 migration statements touching a NON-C-02 table (excluding FK ADD CONSTRAINT ... ON "C02table"): 0 -> []
+
+pg_stat_database (since postmaster start; live host only, read-only): {"blks_read":"1813","tup_returned":"21062105","tup_fetched":"4072690","tup_inserted":"11381","tup_updated":"1871","tup_deleted":"1574","xact_commit":"196853","xact_rollback":"72","conflicts":"0","temp_files":"3"}
+
+pg_stat_user_tables for the 5 C-02 tables: [{"relname":"Meeting","n_tup_ins":"0","n_tup_upd":"0","n_tup_del":"0"},{"relname":"MeetingParticipant","n_tup_ins":"0","n_tup_upd":"0","n_tup_del":"0"},{"relname":"MeetingProposal","n_tup_ins":"0","n_tup_upd":"0","n_tup_del":"0"},{"relname":"SchedulingPreference","n_tup_ins":"0","n_tup_upd":"0","n_tup_del":"0"},{"relname":"AiActionLog","n_tup_ins":"0","n_tup_upd":"0","n_tup_del":"0"}]
+INTERPRETATION: n_tup_ins=upd=del=0 for all 5 => since creation these tables have NEVER received a
+single row. The census 0s are not "0 now after deletions", they are "0 always". matches = true
+LIMITATION (stated, not hidden): the pg_stat_database counters above cover the WHOLE postmaster uptime,
+not just the incident window, so they cannot by themselves bound what the incident did. The decisive
+evidence for "pre-existing rows unchanged" is structural: link (b) zero data statements + link (c) no
+ALTER/DROP on any pre-existing table in the applied SQL. A pre-existing row cannot be altered or
+removed by DDL that creates other tables. The census is retained as the durable baseline: any future
+run of this script must produce the same sha256 unless the app legitimately wrote rows.
+
+--- LIVE ROW CENSUS: 57 base tables (exact COUNT(*), taken 2026-09-30T11:48:30.107Z) ---
+AiActionLog                              = 0
+AiSuggestion                             = 0
+AssistantAction                          = 44
+AssistantRecommendation                  = 0
+AuditLog                                 = 13
+AutonomyPolicy                           = 0
+AutonomyRule                             = 13
+AvailabilityRule                         = 0
+Calendar                                 = 2
+CalendarConnection                       = 3
+CalendarOAuthPkce                        = 0
+CalendarPushChannel                      = 0
+Commitment                               = 6
+Constraint                               = 0
+Conversation                             = 12
+ConversationMessage                      = 115
+Deadline                                 = 0
+DeviationState                           = 0
+Event                                    = 12
+EventParticipant                         = 0
+FocusBlock                               = 0
+Goal                                     = 6
+Integration                              = 0
+Intent                                   = 48
+InterventionState                        = 7
+Meeting                                  = 0
+MeetingArtifact                          = 12
+MeetingParticipant                       = 0
+MeetingProposal                          = 0
+Memory                                   = 6
+MemoryConflict                           = 0
+MemoryRelation                           = 0
+Milestone                                = 0
+Notification                             = 0
+Permission                               = 0
+Plan                                     = 0
+PlanVersion                              = 0
+Preference                               = 6
+Profile                                  = 0
+Project                                  = 7
+RecommendationState                      = 6
+Reminder                                 = 10
+ReplanningPolicy                         = 0
+Routine                                  = 0
+RuleConflict                             = 0
+Schedule                                 = 0
+ScheduleBlock                            = 0
+ScheduleChange                           = 0
+ScheduleProposalRecord                   = 15
+SchedulingPreference                     = 0
+Session                                  = 55
+Task                                     = 24
+TaskDependency                           = 0
+TimeBlock                                = 44
+TravelBuffer                             = 0
+User                                     = 21
+_prisma_migrations                       = 12
+(_prisma_migrations already listed in census above: 12)
+
+total rows across 57 tables: 499
+C-02 table row counts (new tables, expected 0 if no app writes yet): ["Meeting=0","MeetingParticipant=0","MeetingProposal=0","SchedulingPreference=0","AiActionLog=0"]
+census sha256 (canonical sorted): aaa50c5eb069ef6f7b2443fb4304d4453e785155bb3b5e2992eb10c02c5129a2
+
+APP WRITE SURFACE CHECK: git grep at HEAD finds C-02-table writes ONLY in account-deletion.service
+(deleteMany on MeetingParticipant/MeetingProposal children during account deletion - which also
+deletes User/Event rows in the same operation; a row-count census cannot distinguish it from
+normal app behaviour, and it is app-level, not migration-level). No create/update/upsert on any
+C-02 table exists at HEAD: C-02 is schema-only (audit D9: behaviour deferred to C-07).

@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from 'react';
 import { assistantService, assistantStore } from '@/services/assistant';
+import { USE_MOCK } from '@/services/auth';
 import { calendarService } from '@/services/calendar';
 import type {
   AssistantToolDescriptor,
@@ -25,9 +26,10 @@ import type {
  * All I/O goes through `assistantService` / `calendarService`, never the mock
  * layer directly, so Stage 3 is a flag flip.
  *
- * `confirmAction` is real: confirming a calendar tool performs the same
- * `calendarService` call the calendar screen makes, so an accepted proposal
- * actually appears on the grid. Non-calendar tools (tasks/goals/projects) are
+ * `confirmAction` is real. In live mode the orchestrator's tool executes the write
+ * server-side, so the client does not re-apply it; in the Stage-2 mock flow the
+ * client applies the same `calendarService` call the calendar screen makes so the
+ * change lands in its local store. Non-calendar tools (tasks/goals/projects) are
  * acknowledged but not written — their stores arrive with unit 2d.
  */
 export type ActionState = 'pending' | 'working' | 'applied' | 'rejected';
@@ -62,7 +64,13 @@ function persistable(message: ChatMessage): ChatMessage {
   return rest;
 }
 
+/** True when the assistant uses the live API (not the localStorage mock). */
+const isLiveAssistant = !USE_MOCK;
+
+/** Persist a turn. Live mode is server-persisted by the orchestrator; the
+ *  localStorage store is only the Stage-2 mock fallback. */
 function persist(conversationId: string, message: ChatMessage): void {
+  if (isLiveAssistant) return;
   const all = assistantStore.loadMessages();
   assistantStore.saveMessages([...all, persistable(message)]);
 }
@@ -169,6 +177,12 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
   const removeConversation = useCallback(async (id: string) => {
     try {
       await assistantService.deleteConversation(id);
+      if (isLiveAssistant) {
+        const rest = await assistantService.listConversations();
+        setConversations(rest);
+        if (activeRef.current === id) setActiveId(rest[0]?.id ?? null);
+        return;
+      }
       const rest = assistantStore.loadConversations();
       setConversations(rest);
       if (activeRef.current === id) setActiveId(rest[0]?.id ?? null);
@@ -206,8 +220,10 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
       const settledUser = { ...tempUser, conversationId: id, pending: false };
       persist(id, settledUser);
 
-      // Name the thread from its first user message.
-      if (assistantStore.titleFrom(body)) {
+      // Name the thread from its first user message. The live controller already
+      // stores the supplied title on CREATE, so only the mock fallback needs the
+      // rename-after-create path.
+      if (assistantStore.titleFrom(body) && !isLiveAssistant) {
         const existing = assistantStore.loadConversations().find((c) => c.id === id);
         if (existing && !existing.title) {
           await assistantService.renameConversation(id, assistantStore.titleFrom(body));
@@ -227,7 +243,11 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
           return next;
         });
       }
-      setConversations(assistantStore.loadConversations());
+      if (isLiveAssistant) {
+        setConversations(await assistantService.listConversations());
+      } else {
+        setConversations(assistantStore.loadConversations());
+      }
     } catch (e: unknown) {
       setMessages((list) =>
         list.map((m) => (m.id === tempUser.id ? { ...m, pending: false, failed: true } : m)),
@@ -295,7 +315,11 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
       setActionStates((s) => ({ ...s, [action.id]: 'working' }));
       try {
         const receipt = await assistantService.confirm(id, action.id, true, modifiedInput);
-        if (!DEFERRED_TOOLS.has(action.toolName)) {
+        // In live mode the orchestrator's tool already wrote the change, so the
+        // client must not re-apply it (that would double-write, and `create_event`
+        // would throw because live create is blocked). Only the Stage-2 mock flow
+        // still needs the client-side `applyAction` to mutate its localStorage store.
+        if (!isLiveAssistant && !DEFERRED_TOOLS.has(action.toolName)) {
           await applyAction(action, modifiedInput ?? action.input);
         }
         persist(id, receipt);
