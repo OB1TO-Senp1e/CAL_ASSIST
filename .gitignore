@@ -23,3 +23,6 @@ scripts/*.txt
 # Coordination-audit scratch: spec text dumps, edit-block drafts, pre-fix file
 # copies. All throwaway; the pre-fix email provider is already in git history.
 .tmp-spec/
+
+# Agent scratch/state dropped by tooling into the repo root. Never source.
+__agent__/
