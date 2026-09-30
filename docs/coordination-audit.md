@@ -245,6 +245,9 @@ section list above rather than carried over from iteration 0.
 
 ## 4. Decisions taken at C-00 (`TARGET_PHASE=1`) — D1–D8 CONFIRMED AS PROPOSED (user sign-off)
 
+> **Additions after sign-off:** **D9**, **D10** and **D11** below were decided during the C-02 schema
+> review (iteration 3) and are part of the C-02 sign-off packet, not of the original D1–D8 set.
+
 These are decisions about **how** to build, reachable from repo evidence alone. They are independent
 of the spec's wording and should hold regardless of what the spec says. Product scope questions are
 *not* decided here — they are listed in §5 as contradictions to reconcile.
@@ -299,6 +302,36 @@ adopted, it becomes the **orchestrator** and the outbox is **demoted to the deli
 it keeps claim/ack/retry/dedupe, and the two never own the same responsibility. Adding an engine *beside*
 a live outbox that still schedules the same reminder is a **defect**, not an upgrade: it produces duplicate
 reminders, contradictory retry counts, and two places to look when a follow-up is not sent.
+
+#### D1 addendum — substrate reverted; the job runner is re-decided in Phase 2
+
+**Status change (supersedes the C-00 implementation note).** The outbox + lease-claim worker,
+the coordination HTTP API and the co-located Zod DTOs built on
+`feat/cross-functional-coordination` in `75315a4` have been **reverted** in `2cc716d`. The revert
+is a normal forward commit — no history was rewritten, `75315a4` remains an ancestor — and it also
+removed the never-applied migration `prisma/pending/20260929120000_c01_outbox_job/migration.sql`
+(that migration was applied to **no** database, live or otherwise).
+
+Why it was reverted: that substrate was mislabelled "C-01". Canonical C-01 is the spec §6
+*provider interface + mock adapter* work delivered in `a7c1869` (`CalendarProvider`,
+`MockCalendarAdapter`, shared contract suite). A job runner is not part of that contract, and
+Phase 1 (§25 steps 1–4) does not require one: the spec's only deferred-work obligations are
+*behavioural* (§13 reminders fire, §16/§18 follow-ups deliver once) and the words
+`queue`/`worker`/`cron`/`job` score **0 hits** in the spec text.
+
+**The job runner returns in Phase 2, and when it does it re-opens an explicit
+Inngest-vs-outbox decision.** D1 above is the record of how that question was answered once, on
+repo evidence; it stands as the starting position, not as a foregone conclusion. Phase 2 must
+state the decision in writing before any code is written, choosing between:
+
+| Option | What Phase 2 would be accepting |
+|---|---|
+| **Postgres outbox + `FOR UPDATE SKIP LOCKED`** (the D1 choice) | Zero new production deps, one engine; but the claim path is PostgreSQL-only, needs a real-DB test, and must run on the **direct** connection rather than the Supabase transaction pooler |
+| **Inngest** (or another engine) | A hosted service, an SDK dependency, an outbound-call surface and a second failure domain for **zero** spec coverage; permitted **only** under the no-dualing rule above - the engine becomes the orchestrator and the outbox is demoted to delivery primitive, never both scheduling the same reminder |
+
+The reverted code is recoverable from git history (`git show 75315a4`) rather than needing to be
+re-authored blind, but it must be re-validated against whatever Phase 2 decides: a revert is not
+a queue of code waiting to be un-reverted.
 
 ### D2 — Validation: existing Zod + `ZodValidationPipe`; never bare `z.infer` DTOs
 
@@ -374,7 +407,50 @@ three unrelated stacks are already running and hold `8080/8443`; `api` declares 
 (`docker-compose.yml:147`) so `--scale api=3` emits a replicas warning; Traefik middlewares are keyed
 to `${COMPOSE_PROJECT_NAME:-cal_assist}` (`:169`). **No existing volume may be touched** — the audit
 observed but did not modify `cal_assist_*`, `calassist-lb_*`, `calassist-hardening_*`,
-`calassist-migration-audit_*` or Supabase `GRUB-POS` data.
+`calassist-migration-audit_*`.
+
+### D9 — Approvals/expiry/single-use belong to C-07; C-02 ships only the columns they need
+
+C-02 review correction: earlier drafts routed approval behaviour to **C-06**; it belongs to **C-07**
+(§9 Autonomy and Approval / §18 approval audit). Recorded as decided at C-02:
+
+- **Where approvals live:** there is **no `MeetingApproval` model in C-02**. Approval state rides on
+  `MeetingProposal.status` (existing `ProposalStatus`: `READY` → `APPLIED`/`REJECTED`/`EXPIRED`) plus
+  `Meeting.status` (`PENDING_APPROVAL`), and every approve/deny/expire path writes an `AiActionLog`
+  row (`eventType`, `action`, nullable `decision`). A dedicated approval model is introduced only if
+  C-07's UI needs per-approver fan-out that this cannot express — that is C-07's call, not C-02's.
+- **Expiry:** `MeetingProposal.expiresAt` is added **now** (column shipped with C-02) so C-07 needs no
+  schema migration. The expiry *behaviour* (sweeping `READY` → `EXPIRED`) is owned by **C-07**.
+- **Single-use:** applying a proposal must be an **atomic conditional update** — a single
+  `UPDATE … WHERE status IN ('READY')` (Prisma: `updateMany` with a status guard, or
+  `$queryRaw` with `RETURNING`) — never a read-then-write, so two concurrent approvals cannot both
+  apply the same proposal. Enforced in C-07 code; recorded here so C-02's schema review is honest
+  about what the columns do *not* guarantee on their own.
+
+### D10 — `CalendarConnection` C-02 changes deferred to C-03 (deliberate deviation)
+
+The C-02 checklist row parenthesises `CalendarConnection` extras. Static diff of `schema.prisma`
+against HEAD proves **no C-02 column was added to `CalendarConnection`**: the model ships unchanged.
+This is a **deliberate deviation**, not an oversight — the provider-connection fields the
+coordination layer will need (e.g. per-connection capability flags for `findAvailability`/conference
+provider negotiation) are part of the C-03 Google-adapter work and must not be reserved speculatively.
+C-03 adds them with its own migration.
+
+### D11 — Migration URL guard is port/param-scoped with an explicit live opt-in (C-02 review item 1)
+
+Rejected approach: hostname-based rejection of `*.pooler.supabase.com` — fact: this project's real
+`DIRECT_URL` **is** `aws-0-ap-northeast-1.pooler.supabase.com:5432` (session mode, no `pgbouncer`
+param), and rejecting the hostname would break the only legitimate migration path. Adopted policy,
+implemented as the pure, unit-tested `src/config/migration-url.guard.ts` consumed by
+`prisma.config.ts`:
+
+| Rule | Scope |
+|---|---|
+| Reject `?pgbouncer=true` | transaction-pooler marker; DDL unsafe regardless of host/port |
+| Reject port `6543` | Supabase's transaction-pooler port regardless of hostname |
+| Accept `*.pooler.supabase.com:5432` | session mode = the real DIRECT_URL shape |
+| THROW only for `migrate` / `db push` / `db execute` | `generate`/`validate`/`studio` only warn — codegen and builds must never break on URL shape |
+| **Remote hosts need `ALLOW_LIVE_MIGRATE=1`** for schema-touching commands | added after the 30 Sep accidental live deploy (env-precedence collision in a test harness); loopback + Docker-compose service hosts (`postgres`/`db`/`database`, CI's localhost) are unaffected |
 
 ## 5. Contradictions and risks to reconcile against the spec
 

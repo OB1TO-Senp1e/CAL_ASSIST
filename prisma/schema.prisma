@@ -61,6 +61,9 @@ model User {
   interventionStates       InterventionState[]
   meetingArtifacts         MeetingArtifact[]
   recommendationStates     RecommendationState[]
+  meetings                 Meeting[]
+  schedulingPreferences    SchedulingPreference[]
+  aiActionLogs             AiActionLog[]
 
   @@index([email])
   @@index([deletedAt])
@@ -367,6 +370,7 @@ model Event {
   eventParticipants  EventParticipant[]
   reminders          Reminder[]
   timeBlocks         TimeBlock[]
+  meeting            Meeting?
 
   @@index([userId])
   @@index([calendarId])
@@ -1784,3 +1788,230 @@ enum ReplanConfirmation {
   EXTERNAL_EVENT_CHANGES
   HIGH_PRIORITY_CHANGES
 }
+
+// ---------------------------------------------------------------------------
+// C-02 - Coordination domain models (spec §8, §7, §9, §12)
+//
+// Scope is *additive only*: no existing model, field or enum is altered, and
+// `Event` remains the single calendar anchor (§25 step 1 - "without removing
+// existing Event/Task/Commitment models"). §25 step 4 asks for "Meeting as a
+// domain object linked to Event", so `Meeting` is a 1:1 extension of `Event`
+// (`eventId` is UNIQUE and nullable) rather than a competing source of truth:
+// a meeting that has not been booked yet simply has `eventId = null`.
+//
+// Enums are reused, not duplicated. Only ONE new enum is introduced here -
+// `MeetingStatus` - because the §7 lifecycle states exist nowhere in the
+// schema yet. Everything else binds to pre-existing enums:
+//   ParticipantStatus (§8 "responseStatus"), ProposalStatus (§8 proposals),
+//   PreferenceCategory (§12 preference categories), PermissionAction,
+//   PermissionDecision, RiskLevel, AutonomyLevel (§9 audit record).
+// ---------------------------------------------------------------------------
+
+/// Spec §7 "Meeting Lifecycle", verbatim:
+/// DRAFT -> PROPOSED -> PENDING_APPROVAL -> SCHEDULED -> INVITATIONS_SENT ->
+/// PARTIALLY_CONFIRMED -> CONFIRMED -> IN_PROGRESS -> COMPLETED -> FOLLOW_UP ->
+/// CLOSED, plus the terminal/intermediate states DECLINED, CANCELLED,
+/// RESCHEDULED, NO_SHOW, FAILED.
+/// Transitions are NOT enforced by this enum; they belong to the coordination
+/// engine and its tests (§23 "lifecycle transitions").
+enum MeetingStatus {
+  DRAFT
+  PROPOSED
+  PENDING_APPROVAL
+  SCHEDULED
+  INVITATIONS_SENT
+  PARTIALLY_CONFIRMED
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  FOLLOW_UP
+  CLOSED
+  DECLINED
+  CANCELLED
+  RESCHEDULED
+  NO_SHOW
+  FAILED
+}
+
+/// Spec §8: the meeting aggregate. Deliberately NOT a duplicate of `Event`:
+/// time-of-record lives on `Event` (via `eventId`), while everything the
+/// coordination layer owns - lifecycle state, who was invited and how they
+/// responded, conference details, the proposal that produced it - lives here.
+///
+/// `conferenceProvider` is a free-form string, not the `CalendarProvider`
+/// enum: §6 allows `'google_meet' | 'none' | string`, and `CalendarProvider`
+/// models *calendar* backends, which is a different axis.
+model Meeting {
+  id                 String               @id @default(cuid())
+  userId             String
+  /// The calendar anchor this meeting is booked as, once it exists.
+  /// 1:1 (§25 step 4). Nullable while the meeting is still a proposal.
+  eventId            String?              @unique
+  title              String
+  description        String?
+  status             MeetingStatus        @default(DRAFT)
+  /// Optimistic-concurrency counter bumped by the coordination engine on
+  /// every state transition; a stale writer matches 0 rows and loses.
+  version            Int                  @default(0)
+  /// Client-supplied key for AI-initiated creation. The unique index below
+  /// makes a retried request a no-op instead of a duplicate meeting.
+  idempotencyKey     String?
+  durationMinutes    Int                  @default(30)
+  timezone           String               @default("UTC")
+  /// Free-form meeting type ("client", "internal", "interview", "board").
+  /// §12 lets a user attach per-type default durations to this value.
+  meetingType        String?
+  conferenceProvider String?
+  conferenceUrl      String?
+  conferenceId       String?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  deletedAt          DateTime?
+  user               User                 @relation(fields: [userId], references: [id])
+  event              Event?               @relation(fields: [eventId], references: [id])
+  participants       MeetingParticipant[]
+  proposals          MeetingProposal[]
+  actionLogs         AiActionLog[]
+
+  @@unique([userId, idempotencyKey])
+  @@index([userId])
+  @@index([status])
+  @@index([userId, status])
+  @@index([meetingType])
+}
+
+/// Spec §8. Separate from `EventParticipant` on purpose: those rows mirror
+/// the calendar provider's attendee list, while these are the people the
+/// coordination layer is negotiating with, including ones who are not on any
+/// event yet (§7 PROPOSED precedes any calendar write).
+model MeetingParticipant {
+  id             String            @id @default(cuid())
+  meetingId      String
+  name           String
+  email          String
+  /// Free-form ("organizer", "required", "optional", "presenter") - §8 lists
+  /// `role` without constraining it, and §12's rules are per-meeting-type.
+  role           String?
+  responseStatus ParticipantStatus @default(NEEDS_ACTION)
+  required       Boolean           @default(true)
+  respondedAt    DateTime?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  meeting        Meeting           @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, email])
+  @@index([meetingId])
+  @@index([email])
+}
+
+/// Spec §8: "id, meetingId, start, end, score/priority if used internally,
+/// reasons, conflicts, createdAt. Expose human-readable reasons instead of
+/// opaque scores." Hence `reasons`/`conflicts` are stored as human-readable
+/// string arrays and `priority` is an internal-only optional integer.
+model MeetingProposal {
+  id        String         @id @default(cuid())
+  meetingId String
+  start     DateTime
+  end       DateTime
+  /// Internal ranking only. Never surfaced as the user-facing justification
+  /// (§11: "avoid opaque AI-only ranking").
+  priority  Int?
+  reasons   String[]
+  conflicts String[]
+  /// Approval-expiry horizon. C-07 owns the expiry *behavior* (sweeping
+  /// READY -> EXPIRED, approval flow); the column lives here so C-07 adds no
+  /// migration. Single-use is enforced in C-07 code as an atomic conditional
+  /// update (UPDATE ... WHERE status IN ('READY') -> APPLIED), never a
+  /// read-then-write (see D9 in docs/coordination-audit.md).
+  expiresAt DateTime?
+  /// Reuses the existing ProposalStatus vocabulary (DRAFT/READY/APPLIED/
+  /// REJECTED/EXPIRED) rather than inventing a parallel one.
+  status    ProposalStatus @default(READY)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  meeting   Meeting        @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@index([meetingId])
+  @@index([start, end])
+  @@index([status])
+}
+
+/// Spec §12 "Executive/Boss Mode": working hours, preferred meeting times,
+/// minimum buffer, max meetings/day, lunch window, focus hours, default
+/// duration, preferred timezone, preferred conference provider.
+///
+/// Distinct from the generic `Preference` table, which stores opaque
+/// `valueJson` strings. §12's hard rule - "Distinguish explicit preferences
+/// from learned patterns. Learned behavior should be proposed as a suggestion,
+/// not silently converted into a hard rule" - is encoded structurally by
+/// `isExplicit` + `isHardRule`: a learned row can never be enforced as a
+/// constraint without an explicit promotion.
+model SchedulingPreference {
+  id          String             @id @default(cuid())
+  userId      String
+  /// Reuses the existing PreferenceCategory enum (WORKING_HOURS,
+  /// MEETING_CONSTRAINTS, FOCUS_PREFERENCES, ...).
+  category    PreferenceCategory
+  key         String
+  /// Structured value: a time range, an integer (minutes/count), or a string
+  /// (timezone/provider) - validated in application code, not here.
+  value       Json
+  /// true = the user stated it; false = the system inferred it (§12).
+  isExplicit  Boolean            @default(true)
+  /// Only an explicit preference may ever be a hard constraint (§11/§12).
+  isHardRule  Boolean            @default(false)
+  description String?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  deletedAt   DateTime?
+  user        User               @relation(fields: [userId], references: [id])
+
+  @@unique([userId, category, key])
+  @@index([userId])
+  @@index([category])
+}
+
+/// Spec §9: "Every execution path must pass permission checks and write an
+/// audit record." This is that record, scoped to the coordination/meeting
+/// path. `AuditLog` (existing) stays the general security trail; this table
+/// carries the AI-specific fields (§7 lifecycle transition, proposal chosen,
+/// permission asked/granted, and the human-readable reason §11 demands).
+model AiActionLog {
+  id            String             @id @default(cuid())
+  userId        String
+  /// What kind of logged event this row is ("LIFECYCLE_TRANSITION",
+  /// "PROPOSAL_SELECTION", "PERMISSION_CHECK", "INVITE_SENT", ...).
+  /// Free-form so new event kinds never force a migration.
+  eventType     String
+  /// Existing PermissionAction vocabulary (CREATE_EVENT, MOVE_EVENT,
+  /// CONTACT_PEOPLE, NEGOTIATE_MEETING_TIMES, ...).
+  action        PermissionAction
+  /// Existing PermissionDecision vocabulary (ALLOW/DENY/ASK/CONDITIONAL).
+  /// Nullable: not every logged event is a permission decision (a lifecycle
+  /// transition or a proposal selection records eventType/action only).
+  decision      PermissionDecision?
+  riskLevel     RiskLevel          @default(LOW)
+  autonomyLevel AutonomyLevel?
+  /// The meeting the action concerned, when there was one. Nullable and
+  /// SetNull so that deleting a meeting preserves the audit trail.
+  meetingId     String?
+  proposalId    String?
+  /// Human-readable justification of what was done and why (§11).
+  reason        String?
+  /// Request/response detail for replay and debugging.
+  payload       Json?
+  /// Set when the action failed; null means success. Kept as a nullable string
+  /// so the enum-free error surface from a provider does not force a migration.
+  error         String?
+  createdAt     DateTime           @default(now())
+  user          User               @relation(fields: [userId], references: [id])
+  meeting       Meeting?           @relation(fields: [meetingId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([meetingId])
+  @@index([action])
+  @@index([decision])
+  @@index([createdAt])
+  @@index([userId, createdAt])
+}
+

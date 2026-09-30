@@ -17,8 +17,10 @@ Repo: `d:\CAL_ASS_V1\CAL_ASSIST` · Branch: `feat/cross-functional-coordination`
 
 ## Iteration status
 
-Iteration counter: **2 — canonical C-01 delivered** (this pass). C-00 signed off (D1–D8 as proposed +
-Phase 1 scope).
+Iteration counter: **3 — canonical C-02 delivered + review-corrected (schema diff pure-additive
+231/0; migration regenerated & re-proved on isolated DBs; guard + test-DB safety unit-tested;
+⚠ live DB touched by an accidental deploy late in the iteration — see INCIDENT in the C-02
+evidence section)**. C-00 signed off (D1–D8 as proposed + Phase 1 scope); C-01 delivered.
 
 > **⚠ Id-namespace collision — resolved this pass.** The row below that the substrate commit
 > (`75315a4`, subject "feat(coordination): **C-01** substrate …") labelled `C-01` is **not** canonical
@@ -26,15 +28,22 @@ Phase 1 scope).
 > `MockCalendarAdapter` + shared contract suite**, and the coordination substrate is **C-00 supporting
 > infrastructure** (decision D1's job runner). Canonical dependency order:
 > `C-00 → C-01 → C-02 → C-06 → C-05 → C-07 → C-03 → C-04 → C-08 → C-10 → C-09 → C-11 → C-12`.
-> Checklist IDs decide what is done; commit subjects do not. `75315a4` is **retained as-is** — not
-> reverted, not re-counted as C-01. Canonical C-01 evidence is the new section further down.
+> Checklist IDs decide what is done; commit subjects do not. Canonical C-01 evidence is the section
+> further down.
+>
+> **Update (iteration 3):** the substrate commit `75315a4` has since been **reverted** in `2cc716d`
+> — a normal forward commit, **no history rewriting**, `75315a4` remains an ancestor and its code is
+> recoverable with `git show 75315a4`. The revert removed `src/coordination/`, the coordination API and
+> `prisma/pending/20260929120000_c01_outbox_job/migration.sql` (which was applied to **no** database).
+> The job runner returns in **Phase 2** behind an explicit Inngest-vs-outbox decision, recorded as the
+> **D1 addendum** in `docs/coordination-audit.md` §4.
 
 | ID | Item | Status | Evidence (file:line + command output) |
 |----|------|--------|----------------------------------------|
 | C-00 | Repo/architecture audit vs. spec, decisions recorded before any code | **CLOSED — SIGNED OFF** | `docs/coordination-audit.md`. G1 + G2 closed; fresh-clone verification green (44 suites / 358 tests on clean clone of `8d5e510`); D1–D8 confirmed as proposed + Phase 1 scope agreed; branch `feat/cross-functional-coordination` created from `21e6997` (audit §8 all checked). |
-| C-00b | **Substrate** (retlabelled this pass — commit `75315a4` called it "C-01"): `src/coordination/` outbox + job worker (D1) | **DELIVERED — MIGRATION NOT APPLIED** | 12 files under `src/coordination/` + `prisma/pending/20260929120000_c01_outbox_job/migration.sql`. Evidence: `npx tsc --noEmit` exit 0; `npx eslint --quiet src/coordination` exit 0; `npm test` **48/48 suites, 391/391 tests** (baseline 44/358 + 4 new suites / 33 tests); `npm run build` exit 0. Claim = `$queryRaw` `SELECT ... FOR UPDATE SKIP LOCKED` + leasing `UPDATE` inside ONE `$transaction` (`outbox.store.ts` `claimOne`). Zero new production deps; no `@nestjs/schedule` (the worker is a self-scheduled `setTimeout`). Worker **default OFF** (`COORDINATION_WORKER_ENABLED`) because polling hits a table that does not exist until the migration ships. No Prisma schema change (option C's schema surface not started). |
+| C-00b | **Substrate** (commit `75315a4` called it "C-01"): `src/coordination/` outbox + job worker (D1) | **REVERTED in `2cc716d`** (was DELIVERED) | Reverted as a normal forward commit — **no history rewrite**; `75315a4` remains an ancestor and is recoverable via `git show 75315a4`. Removed: 12 files under `src/coordination/`, its `app.module.ts` registration, and `prisma/pending/20260929120000_c01_outbox_job/migration.sql` (applied to **no** database, live or otherwise). Post-revert gates: `npx tsc --noEmit` exit 0; `npm run build` exit 0; `npm test` **45/45 suites, 380/380 tests** (49/413 − the 4 substrate suites / 33 tests). Job runner returns in **Phase 2** with an explicit Inngest-vs-outbox decision — audit §4 **D1 addendum**. |
 | **C-01 (canonical)** | `CalendarProvider` contract (spec §6) + `MockCalendarAdapter` + shared contract suite | **DELIVERED — PASS** | 4 new files under `src/integrations/calendar-adapters/`: `calendar-provider.interface.ts` (spec §6's six methods verbatim + Zod input/output schemas + `CalendarProviderError`/`EventNotFoundError`), `mock-calendar.adapter.ts` (`@Injectable`, deterministic: injected fixed clock `MOCK_FIXED_NOW`, monotonic id counters, no `Date.now`/`Math.random`), `calendar-provider.contract.ts` (reusable `describeCalendarProviderContract()`), `calendar-provider.contract.spec.ts` (runner: 13 contract tests + 8 mock-specific + 1 teeth-check). Evidence: `npx jest src/integrations/calendar-adapters` **8 suites / 61 tests** (was 7/39; +22); `npx tsc --noEmit` exit 0; `npm run build` exit 0; `npx eslint --quiet <4 new files>` exit 0; `npm test` **49/49 suites, 413/413 tests** exit 0. No DB/network/OAuth. |
-| C-02 (canonical) | §8 domain schema — `Meeting`/`MeetingParticipant`/`MeetingProposal`/`SchedulingPreference`/`AiActionLog` (+ `CalendarConnection`, `MeetingTemplate`, `MeetingBrief`, `FollowUp`, `Reminder`) | **NEXT — NOT STARTED** | Prisma **enums already exist** (`ProposalStatus`, `ParticipantStatus`, `PreferenceCategory`, `MeetingArtifactKind`, `Autonomy*`); the five **models are absent** (`grep '^model'` → no `Meeting`/`MeetingParticipant`/`MeetingProposal`/`SchedulingPreference`/`AiActionLog`). Per audit D5, `Event` stays the anchor and `Meeting` is a 1:1 extension. |
+| C-02 (canonical) | §8 domain schema — `Meeting`/`MeetingParticipant`/`MeetingProposal`/`SchedulingPreference`/`AiActionLog` (+ `CalendarConnection`, `MeetingTemplate`, `MeetingBrief`, `FollowUp`, `Reminder`) | **DELIVERED LOCALLY — REVIEW CORRECTED — ⚠ APPLIED TO LIVE DB BY ACCIDENT (30 Sep; see INCIDENT in C-02 evidence section)** | 5 models added + 1 enum `MeetingStatus`; additive-only, `Event` remains the calendar anchor and `Meeting.eventId` is a nullable **unique** 1:1 extension (D5). C-02 review refinements folded in: `Meeting.version Int @default(0)`, `Meeting.idempotencyKey String?` + `@@unique([userId, idempotencyKey])`, `MeetingProposal.expiresAt DateTime?` (column now, expiry *behaviour* owned by **C-07** per audit **D9**), `AiActionLog.eventType String`, `AiActionLog.decision` made nullable. Scope note: `CalendarConnection`/`Reminder` already existed; **no C-02 column was added to `CalendarConnection`** — deliberate deviation, deferred to C-03 (audit **D10**); `MeetingTemplate`/`MeetingBrief`/`FollowUp` absent by design (C-06/C-08). Migration `prisma/migrations/20260929150000_c02_coordination_domain/migration.sql` (178 lines / 6,228 B; 5 `CREATE TABLE`, 17 `CREATE INDEX`, 4 `CREATE UNIQUE INDEX`, 1 `CREATE TYPE`, 7 FK `ADD CONSTRAINT`; `DROP`/`TRUNCATE`/`DELETE FROM`/`RENAME` → **0**; every `ALTER TABLE` targets only the 5 new C-02 tables) generated **offline** with `prisma migrate diff` (schema HEAD → final schema, so pre-existing schema↔migration drift is not smuggled in), validated on isolated Docker Postgres `localhost:5433` only — see the C-02 evidence section at the end of this file. `prisma/schema.prisma` diff vs HEAD is now **231 insertions / 0 deletions** (normal diff == `git diff -w` — semantically equivalent). Whitespace churn eliminated by rebuilding the file from HEAD bytes + hand-aligned C-02 insertions only; `prisma format` was **not** run on the whole file (review item 5). Pooler guard rebuilt as a pure, unit-tested module (`src/config/migration-url.guard.ts`): rejects `?pgbouncer=true` and port `6543`, **accepts** `pooler.supabase.com:5432` (session mode), throws for `migrate`/`db push`/`db execute` only (never for `generate`) and — since the 30 Sep incident — requires `ALLOW_LIVE_MIGRATE=1` for any remote host. |
 | (old "C-02+") | Substrate handlers still unregistered | DEFERRED | A claimed job with no handler nacks `NO_HANDLER_FOR_<type>` and retries — never crashes or loses the row. Wiring handlers belongs to C-08/C-09/C-11, not to the C-01→C-02 path. |
 
 ## Gate — closed, C-00 signed off
@@ -105,6 +114,12 @@ scratch under the new `.tmp-spec/` ignore rule.
 
 ## Substrate (C-00b) delivered state + open follow-ups (iteration 1)
 
+> **⚠ SUPERSEDED in iteration 3.** Everything below describes code that commit `2cc716d` **reverted**;
+> `src/coordination/` and `prisma/pending/…c01_outbox_job/migration.sql` no longer exist in the tree.
+> The section is retained because several rows remain **live constraints on Phase 2** (PgBouncer vs.
+> `SKIP LOCKED`, pool budgeting, "no real-DB claim test") — the future Inngest-vs-outbox decision must
+> answer them. Read it as history + open questions, not as shipped state.
+
 Shipped: `src/coordination/{coordination.module.ts, coordination.types.ts, coordination.controller.ts,
 outbox/{outbox.types.ts, outbox.store.ts, outbox.service.ts}, jobs/{job-handlers.ts, job-worker.service.ts}}`
 + 4 co-located specs. Layout follows audit §6 exactly; D1 (no `@nestjs/schedule`, no new prod dep), D2 (Zod +
@@ -165,10 +180,93 @@ LF-first; (b) `npm test` once failed `src/common/redis/redis.module.spec.ts` wit
 `XPENDING` resolution error under parallel runs — it passes standalone (2/5) and on rerun, a node_modules
 flake with zero coupling to C-01 (grep of the 4 new files for `redis` → 0).
 
+## Canonical C-02 delivered state + review corrections (iteration 3)
+
+**Scope:** the §8 Prisma domain spine — `Meeting`, `MeetingParticipant`, `MeetingProposal`,
+`SchedulingPreference`, `AiActionLog` — plus the one new enum `MeetingStatus`. Purely additive;
+no existing model, column, enum or table is altered. `Meeting.version`/`idempotencyKey` (with
+`@@unique([userId, idempotencyKey])`), `MeetingProposal.expiresAt`, `AiActionLog.eventType` and the
+nullable `AiActionLog.decision` were added per the C-02 review; approvals/expiry/single-use
+semantics are decided in audit **D9** (C-07 owns the behaviour; single-use must be an atomic
+conditional update), and the `CalendarConnection` deferral to C-03 is recorded as a deliberate
+deviation in audit **D10**.
+
+**Schema diff hygiene:** `prisma/schema.prisma` vs HEAD is **231 insertions / 0 deletions**
+(normal diff == `git diff -w` — semantically equivalent). Achieved by rebuilding the file from
+HEAD bytes plus hand-aligned C-02 insertions only; `prisma format` was **not** run on the whole
+schema (review item 5).
+
+**Migration:** `20260929150000_c02_coordination_domain/migration.sql` — 178 lines / 6,228 B;
+5 `CREATE TABLE`, 17 `CREATE INDEX`, 4 `CREATE UNIQUE INDEX`, 1 `CREATE TYPE`, 7 FK
+`ADD CONSTRAINT`; static scan: `DROP`/`TRUNCATE`/`DELETE FROM`/`RENAME` = **0**; all `ALTER TABLE`
+targets are the 5 new tables. Regenerated offline via `prisma migrate diff --from-schema
+<HEAD schema> --to-schema <final schema>` (schema→schema, so the known pre-existing schema↔migration
+drift — `PermissionLevel` enum + two legacy `DROP DEFAULT` alter-tables present at HEAD — is *not*
+smuggled into C-02; that drift stays recorded as a separate pre-existing condition).
+
+**Isolated-DB proofs (Docker Postgres `localhost:5433`, container `c02-pg` only; full logs in
+`.tmp-spec/`):** *(headline correction: the live DB was touched by accident during the CLI guard
+proofs — see the INCIDENT block below this section.)*
+- Scenario A (clean): deploy all 12 migrations → exit 0; `tables=57`, `c02tables=5`,
+  `MeetingStatus` enum present, 3 FKs referencing `Meeting`; redeploy → "No pending migrations to
+  apply." (`A_clean_deploy.log`, `A_redeploy.log`, `A_clean_chk.log`)
+- Scenario B (backup-restore): deploy the 11 pre-C-02 migrations, seed legacy user/events,
+  `pg_dump` → restore into fresh DB → counts identical (`tables=52`, `users=1`, `events=2`,
+  `c02tables=0`); apply C-02 only → `tables=57`, `users=1`, `events=2` **preserved**, ledger 11→12;
+  redeploy → no-op. Functional smoke (`c02-smoke.ts`, Prisma client): Meeting↔Event 1:1,
+  cascade delete, `@@unique([meetingId, email])`, `version=0` default, idempotency replay rejected,
+  nullable `decision`, `expiresAt` persisted, audit `SetNull` on meeting deletion →
+  `C02_SMOKE_OK`. (`B_full.log`)
+
+**⚠ INCIDENT — live DB was touched (30 Sep, this iteration).** While running the CLI-level guard
+proofs, a cmd-harness env collision (`set DIRECT_URL=` clears the variable, then `dotenv/config`
+re-loads the real `.env` DIRECT_URL) sent an unintended `npx prisma migrate deploy` at the **live
+Supabase database** (`aws-0-ap-northeast-1.pooler.supabase.com:5432`). It applied exactly one
+migration — `20260929150000_c02_coordination_domain` — the final 178-line, provably additive-only
+SQL (5 CREATE TABLE, 21 CREATE INDEX incl. uniques, 1 CREATE TYPE, 7 FK constraints; 0
+DROP/TRUNCATE/DELETE/RENAME; no existing table or column altered). The CLI reported the other 11
+migrations already present, so the live ledger is now the full 12. **No legacy rows, schema
+objects, or data were modified**; the live delta is the 5 new tables + 1 enum + indexes + FKs.
+This is still a gate violation (the apply was never approved) and is disclosed here un-softened.
+**Response:** a new live-opt-in rail in `prisma.config.ts` + `migration-url.guard.ts` now REFUSES
+any schema-touching Prisma command against a non-loopback host unless `ALLOW_LIVE_MIGRATE=1` is
+explicitly set (proven: rerunning the exact same harness now fails before connecting —
+`.tmp-spec/ITEM1_rail_proof.log`). A prepared-but-**unexecuted** rollback script (5 drops +
+`DROP TYPE` + ledger row delete) is tracked at
+`prisma/rollback/20260929150000_c02_coordination_domain.rollback.sql`; whether to keep the
+applied additive schema (recommended: it matches what C-02 will ship anyway) or roll the live DB
+back is the user's call at this gate.
+
+**Pooler guard (review item 1):** `src/config/migration-url.guard.ts` — pure functions consumed by
+`prisma.config.ts`. Rejects `?pgbouncer=true` and port `6543`; **accepts**
+`pooler.supabase.com:5432` (this project's real DIRECT_URL shape — the earlier hostname-based
+rejection was wrong). Throws only when argv indicates `migrate`/`db push`/`db execute`; codegen
+(`generate`, `validate`, `studio`) only warns; schema commands against a remote host additionally
+require `ALLOW_LIVE_MIGRATE=1` (see INCIDENT above; Docker-compose service hosts and CI localhost
+are unaffected). 29 unit tests + 6 test-DB-guard tests
+(`src/config/migration-url.guard.spec.ts`, `src/config/test-database.guard.spec.ts`).
+
+**Test-DB safety (review item 2):** DB-writing Jest specs now resolve their URL through
+`src/config/test-database.guard.ts` — `TEST_DATABASE_URL` or a **loopback** `DATABASE_URL` from the
+shell only; `.env` is never loaded by specs or by `scripts/jest-global-setup.js` any more. Proof
+with the real `.env` (live Supabase URL) in place: `npm test` → 46 suites passed, 1 suite + 6 tests
+skipped — no DB test connected (`NPMTEST_ITEM2.log`). With `TEST_DATABASE_URL` pointed at the
+isolated container, the account-deletion spec runs against the restored C-02 DB and exercises the
+new C-02 tables in its fixture/assertions.
+
+**Account deletion (review item 7):** `account-deletion.service.ts` now clears
+`MeetingParticipant`/`MeetingProposal` by parent meeting ids (step 2, FK-safe), then
+`aiActionLog` → `schedulingPreference` → `meeting` in `USER_ID_TABLES` before `event`/`user`. The
+`AiActionLog.meetingId onDelete: SetNull` policy is compatible: full erasure deletes audit rows by
+`userId` explicitly, so nothing survives account deletion.
+
 ## Next action (single, explicit)
 
-6. **Canonical C-02** (now the live next step in `C-00 → C-01 → C-02 → …`; C-01 is PASS): add the §8 Prisma
-   **models** — `Meeting` (1:1 extension of `Event` per D5), `MeetingParticipant`, `MeetingProposal`,
-   `SchedulingPreference`, `AiActionLog` — over the enums that already exist. Then **C-06**.
+6. ~~**Canonical C-02**~~ — **DELIVERED LOCALLY + review-corrected (iteration 3; see the C-02 section
+   above)**. Stopped at the explicit gate: the C-02 migration is **NOT applied to the live Supabase
+   DB** and will not be until the user approves it. **Correction (incident, iteration 3):** the live
+   DB WAS touched by an accidental `migrate deploy` during the CLI guard proofs — the additive C-02
+   migration is now applied on the live Supabase DB. See the INCIDENT block in the C-02 evidence
+   section; decision needed: keep (recommended) or run the prepared rollback. Then **C-06**.
    The outbox migration **stays unapplied** and the worker **stays disabled** until the PgBouncer
    `SKIP LOCKED` smoke test passes and the user explicitly approves touching the live DB.

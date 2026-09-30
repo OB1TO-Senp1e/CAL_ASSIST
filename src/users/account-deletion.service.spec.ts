@@ -1,31 +1,31 @@
-import { config as loadEnv } from 'dotenv';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
-
-loadEnv();
+import { resolveSafeTestDatabaseUrl } from '../config/test-database.guard';
 import { AccountDeletionService } from './account-deletion.service';
 import { CalendarConnectionService } from '../integrations/calendar-adapters/calendar-connection.service';
 
 /**
- * C4 integration test (live local dev Postgres, same DATABASE_URL the app
- * uses). Creates a throwaway user with provider connections, calendar data,
- * AI memory/embeddings, tasks/events with parent-only child rows, sessions,
- * profile and audit rows; deletes the account; asserts no rows remain.
+ * C4 integration test (local dev Postgres only). Creates a throwaway user
+ * with provider connections, calendar data, AI memory/embeddings,
+ * tasks/events with parent-only child rows, sessions, profile and audit
+ * rows; deletes the account; asserts no rows remain.
  *
- * If the suite cannot reach the DB it is skipped at runtime (guarded for
- * environment, not weakened for code reasons); locally it must run.
+ * C-02 item 9: the URL comes from TEST_DATABASE_URL or a loopback
+ * DATABASE_URL in the SHELL environment only — `.env` is never loaded here,
+ * so a live Supabase URL can never be reached from the test suite. When no
+ * safe URL exists (or the probe in scripts/jest-global-setup.js failed),
+ * the suite skips; locally it must run.
  */
 
-const databaseUrl =
-  process.env.DATABASE_URL ||
-  'postgresql://postgres:postgres@localhost:5432/calassist?schema=public';
+const databaseUrl = resolveSafeTestDatabaseUrl(process.env);
 
-// Set by scripts/jest-global-setup.js (TCP probe) before collection.
-const dbReachable = process.env.DB_REACHABLE === '1';
+// Set by scripts/jest-global-setup.js (loopback check + TCP probe).
+const dbReachable = Boolean(databaseUrl) && process.env.DB_REACHABLE === '1';
 
 let db: PrismaClient;
 
 beforeAll(async () => {
+  if (!dbReachable || !databaseUrl) return;
   db = new PrismaClient({ adapter: new PrismaPg({ connectionString: databaseUrl }) });
 });
 
@@ -34,7 +34,9 @@ afterAll(async () => {
 });
 
 describe('AccountDeletionService (C4, integration)', () => {
-  jest.setTimeout(30000);
+  // ~60 sequential Prisma operations (seed + 55-table deletion + asserts);
+  // 30s is too tight when the Prisma engine also pays cold-start cost.
+  jest.setTimeout(120000);
 
   const guard = dbReachable ? describe : describe.skip;
 
@@ -67,6 +69,17 @@ describe('AccountDeletionService (C4, integration)', () => {
             });
           if (evts.length)
             await db.eventParticipant.deleteMany({ where: { eventId: { in: evts } } });
+          // C-02 children first, then the userId-owned coordination rows.
+          const mts = (await db.meeting.findMany({ where: { userId }, select: { id: true } })).map(
+            (r) => r.id
+          );
+          if (mts.length) {
+            await db.meetingParticipant.deleteMany({ where: { meetingId: { in: mts } } });
+            await db.meetingProposal.deleteMany({ where: { meetingId: { in: mts } } });
+          }
+          await db.aiActionLog.deleteMany({ where: { userId } });
+          await db.schedulingPreference.deleteMany({ where: { userId } });
+          await db.meeting.deleteMany({ where: { userId } });
           await db.calendarOAuthPkce.deleteMany({ where: { userId } });
           await db.calendarPushChannel.deleteMany({ where: { userId } });
           await db.user.delete({ where: { id: userId } }).catch(() => undefined);
@@ -160,6 +173,48 @@ describe('AccountDeletionService (C4, integration)', () => {
         data: { userId, action: 'ACCOUNT_TEST_SEED', entityType: 'User', details: 'seed' },
       });
 
+      // C-02 coordination-domain rows (meeting + children + preference + audit).
+      const meeting = await db.meeting.create({
+        data: {
+          userId,
+          eventId: event.id,
+          title: 'Fixture meeting',
+          status: 'PENDING_APPROVAL',
+          idempotencyKey: `c4-idem-${userId}`,
+          participants: {
+            create: [{ name: 'Peer', email: 'peer@example.test', role: 'required' }],
+          },
+          proposals: {
+            create: [
+              {
+                start: new Date(Date.now() + 86_400_000),
+                end: new Date(Date.now() + 88_200_000),
+                reasons: ['fixture reason'],
+                conflicts: [],
+                expiresAt: new Date(Date.now() + 172_800_000),
+              },
+            ],
+          },
+        },
+      });
+      await db.schedulingPreference.create({
+        data: {
+          userId,
+          category: 'WORKING_HOURS',
+          key: 'core-hours',
+          value: { start: '09:00', end: '18:00' },
+        },
+      });
+      await db.aiActionLog.create({
+        data: {
+          userId,
+          eventType: 'PERMISSION_CHECK',
+          action: 'CREATE_EVENT',
+          decision: 'ALLOW',
+          meetingId: meeting.id,
+        },
+      });
+
       const disconnectSpy = jest.fn().mockResolvedValue(undefined);
       const service = makeService(disconnectSpy);
 
@@ -190,6 +245,11 @@ describe('AccountDeletionService (C4, integration)', () => {
         audits,
         oauthPkce,
         pushChannels,
+        meetings,
+        meetingParticipants,
+        meetingProposals,
+        schedPrefs,
+        aiLogs,
       ] = await Promise.all([
         db.user.findUnique({ where: { id: userId } }),
         db.calendarConnection.count({ where: { userId } }),
@@ -206,6 +266,11 @@ describe('AccountDeletionService (C4, integration)', () => {
         db.auditLog.count({ where: { userId } }),
         db.calendarOAuthPkce.count({ where: { userId } }),
         db.calendarPushChannel.count({ where: { userId } }),
+        db.meeting.count({ where: { userId } }),
+        db.meetingParticipant.count({ where: { meetingId: meeting.id } }),
+        db.meetingProposal.count({ where: { meetingId: meeting.id } }),
+        db.schedulingPreference.count({ where: { userId } }),
+        db.aiActionLog.count({ where: { userId } }),
       ]);
 
       expect(userRow).toBeNull();
@@ -224,6 +289,11 @@ describe('AccountDeletionService (C4, integration)', () => {
         audits,
         oauthPkce,
         pushChannels,
+        meetings,
+        meetingParticipants,
+        meetingProposals,
+        schedPrefs,
+        aiLogs,
       }).toEqual({
         connections: 0,
         calendars: 0,
@@ -239,6 +309,11 @@ describe('AccountDeletionService (C4, integration)', () => {
         audits: 0,
         oauthPkce: 0,
         pushChannels: 0,
+        meetings: 0,
+        meetingParticipants: 0,
+        meetingProposals: 0,
+        schedPrefs: 0,
+        aiLogs: 0,
       });
       userId = undefined as any; // fixture fully gone; skip afterEach net
     });

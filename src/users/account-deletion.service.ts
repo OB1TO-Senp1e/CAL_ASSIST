@@ -26,8 +26,9 @@ import { CalendarConnectionService } from '../integrations/calendar-adapters/cal
 
 /**
  * Tables with a userId → User foreign key are deleted via USER_ID_TABLES
- * below; two child tables carry only a parent FK (TaskDependency → Task,
- * EventParticipant → Event) and are cleared by parent id first.
+ * below; child tables that carry only a parent FK (TaskDependency → Task,
+ * EventParticipant → Event, MeetingParticipant/MeetingProposal → Meeting)
+ * are cleared by parent id first.
  */
 
 // Ordered children-first groups. Every model listed in COMPLIANCE_LOOP.md's
@@ -73,6 +74,14 @@ const USER_ID_TABLES: Array<keyof PrismaService> = [
   'task',
   'project',
   'goal',
+  // C-02 coordination domain. `meeting` must precede `event` (Meeting.eventId
+  // FK) and `user`; its own children (participants/proposals) go first via
+  // meeting ids in step 2. `aiActionLog.meetingId` is ON DELETE SET NULL, so
+  // audit rows survive a meeting-only deletion — a full account erasure
+  // removes them here by userId instead.
+  'aiActionLog',
+  'schedulingPreference',
+  'meeting',
   'event',
   'calendar',
   'calendarOAuthPkce',
@@ -135,9 +144,10 @@ export class AccountDeletionService {
     }
 
     // 2. Parent-scoped rows (no userId column) must go before their owners.
-    const [taskIds, eventIds] = await Promise.all([
+    const [taskIds, eventIds, meetingIds] = await Promise.all([
       this.prisma.task.findMany({ where: { userId }, select: { id: true } }),
       this.prisma.event.findMany({ where: { userId }, select: { id: true } }),
+      this.prisma.meeting.findMany({ where: { userId }, select: { id: true } }),
     ]);
     if (taskIds.length > 0) {
       const ids = taskIds.map((t) => t.id);
@@ -149,6 +159,16 @@ export class AccountDeletionService {
       await this.prisma.eventParticipant.deleteMany({
         where: { eventId: { in: eventIds.map((e) => e.id) } },
       });
+    }
+    if (meetingIds.length > 0) {
+      // C-02: MeetingParticipant/MeetingProposal carry only a meeting FK.
+      // The DB cascades on meeting deletion, but clearing explicitly first
+      // keeps this service correct even if the FK policy ever changes.
+      const ids = meetingIds.map((m) => m.id);
+      await Promise.all([
+        this.prisma.meetingParticipant.deleteMany({ where: { meetingId: { in: ids } } }),
+        this.prisma.meetingProposal.deleteMany({ where: { meetingId: { in: ids } } }),
+      ]);
     }
 
     // 3. Delete every user-owned row (connections/calendar data/AI memory are

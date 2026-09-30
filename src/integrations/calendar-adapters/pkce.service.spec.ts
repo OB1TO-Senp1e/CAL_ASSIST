@@ -1,17 +1,15 @@
-import { config as loadEnv } from 'dotenv';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PkceService, stateIdFor } from './pkce.service';
+import { resolveSafeTestDatabaseUrl } from '../../config/test-database.guard';
 
-loadEnv();
-
-const databaseUrl =
-  process.env.DATABASE_URL ||
-  'postgresql://postgres:postgres@localhost:5432/calassist?schema=public';
-const dbReachable = process.env.DB_REACHABLE === '1';
+// C-02 item 9: loopback/TEST_DATABASE_URL only; `.env` is never loaded.
+const databaseUrl = resolveSafeTestDatabaseUrl(process.env);
+const dbReachable = Boolean(databaseUrl) && process.env.DB_REACHABLE === '1';
 
 let db: PrismaClient;
 beforeAll(() => {
+  if (!dbReachable || !databaseUrl) return;
   db = new PrismaClient({ adapter: new PrismaPg({ connectionString: databaseUrl }) });
 });
 afterAll(async () => {
