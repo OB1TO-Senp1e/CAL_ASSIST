@@ -1,0 +1,496 @@
+=== ITEM7 ARTIFACT 1 - LIVE SCHEMA DIFF PROOF (read-only) ===
+date: 2026-09-30T11:31:21.352Z
+live host (non-secret): aws-0-ap-northeast-1.pooler.supabase.com:5432
+ALLOW_LIVE_MIGRATE=1 was set for this run ONLY around read-only commands
+(migrate diff, migrate status, SELECT introspection). No DDL/DML was issued to live.
+
+--- CMD: prisma migrate diff --from-schema <git HEAD~1 (2a00d1e, last pre-C02 commit) prisma/schema.prisma>
+         --to-config-datasource (= <LIVE_DIRECT_URL> via prisma.config.ts) --script
+    raw stdout below IS the pre-incident -> current-live delta (live is READ only).
+    Premise proven by 1c/1e: live ledger contains exactly the 11 pre-C02 migrations with
+    checksums matching the committed files, plus C-02 => pre-incident live == HEAD~1 schema.
+exit code: 0
+stderr: Loaded Prisma config from prisma.config.ts.
+
+
+RAW OUTPUT BEGIN ---
+-- CreateEnum
+CREATE TYPE "public"."MeetingStatus" AS ENUM ('DRAFT', 'PROPOSED', 'PENDING_APPROVAL', 'SCHEDULED', 'INVITATIONS_SENT', 'PARTIALLY_CONFIRMED', 'CONFIRMED', 'IN_PROGRESS', 'COMPLETED', 'FOLLOW_UP', 'CLOSED', 'DECLINED', 'CANCELLED', 'RESCHEDULED', 'NO_SHOW', 'FAILED');
+
+-- AlterTable
+ALTER TABLE "public"."AutonomyPolicy" ALTER COLUMN "enabledScopes" SET DEFAULT ARRAY[]::"public"."PermissionScope"[],
+ALTER COLUMN "allowedActions" SET DEFAULT ARRAY[]::"public"."PermissionAction"[],
+ALTER COLUMN "requireConfirmationFor" SET DEFAULT ARRAY[]::"public"."PermissionAction"[];
+
+-- AlterTable
+ALTER TABLE "public"."ReplanningPolicy" ALTER COLUMN "triggers" SET DEFAULT ARRAY[]::"public"."ReplanTrigger"[],
+ALTER COLUMN "allowedActions" SET DEFAULT ARRAY[]::"public"."ReplanAllowedAction"[],
+ALTER COLUMN "requireConfirmationFor" SET DEFAULT ARRAY[]::"public"."ReplanConfirmation"[];
+
+-- DropEnum
+DROP TYPE "public"."PermissionLevel";
+
+-- CreateTable
+CREATE TABLE "public"."AiActionLog" (
+    "id" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "eventType" TEXT NOT NULL,
+    "action" "public"."PermissionAction" NOT NULL,
+    "decision" "public"."PermissionDecision",
+    "riskLevel" "public"."RiskLevel" NOT NULL DEFAULT 'LOW',
+    "autonomyLevel" "public"."AutonomyLevel",
+    "meetingId" TEXT,
+    "proposalId" TEXT,
+    "reason" TEXT,
+    "payload" JSONB,
+    "error" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "AiActionLog_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."Meeting" (
+    "id" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "eventId" TEXT,
+    "title" TEXT NOT NULL,
+    "description" TEXT,
+    "status" "public"."MeetingStatus" NOT NULL DEFAULT 'DRAFT',
+    "version" INTEGER NOT NULL DEFAULT 0,
+    "idempotencyKey" TEXT,
+    "durationMinutes" INTEGER NOT NULL DEFAULT 30,
+    "timezone" TEXT NOT NULL DEFAULT 'UTC',
+    "meetingType" TEXT,
+    "conferenceProvider" TEXT,
+    "conferenceUrl" TEXT,
+    "conferenceId" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "deletedAt" TIMESTAMP(3),
+
+    CONSTRAINT "Meeting_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."MeetingParticipant" (
+    "id" TEXT NOT NULL,
+    "meetingId" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "email" TEXT NOT NULL,
+    "role" TEXT,
+    "responseStatus" "public"."ParticipantStatus" NOT NULL DEFAULT 'NEEDS_ACTION',
+    "required" BOOLEAN NOT NULL DEFAULT true,
+    "respondedAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "MeetingParticipant_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."MeetingProposal" (
+    "id" TEXT NOT NULL,
+    "meetingId" TEXT NOT NULL,
+    "start" TIMESTAMP(3) NOT NULL,
+    "end" TIMESTAMP(3) NOT NULL,
+    "priority" INTEGER,
+    "reasons" TEXT[],
+    "conflicts" TEXT[],
+    "expiresAt" TIMESTAMP(3),
+    "status" "public"."ProposalStatus" NOT NULL DEFAULT 'READY',
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "MeetingProposal_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."SchedulingPreference" (
+    "id" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "category" "public"."PreferenceCategory" NOT NULL,
+    "key" TEXT NOT NULL,
+    "value" JSONB NOT NULL,
+    "isExplicit" BOOLEAN NOT NULL DEFAULT true,
+    "isHardRule" BOOLEAN NOT NULL DEFAULT false,
+    "description" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "deletedAt" TIMESTAMP(3),
+
+    CONSTRAINT "SchedulingPreference_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateIndex
+CREATE INDEX "AiActionLog_action_idx" ON "public"."AiActionLog"("action" ASC);
+
+-- CreateIndex
+CREATE INDEX "AiActionLog_createdAt_idx" ON "public"."AiActionLog"("createdAt" ASC);
+
+-- CreateIndex
+CREATE INDEX "AiActionLog_decision_idx" ON "public"."AiActionLog"("decision" ASC);
+
+-- CreateIndex
+CREATE INDEX "AiActionLog_meetingId_idx" ON "public"."AiActionLog"("meetingId" ASC);
+
+-- CreateIndex
+CREATE INDEX "AiActionLog_userId_createdAt_idx" ON "public"."AiActionLog"("userId" ASC, "createdAt" ASC);
+
+-- CreateIndex
+CREATE INDEX "AiActionLog_userId_idx" ON "public"."AiActionLog"("userId" ASC);
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Meeting_eventId_key" ON "public"."Meeting"("eventId" ASC);
+
+-- CreateIndex
+CREATE INDEX "Meeting_meetingType_idx" ON "public"."Meeting"("meetingType" ASC);
+
+-- CreateIndex
+CREATE INDEX "Meeting_status_idx" ON "public"."Meeting"("status" ASC);
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Meeting_userId_idempotencyKey_key" ON "public"."Meeting"("userId" ASC, "idempotencyKey" ASC);
+
+-- CreateIndex
+CREATE INDEX "Meeting_userId_idx" ON "public"."Meeting"("userId" ASC);
+
+-- CreateIndex
+CREATE INDEX "Meeting_userId_status_idx" ON "public"."Meeting"("userId" ASC, "status" ASC);
+
+-- CreateIndex
+CREATE INDEX "MeetingParticipant_email_idx" ON "public"."MeetingParticipant"("email" ASC);
+
+-- CreateIndex
+CREATE UNIQUE INDEX "MeetingParticipant_meetingId_email_key" ON "public"."MeetingParticipant"("meetingId" ASC, "email" ASC);
+
+-- CreateIndex
+CREATE INDEX "MeetingParticipant_meetingId_idx" ON "public"."MeetingParticipant"("meetingId" ASC);
+
+-- CreateIndex
+CREATE INDEX "MeetingProposal_meetingId_idx" ON "public"."MeetingProposal"("meetingId" ASC);
+
+-- CreateIndex
+CREATE INDEX "MeetingProposal_start_end_idx" ON "public"."MeetingProposal"("start" ASC, "end" ASC);
+
+-- CreateIndex
+CREATE INDEX "MeetingProposal_status_idx" ON "public"."MeetingProposal"("status" ASC);
+
+-- CreateIndex
+CREATE INDEX "SchedulingPreference_category_idx" ON "public"."SchedulingPreference"("category" ASC);
+
+-- CreateIndex
+CREATE UNIQUE INDEX "SchedulingPreference_userId_category_key_key" ON "public"."SchedulingPreference"("userId" ASC, "category" ASC, "key" ASC);
+
+-- CreateIndex
+CREATE INDEX "SchedulingPreference_userId_idx" ON "public"."SchedulingPreference"("userId" ASC);
+
+-- AddForeignKey
+ALTER TABLE "public"."AiActionLog" ADD CONSTRAINT "AiActionLog_meetingId_fkey" FOREIGN KEY ("meetingId") REFERENCES "public"."Meeting"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."AiActionLog" ADD CONSTRAINT "AiActionLog_userId_fkey" FOREIGN KEY ("userId") REFERENCES "public"."User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."Meeting" ADD CONSTRAINT "Meeting_eventId_fkey" FOREIGN KEY ("eventId") REFERENCES "public"."Event"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."Meeting" ADD CONSTRAINT "Meeting_userId_fkey" FOREIGN KEY ("userId") REFERENCES "public"."User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."MeetingParticipant" ADD CONSTRAINT "MeetingParticipant_meetingId_fkey" FOREIGN KEY ("meetingId") REFERENCES "public"."Meeting"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."MeetingProposal" ADD CONSTRAINT "MeetingProposal_meetingId_fkey" FOREIGN KEY ("meetingId") REFERENCES "public"."Meeting"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."SchedulingPreference" ADD CONSTRAINT "SchedulingPreference_userId_fkey" FOREIGN KEY ("userId") REFERENCES "public"."User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+
+--- RAW OUTPUT END
+delta scan: destructive-token count = 7 [ALTER COLUMN | DROP]
+
+--- CMD: prisma migrate diff --from-empty --to-config-datasource (= <LIVE_DIRECT_URL>) --script
+exit code: 0
+saved .tmp-spec/live_schema.sql = 80237 bytes (CURRENT live schema DDL, input for artifact 2 clone)
+
+--- CMD: prisma migrate status (live, read-only)
+exit code: 0
+RAW OUTPUT BEGIN ---
+Datasource "db": PostgreSQL database "postgres", schema "public" at "aws-0-ap-northeast-1.pooler.supabase.com:5432"
+
+12 migrations found in prisma/migrations
+
+Database schema is up to date!
+Loaded Prisma config from prisma.config.ts.
+
+Prisma schema loaded from prisma\schema.prisma.
+
+--- RAW OUTPUT END
+
+QUERY: _prisma_migrations ledger
+  SQL: SELECT migration_name, checksum FROM "_prisma_migrations" ORDER BY started_at
+  ROWS(12): [{"migration_name":"20260926091145_init","checksum":"35cd6b5a24ce1a06c00c3f8044840378a0e62ce138285a34424da8440a43861c"},{"migration_name":"20260926185000_add_time_block_commitment_refs","checksum":"926d27f6b0b262e1dc66d117a039a9f18a1defb76ea794c7c1f19e5a8b0d920b"},{"migration_name":"20260927110000_add_event_category_color","checksum":"d214bb210ec968a1627e5f73a78095d38bd828996970184c4a3b921b55fab67a"},{"migration_name":"20260927120000_stage3_persistence","checksum":"aede58acd749ff2e09ad7e9eea2db6aaf5f2baf99f1ba6ca8f3c111f68387db9"},{"migration_name":"20260927123000_recommendation_state","checksum":"4c251488c78030abe5ae3697d3c28979b4c89399eb36c99c14704c4981fec378"},{"migration_name":"20260927190000_commitment_person_metadata","checksum":"bbf0a9123d8d3562795c764ac526a2a757c1bc3a28e42bad240ccb0b28c3d6ef"},{"migration_name":"20260927210000_memory_schema_sync","checksum":"186879fb1a847012775dfc35f68031abed53b56998f915434cd4045114d66da4"},{"migration_name":"20260928120000_stage4k_permission_models","checksum":"e6f74ac451d6aeb7cf0a0613be06b5bf98df872b5b6fb62141531346f6fdc8fe"},{"migration_name":"20260928121000_stage4k_replanning_policy","checksum":"3f583dab960c16d681f2005bd464a1b2bfeece8ff59873ee1a57e120f765c0a1"},{"migration_name":"20260928210000_c7_calendar_oauth_pkce","checksum":"6e2087899a88cd044a52bf335cee5bc9280117fc105b572389e013be9d6d5d92"},{"migration_name":"20260928211000_c8_calendar_push_channel","checksum":"8137cb54769ed18591cfeae4e1b437e4de6c059491e946703028081fd7412a92"},{"migration_name":"20260929150000_c02_coordination_domain","checksum":"c7c4d24bc38438d6877b5f72b6cee252fe59865849121ef9419fa20b07bc8550"}]
+
+QUERY: C-02 tables present
+  SQL: SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name IN ('Meeting','MeetingParticipant','MeetingProposal','SchedulingPreference','AiActionLog') ORDER BY 1
+  ROWS(5): [{"table_name":"AiActionLog"},{"table_name":"Meeting"},{"table_name":"MeetingParticipant"},{"table_name":"MeetingProposal"},{"table_name":"SchedulingPreference"}]
+
+QUERY: MeetingStatus enum type
+  SQL: SELECT typname FROM pg_type WHERE typname='MeetingStatus'
+  ROWS(1): [{"typname":"MeetingStatus"}]
+
+QUERY: indexes on the 5 C-02 tables
+  SQL: SELECT indexname FROM pg_indexes WHERE schemaname='public' AND tablename IN ('Meeting','MeetingParticipant','MeetingProposal','SchedulingPreference','AiActionLog') ORDER BY 1
+  ROWS(26): [{"indexname":"AiActionLog_action_idx"},{"indexname":"AiActionLog_createdAt_idx"},{"indexname":"AiActionLog_decision_idx"},{"indexname":"AiActionLog_meetingId_idx"},{"indexname":"AiActionLog_pkey"},{"indexname":"AiActionLog_userId_createdAt_idx"},{"indexname":"AiActionLog_userId_idx"},{"indexname":"MeetingParticipant_email_idx"},{"indexname":"MeetingParticipant_meetingId_email_key"},{"indexname":"MeetingParticipant_meetingId_idx"},{"indexname":"MeetingParticipant_pkey"},{"indexname":"MeetingProposal_meetingId_idx"},{"indexname":"MeetingProposal_pkey"},{"indexname":"MeetingProposal_start_end_idx"},{"indexname":"MeetingProposal_status_idx"},{"indexname":"Meeting_eventId_key"},{"indexname":"Meeting_meetingType_idx"},{"indexname":"Meeting_pkey"},{"indexname":"Meeting_status_idx"},{"indexname":"Meeting_userId_idempotencyKey_key"},{"indexname":"Meeting_userId_idx"},{"indexname":"Meeting_userId_status_idx"},{"indexname":"SchedulingPreference_category_idx"},{"indexname":"SchedulingPreference_pkey"},{"indexname":"SchedulingPreference_userId_category_key_key"},{"indexname":"SchedulingPreference_userId_idx"}]
+
+QUERY: FKs owned by the 5 C-02 tables
+  SQL: SELECT conname, conrelid::regclass::text AS on_table, confrelid::regclass::text AS ref_table FROM pg_constraint WHERE contype='f' AND connamespace='public'::regnamespace AND conrelid::regclass::text IN ('"Meeting"','"MeetingParticipant"','"MeetingProposal"','"SchedulingPreference"','"AiActionLog"') ORDER BY 1
+  ROWS(7): [{"conname":"AiActionLog_meetingId_fkey","on_table":"\"AiActionLog\"","ref_table":"\"Meeting\""},{"conname":"AiActionLog_userId_fkey","on_table":"\"AiActionLog\"","ref_table":"\"User\""},{"conname":"MeetingParticipant_meetingId_fkey","on_table":"\"MeetingParticipant\"","ref_table":"\"Meeting\""},{"conname":"MeetingProposal_meetingId_fkey","on_table":"\"MeetingProposal\"","ref_table":"\"Meeting\""},{"conname":"Meeting_eventId_fkey","on_table":"\"Meeting\"","ref_table":"\"Event\""},{"conname":"Meeting_userId_fkey","on_table":"\"Meeting\"","ref_table":"\"User\""},{"conname":"SchedulingPreference_userId_fkey","on_table":"\"SchedulingPreference\"","ref_table":"\"User\""}]
+
+QUERY: global object counts
+  SQL: SELECT (SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE') base_tables, (SELECT count(*) FROM pg_indexes WHERE schemaname='public') indexes, (SELECT count(*) FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace WHERE n.nspname='public' AND t.typtype='e') enums
+  ROWS(1): [{"base_tables":"57","indexes":"259","enums":"62"}]
+
+--- CHECKSUM CROSS-CHECK (committed local migration.sql vs live ledger) ---
+20260926091145_init local=35cd6b5a24ce1a06c00c3f8044840378a0e62ce138285a34424da8440a43861c live=35cd6b5a24ce1a06c00c3f8044840378a0e62ce138285a34424da8440a43861c MATCH=true
+20260926185000_add_time_block_commitment_refs local=926d27f6b0b262e1dc66d117a039a9f18a1defb76ea794c7c1f19e5a8b0d920b live=926d27f6b0b262e1dc66d117a039a9f18a1defb76ea794c7c1f19e5a8b0d920b MATCH=true
+20260927110000_add_event_category_color local=d214bb210ec968a1627e5f73a78095d38bd828996970184c4a3b921b55fab67a live=d214bb210ec968a1627e5f73a78095d38bd828996970184c4a3b921b55fab67a MATCH=true
+20260927120000_stage3_persistence local=aede58acd749ff2e09ad7e9eea2db6aaf5f2baf99f1ba6ca8f3c111f68387db9 live=aede58acd749ff2e09ad7e9eea2db6aaf5f2baf99f1ba6ca8f3c111f68387db9 MATCH=true
+20260927123000_recommendation_state local=4c251488c78030abe5ae3697d3c28979b4c89399eb36c99c14704c4981fec378 live=4c251488c78030abe5ae3697d3c28979b4c89399eb36c99c14704c4981fec378 MATCH=true
+20260927190000_commitment_person_metadata local=bbf0a9123d8d3562795c764ac526a2a757c1bc3a28e42bad240ccb0b28c3d6ef live=bbf0a9123d8d3562795c764ac526a2a757c1bc3a28e42bad240ccb0b28c3d6ef MATCH=true
+20260927210000_memory_schema_sync local=186879fb1a847012775dfc35f68031abed53b56998f915434cd4045114d66da4 live=186879fb1a847012775dfc35f68031abed53b56998f915434cd4045114d66da4 MATCH=true
+20260928120000_stage4k_permission_models local=e6f74ac451d6aeb7cf0a0613be06b5bf98df872b5b6fb62141531346f6fdc8fe live=e6f74ac451d6aeb7cf0a0613be06b5bf98df872b5b6fb62141531346f6fdc8fe MATCH=true
+20260928121000_stage4k_replanning_policy local=3f583dab960c16d681f2005bd464a1b2bfeece8ff59873ee1a57e120f765c0a1 live=3f583dab960c16d681f2005bd464a1b2bfeece8ff59873ee1a57e120f765c0a1 MATCH=true
+20260928210000_c7_calendar_oauth_pkce local=6e2087899a88cd044a52bf335cee5bc9280117fc105b572389e013be9d6d5d92 live=6e2087899a88cd044a52bf335cee5bc9280117fc105b572389e013be9d6d5d92 MATCH=true
+20260928211000_c8_calendar_push_channel local=8137cb54769ed18591cfeae4e1b437e4de6c059491e946703028081fd7412a92 live=8137cb54769ed18591cfeae4e1b437e4de6c059491e946703028081fd7412a92 MATCH=true
+20260929150000_c02_coordination_domain local=c7c4d24bc38438d6877b5f72b6cee252fe59865849121ef9419fa20b07bc8550 live=c7c4d24bc38438d6877b5f72b6cee252fe59865849121ef9419fa20b07bc8550 MATCH=true
+
+--- LOCAL ISOLATION DIFF (no live connection): --from-migrations .tmp-spec/migrations_pre_c02 (11 dirs)
+    vs git HEAD~1 schema (pre-C02) -> exit 0
+  RAW BEGIN ---
+-- CreateEnum
+CREATE TYPE "PermissionLevel" AS ENUM ('NONE', 'READ', 'WRITE', 'EXECUTE', 'AUTO');
+
+-- AlterTable
+ALTER TABLE "AutonomyPolicy" ALTER COLUMN "enabledScopes" DROP DEFAULT,
+ALTER COLUMN "allowedActions" DROP DEFAULT,
+ALTER COLUMN "requireConfirmationFor" DROP DEFAULT;
+
+-- AlterTable
+ALTER TABLE "ReplanningPolicy" ALTER COLUMN "triggers" DROP DEFAULT,
+ALTER COLUMN "allowedActions" DROP DEFAULT,
+ALTER COLUMN "requireConfirmationFor" DROP DEFAULT;
+
+Loaded Prisma config from .tmp-spec\.tmp-spec-cfg-drift.ts.
+
+
+  RAW END
+    vs git b796c54 schema (C-02) -> exit 0
+  RAW BEGIN ---
+-- CreateEnum
+CREATE TYPE "PermissionLevel" AS ENUM ('NONE', 'READ', 'WRITE', 'EXECUTE', 'AUTO');
+
+-- CreateEnum
+CREATE TYPE "MeetingStatus" AS ENUM ('DRAFT', 'PROPOSED', 'PENDING_APPROVAL', 'SCHEDULED', 'INVITATIONS_SENT', 'PARTIALLY_CONFIRMED', 'CONFIRMED', 'IN_PROGRESS', 'COMPLETED', 'FOLLOW_UP', 'CLOSED', 'DECLINED', 'CANCELLED', 'RESCHEDULED', 'NO_SHOW', 'FAILED');
+
+-- AlterTable
+ALTER TABLE "AutonomyPolicy" ALTER COLUMN "enabledScopes" DROP DEFAULT,
+ALTER COLUMN "allowedActions" DROP DEFAULT,
+ALTER COLUMN "requireConfirmationFor" DROP DEFAULT;
+
+-- AlterTable
+ALTER TABLE "ReplanningPolicy" ALTER COLUMN "triggers" DROP DEFAULT,
+ALTER COLUMN "allowedActions" DROP DEFAULT,
+ALTER COLUMN "requireConfirmationFor" DROP DEFAULT;
+
+-- CreateTable
+CREATE TABLE "Meeting" (
+    "id" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "eventId" TEXT,
+    "title" TEXT NOT NULL,
+    "description" TEXT,
+    "status" "MeetingStatus" NOT NULL DEFAULT 'DRAFT',
+    "version" INTEGER NOT NULL DEFAULT 0,
+    "idempotencyKey" TEXT,
+    "durationMinutes" INTEGER NOT NULL DEFAULT 30,
+    "timezone" TEXT NOT NULL DEFAULT 'UTC',
+    "meetingType" TEXT,
+    "conferenceProvider" TEXT,
+    "conferenceUrl" TEXT,
+    "conferenceId" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "deletedAt" TIMESTAMP(3),
+
+    CONSTRAINT "Meeting_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "MeetingParticipant" (
+    "id" TEXT NOT NULL,
+    "meetingId" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "email" TEXT NOT NULL,
+    "role" TEXT,
+    "responseStatus" "ParticipantStatus" NOT NULL DEFAULT 'NEEDS_ACTION',
+    "required" BOOLEAN NOT NULL DEFAULT true,
+    "respondedAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "MeetingParticipant_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "MeetingProposal" (
+    "id" TEXT NOT NULL,
+    "meetingId" TEXT NOT NULL,
+    "start" TIMESTAMP(3) NOT NULL,
+    "end" TIMESTAMP(3) NOT NULL,
+    "priority" INTEGER,
+    "reasons" TEXT[],
+    "conflicts" TEXT[],
+    "expiresAt" TIMESTAMP(3),
+    "status" "ProposalStatus" NOT NULL DEFAULT 'READY',
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "MeetingProposal_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "SchedulingPreference" (
+    "id" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "category" "PreferenceCategory" NOT NULL,
+    "key" TEXT NOT NULL,
+    "value" JSONB NOT NULL,
+    "isExplicit" BOOLEAN NOT NULL DEFAULT true,
+    "isHardRule" BOOLEAN NOT NULL DEFAULT false,
+    "description" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "deletedAt" TIMESTAMP(3),
+
+    CONSTRAINT "SchedulingPreference_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "AiActionLog" (
+    "id" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "eventType" TEXT NOT NULL,
+    "action" "PermissionAction" NOT NULL,
+    "decision" "PermissionDecision",
+    "riskLevel" "RiskLevel" NOT NULL DEFAULT 'LOW',
+    "autonomyLevel" "AutonomyLevel",
+    "meetingId" TEXT,
+    "proposalId" TEXT,
+    "reason" TEXT,
+    "payload" JSONB,
+    "error" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "AiActionLog_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Meeting_eventId_key" ON "Meeting"("eventId");
+
+-- CreateIndex
+CREATE INDEX "Meeting_userId_idx" ON "Meeting"("userId");
+
+-- CreateIndex
+CREATE INDEX "Meeting_status_idx" ON "Meeting"("status");
+
+-- CreateIndex
+CREATE INDEX "Meeting_userId_status_idx" ON "Meeting"("userId", "status");
+
+-- CreateIndex
+CREATE INDEX "Meeting_meetingType_idx" ON "Meeting"("meetingType");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Meeting_userId_idempotencyKey_key" ON "Meeting"("userId", "idempotencyKey");
+
+-- CreateIndex
+CREATE INDEX "MeetingParticipant_meetingId_idx" ON "MeetingParticipant"("meetingId");
+
+-- CreateIndex
+CREATE INDEX "MeetingParticipant_email_idx" ON "MeetingParticipant"("email");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "MeetingParticipant_meetingId_email_key" ON "MeetingParticipant"("meetingId", "email");
+
+-- CreateIndex
+CREATE INDEX "MeetingProposal_meetingId_idx" ON "MeetingProposal"("meetingId");
+
+-- CreateIndex
+CREATE INDEX "MeetingProposal_start_end_idx" ON "MeetingProposal"("start", "end");
+
+-- CreateIndex
+CREATE INDEX "MeetingProposal_status_idx" ON "MeetingProposal"("status");
+
+-- CreateIndex
+CREATE INDEX "SchedulingPreference_userId_idx" ON "SchedulingPreference"("userId");
+
+-- CreateIndex
+CREATE INDEX "SchedulingPreference_category_idx" ON "SchedulingPreference"("category");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "SchedulingPreference_userId_category_key_key" ON "SchedulingPreference"("userId", "category", "key");
+
+-- CreateIndex
+CREATE INDEX "AiActionLog_userId_idx" ON "AiActionLog"("userId");
+
+-- CreateIndex
+CREATE INDEX "AiActionLog_meetingId_idx" ON "AiActionLog"("meetingId");
+
+-- CreateIndex
+CREATE INDEX "AiActionLog_action_idx" ON "AiActionLog"("action");
+
+-- CreateIndex
+CREATE INDEX "AiActionLog_decision_idx" ON "AiActionLog"("decision");
+
+-- CreateIndex
+CREATE INDEX "AiActionLog_createdAt_idx" ON "AiActionLog"("createdAt");
+
+-- CreateIndex
+CREATE INDEX "AiActionLog_userId_createdAt_idx" ON "AiActionLog"("userId", "createdAt");
+
+-- AddForeignKey
+ALTER TABLE "Meeting" ADD CONSTRAINT "Meeting_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Meeting" ADD CONSTRAINT "Meeting_eventId_fkey" FOREIGN KEY ("eventId") REFERENCES "Event"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "MeetingParticipant" ADD CONSTRAINT "MeetingParticipant_meetingId_fkey" FOREIGN KEY ("meetingId") REFERENCES "Meeting"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "MeetingProposal" ADD CONSTRAINT "MeetingProposal_meetingId_fkey" FOREIGN KEY ("meetingId") REFERENCES "Meeting"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "SchedulingPreference" ADD CONSTRAINT "SchedulingPreference_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "AiActionLog" ADD CONSTRAINT "AiActionLog_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "AiActionLog" ADD CONSTRAINT "AiActionLog_meetingId_fkey" FOREIGN KEY ("meetingId") REFERENCES "Meeting"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+Loaded Prisma config from .tmp-spec\.tmp-spec-cfg-drift.ts.
+
+
+  RAW END
+
+--- INTERPRETATION LOGIC (checkable) ---
+local(pre-11-migrations vs pre-C02 schema) EMPTY = false  => NON-EMPTY raw output above must be explained; item below.
+local(pre-11-migrations vs C-02 schema) destructive tokens = 12 [ALTER COLUMN | DROP]  C-02 objects present = true
+live-delta non-C02 stmt: [ALTER TABLE AutonomyPolicy ALTER COLUMN enabledScopes SET DEFAULT ARRAY[]::PermissionScope[],] -> appears in local drift diff = true
+live-delta non-C02 stmt: [ALTER TABLE ReplanningPolicy ALTER COLUMN triggers SET DEFAULT ARRAY[]::ReplanTrigger[],] -> appears in local drift diff = true
+live-delta non-C02 stmt: [DROP TYPE PermissionLevel] -> appears in local drift diff = true
+ALL non-C02 live-delta statements are pre-existing schema/migration drift (zero live involvement): true
+live-delta additive C-02 objects: CREATE statements = 27 (1 enum + 5 tables + 21 indexes), FK ADD CONSTRAINT = 7
+data-statement scan (INSERT/UPDATE SET/DELETE FROM/TRUNCATE/COPY as STATEMENTS, not ON UPDATE clauses): 0
