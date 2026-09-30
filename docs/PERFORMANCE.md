@@ -130,6 +130,6 @@ were not estimated:
 - Authenticated interaction profiling, request waterfalls, render counts,
   measured hot-endpoint cache hit rates, and main-flow layout-shift timing.
 
-`PERF_LOOP.md` contains the full baseline, exact measurement log, checklist, and
+`CAL_UPDATE_INFO/PERF_LOOP.md` contains the full baseline, exact measurement log, checklist, and
 decisions. The local `.env` points to a hosted Supabase pooler; database seeding
 and query-plan experiments were intentionally not run against it.

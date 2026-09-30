@@ -1922,7 +1922,7 @@ model MeetingProposal {
   /// READY -> EXPIRED, approval flow); the column lives here so C-07 adds no
   /// migration. Single-use is enforced in C-07 code as an atomic conditional
   /// update (UPDATE ... WHERE status IN ('READY') -> APPLIED), never a
-  /// read-then-write (see D9 in docs/coordination-audit.md).
+  /// read-then-write (see D9 in CAL_UPDATE_INFO/docs/coordination-audit.md).
   expiresAt DateTime?
   /// Reuses the existing ProposalStatus vocabulary (DRAFT/READY/APPLIED/
   /// REJECTED/EXPIRED) rather than inventing a parallel one.

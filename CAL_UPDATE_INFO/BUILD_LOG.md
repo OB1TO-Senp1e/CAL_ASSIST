@@ -175,7 +175,7 @@ as the cal2/cal3 captures — so this unit is verification + regression-pinning,
 
 **Files touched**
 - Tests/scripts: `src/calendar/domain/calendar-boundary.spec.ts` (new), `scripts/s4j-probe.ps1` (new)
-- Repo: `BUILD_LOG.md` (3 checklist items closed, entry added)
+- Repo: `CAL_UPDATE_INFO/BUILD_LOG.md` (3 checklist items closed, entry added)
 
 ### 2026-09-28 — Stage 4i: connections token scrub + per-calendar delta sync ✅ (live-verified)
 
@@ -681,7 +681,7 @@ orchestrator returns `messageId`, the controller maps it to `id`, the client rea
 - Modified: `src/ai/assistant/assistant-orchestrator.service.ts`, `src/ai/assistant/assistant.module.ts`,
   `src/ai/assistant/interfaces/assistant-tools.interface.ts`,
   `src/ai/intent/intent-parser.service.ts`, `client/src/services/assistant.ts`,
-  `client/src/contexts/AssistantContext.tsx`, `BUILD_LOG.md`
+  `client/src/contexts/AssistantContext.tsx`, `CAL_UPDATE_INFO/BUILD_LOG.md`
 
 ### 2026-09-27 — Stage 3, unit 3d: Goals / Projects / Tasks ✅
 
@@ -738,7 +738,7 @@ implemented this rule, so the fix brings live behaviour in line with what the UI
 
 **Files touched**
 - Modified: `src/tasks/tasks.service.ts`, `src/goals/goals.service.ts`,
-  `src/projects/projects.service.ts`, `BUILD_LOG.md`
+  `src/projects/projects.service.ts`, `CAL_UPDATE_INFO/BUILD_LOG.md`
 
 ### 2026-09-27 — Stage 3, unit 3b: Calendar ✅ (with one blocked path)
 
@@ -768,7 +768,7 @@ implemented this rule, so the fix brings live behaviour in line with what the UI
 
 **Files touched**
 - Modified: `client/src/services/calendar.ts`, `client/src/services/types.ts`,
-  `client/src/pages/CalendarPage.tsx`, `client/src/components/calendar/*`, `BUILD_LOG.md`
+  `client/src/pages/CalendarPage.tsx`, `client/src/components/calendar/*`, `CAL_UPDATE_INFO/BUILD_LOG.md`
 
 ### 2026-09-27 — Stage 3, unit 3a: App shell + routing + nav + auth ✅
 
@@ -789,9 +789,9 @@ implemented this rule, so the fix brings live behaviour in line with what the UI
 - Backend availability check: `localhost:3000` is not listening, so live login/register/profile/logout requests were not exercised.
 
 **Files touched**
-- Modified: `client/src/services/auth.ts`, `client/src/components/auth/LoginForm.tsx`, `client/src/components/auth/RegisterForm.tsx`, `client/src/contexts/AuthContext.tsx`, `client/src/vite-env.d.ts`, `BUILD_LOG.md`
+- Modified: `client/src/services/auth.ts`, `client/src/components/auth/LoginForm.tsx`, `client/src/components/auth/RegisterForm.tsx`, `client/src/contexts/AuthContext.tsx`, `client/src/vite-env.d.ts`, `CAL_UPDATE_INFO/BUILD_LOG.md`
 
-### Stage 4 hardening items (known from PROGRESS.md)
+### Stage 4 hardening items (known from CAL_UPDATE_INFO/PROGRESS.md)
 
 > Status re-checked 2026-09-27 against source + a live backend (see "Stage audit" entry above).
 > Four items below are now CLOSED by Stage 3 work; the rest remain open.
@@ -819,7 +819,7 @@ implemented this rule, so the fix brings live behaviour in line with what the UI
   currently supplies `tasks: []` and empty fixed events/availability; `taskIds`, `goalId`, and
   `projectId` do not populate the input. Proposal list/get/apply endpoints are placeholders, and
   `compile-and-apply` does not create time blocks.
-- [ ] **NEW (2k): Integration routes differ from PROGRESS.md.** The source controller is
+- [ ] **NEW (2k): Integration routes differ from CAL_UPDATE_INFO/PROGRESS.md.** The source controller is
   `@Controller('calendar')` (`/api/calendar/...`), not `/api/integrations/calendar/...`; no
   travel-time controller is present, despite the documented route. Stage 3 must not call a
   nonexistent travel endpoint.
@@ -918,7 +918,7 @@ implemented this rule, so the fix brings live behaviour in line with what the UI
 - JS bundle is 314 kB (105 kB gzip). Route-level code splitting to be added in 2a.
 
 **Files touched**
-- New: `DESIGN_SYSTEM.md`, `BUILD_LOG.md`, `client/src/lib/design-tokens.ts`,
+- New: `DESIGN_SYSTEM.md`, `CAL_UPDATE_INFO/BUILD_LOG.md`, `client/src/lib/design-tokens.ts`,
   `client/src/lib/hotkeys.ts`, `client/src/contexts/ThemeContext.tsx`, `client/src/vite-env.d.ts`,
   `client/src/components/ui/{kbd,badge}.tsx`,
   `client/src/components/layout/{Sidebar,PageHeader,LegacyPage,nav-config,shell-context}.tsx|ts`,
@@ -947,7 +947,7 @@ implemented this rule, so the fix brings live behaviour in line with what the UI
   `RouteFallback` + `Skeleton` + `Spinner` primitives added.
 
 **Decisions and reasons**
-1. **Auth contract verified against source, not PROGRESS.md.** `JwtStrategy.validate` returns
+1. **Auth contract verified against source, not CAL_UPDATE_INFO/PROGRESS.md.** `JwtStrategy.validate` returns
    `{ id, email }`; `usersService.findById` selects `id, email, name, createdAt, updatedAt, preferences,
    goals, projects`; `POST /auth/logout` deletes the `Session` row. `/auth/login|register|logout` sit
    outside the `api` prefix (`main.ts` `setGlobalPrefix` exclude list) while `/api/users/me` is inside
@@ -1095,7 +1095,7 @@ implemented this rule, so the fix brings live behaviour in line with what the UI
 
 **Files touched**
 - New: `client/src/lib/mock/work.ts`, `client/src/services/work.ts`, `client/src/pages/WorkPage.tsx`
-- Modified: `client/src/services/types.ts`, `client/src/pages/TasksPage.tsx`, `client/src/pages/index.tsx`, `client/src/App.tsx`, `BUILD_LOG.md`
+- Modified: `client/src/services/types.ts`, `client/src/pages/TasksPage.tsx`, `client/src/pages/index.tsx`, `client/src/App.tsx`, `CAL_UPDATE_INFO/BUILD_LOG.md`
 - Free/busy remains outside the Stage 2 mock; 2e proposals use selected task estimates and working-hour preferences only.
 
 **Files touched**
@@ -1204,7 +1204,7 @@ implemented this rule, so the fix brings live behaviour in line with what the UI
 **Contract decisions and verified limitations**
 1. Client DTOs were copied from the relevant source schemas/interfaces and serialized response mappings. Travel-time preview is explicitly a local estimate; source inspection found no travel-time HTTP controller.
 2. Proactive action controls work in Stage 2 mock only. The documented backend ack/dismiss/snooze routes remain `501` and must be visibly disabled in Stage 3.
-3. Integration connection paths come from `src/integrations/calendar-adapters/calendar.controller.ts` (`/api/calendar/...`), not the broader `/api/integrations/*` description in PROGRESS.md.
+3. Integration connection paths come from `src/integrations/calendar-adapters/calendar.controller.ts` (`/api/calendar/...`), not the broader `/api/integrations/*` description in CAL_UPDATE_INFO/PROGRESS.md.
 4. All consequential post-meeting extractions remain suggestions until individually selected and confirmed. A commitment person is displayed from extraction but is not persisted because the current commitment contract has no person field.
 
 **Deferred**
@@ -1219,4 +1219,4 @@ implemented this rule, so the fix brings live behaviour in line with what the UI
 
 **Files touched**
 - New: `client/src/services/workflow-types.ts`, `client/src/lib/mock/operations.ts`, `client/src/services/operations.ts`, `client/src/lib/mock/knowledge.ts`, `client/src/services/knowledge.ts`, `client/src/lib/mock/integrations.ts`, `client/src/services/integrations.ts`, `client/src/lib/commands.ts`, `client/src/components/layout/CommandCenter.tsx`, `client/src/pages/WorkflowPages.tsx`
-- Modified: `client/src/pages/index.tsx`, `client/src/App.tsx`, `client/src/components/layout/DashboardLayout.tsx`, `BUILD_LOG.md`
+- Modified: `client/src/pages/index.tsx`, `client/src/App.tsx`, `client/src/components/layout/DashboardLayout.tsx`, `CAL_UPDATE_INFO/BUILD_LOG.md`

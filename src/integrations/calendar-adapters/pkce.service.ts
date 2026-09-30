@@ -15,7 +15,7 @@ import { PrismaService } from '@app/common/services/prisma.service';
  * Storage choice: DB (not the Redis CacheModule) because Redis is not running
  * locally and the pooler-mode connection makes a memory-based store unsafe
  * across restarts; DB rows survive restart and the table is tiny + indexed
- * on expiry. Logged as a decision in COMPLIANCE_LOOP.md.
+ * on expiry. Logged as a decision in CAL_UPDATE_INFO/COMPLIANCE_LOOP.md.
  */
 
 const VERIFIER_BYTES = 32;

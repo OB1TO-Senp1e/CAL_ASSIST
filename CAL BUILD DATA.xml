@@ -231,7 +231,7 @@
 
   <assumptionsAndLimitations>
     <assumption>Percentages are engineering estimates from source files, project documentation, and the latest runtime/type-check evidence available at report creation.</assumption>
-    <assumption>Feature descriptions in PROGRESS.md may describe intended or implemented backend capability; they are not proof of production behavior unless supported by tests and runtime evidence.</assumption>
+    <assumption>Feature descriptions in CAL_UPDATE_INFO/PROGRESS.md may describe intended or implemented backend capability; they are not proof of production behavior unless supported by tests and runtime evidence.</assumption>
     <assumption>Effort ranges assume one experienced full-stack engineer with normal review and access to required provider accounts; parallel work or scope changes will alter estimates.</assumption>
     <limitation>This is a build roadmap, not a security audit, full code audit, legal review, or deployment certification.</limitation>
     <limitation>Do not run a database migration, schema push, or credential rotation solely from this XML; review the target environment and obtain the appropriate approval first.</limitation>

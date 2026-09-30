@@ -21,7 +21,7 @@ module.exports = {
     '^@app/(.*)$': '<rootDir>/$1',
   },
   // DB-backed specs (account deletion) read DB_REACHABLE at collection time;
-  // this probe sets it. See COMPLIANCE_LOOP.md decisions.
+  // this probe sets it. See CAL_UPDATE_INFO/COMPLIANCE_LOOP.md decisions.
   globalSetup: '<rootDir>/../scripts/jest-global-setup.js',
   coverageDirectory: '../coverage',
   testPathIgnorePatterns: ['/node_modules/', '/dist/', '/\\.kilo/'],

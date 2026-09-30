@@ -10,7 +10,7 @@ import { z } from 'zod';
  * engines bind to — calendar discovery, event CRUD, availability queries — with no
  * credential arguments (the connection layer supplies them; audit D5 + spec §5).
  *
- * Naming reconciliation (also recorded in COORDINATION_PROGRESS.md):
+ * Naming reconciliation (also recorded in CAL_UPDATE_INFO/COORDINATION_PROGRESS.md):
  * - `CalendarProvider` is ALSO the name of a Prisma enum (`schema.prisma:1350`, mirrored
  *   by `client/src/services/types.ts`). No `src/` file imports that enum today, so the
  *   spec-mandated interface name is safe here — but a future file must not import both

@@ -16,7 +16,7 @@ import { CalendarConnectionService } from '../integrations/calendar-adapters/cal
  * connection + cached calendar data → delete AI memory/embeddings and every
  * other user-owned row → hard-delete the user row. Nothing is retained; the
  * only surviving trace is the server log line written at completion (userId
- * + timestamp, no PII). See COMPLIANCE_LOOP.md for the per-model
+ * + timestamp, no PII). See CAL_UPDATE_INFO/COMPLIANCE_LOOP.md for the per-model
  * keep/delete/anonymize enumeration backing USER_OWNED_DELETIONS below.
  *
  * There are no queued/cron jobs per user in this codebase (grep: no
@@ -31,7 +31,7 @@ import { CalendarConnectionService } from '../integrations/calendar-adapters/cal
  * are cleared by parent id first.
  */
 
-// Ordered children-first groups. Every model listed in COMPLIANCE_LOOP.md's
+// Ordered children-first groups. Every model listed in CAL_UPDATE_INFO/COMPLIANCE_LOOP.md's
 // C4 table appears here; TaskDependency/EventParticipant are cleared via
 // their parent ids because they carry no userId.
 const USER_ID_TABLES: Array<keyof PrismaService> = [
